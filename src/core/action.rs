@@ -1,5 +1,6 @@
 use crate::core::card::Card;
 use crate::core::hand::SelectHand;
+use crate::core::joker::Jokers;
 use crate::core::stage::Blind;
 use std::fmt;
 
@@ -30,7 +31,7 @@ pub enum Action {
     Discard(SelectHand),
     MoveCard(MoveDirection, Card),
     CashOut(usize),
-    // BuyConsumable(Consumable)
+    BuyJoker(Jokers),
     NextRound(),
     SelectBlind(Blind),
     // SkipBlind(Blind),
@@ -50,6 +51,9 @@ impl fmt::Display for Action {
             }
             Self::CashOut(reward) => {
                 write!(f, "CashOut: {:}", reward)
+            }
+            Self::BuyJoker(joker) => {
+                write!(f, "BuyJoker: {:?}", joker)
             }
             Self::NextRound() => {
                 write!(f, "NextRound")
