@@ -4,6 +4,8 @@ use crate::core::card::Card;
 use crate::core::deck::Deck;
 use crate::core::error::GameError;
 use crate::core::hand::{MadeHand, SelectHand};
+use crate::core::joker::Jokers;
+use crate::core::shop::Shop;
 use crate::core::stage::{Blind, End, Stage};
 use std::collections::HashSet;
 use std::fmt;
@@ -26,9 +28,11 @@ const BASE_SCORE: usize = 0;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub struct Game {
+    pub shop: Shop,
     pub deck: Deck,
     pub available: Vec<Card>,
     pub discarded: Vec<Card>,
+    pub jokers: Vec<Jokers>,
     pub blind: Option<Blind>,
     pub stage: Stage,
     pub ante: Ante,
@@ -50,9 +54,11 @@ pub struct Game {
 impl Game {
     pub fn new() -> Self {
         Self {
+            shop: Shop::new(),
             deck: Deck::default(),
             available: Vec::new(),
             discarded: Vec::new(),
+            jokers: Vec::new(),
             blind: None,
             stage: Stage::PreBlind,
             ante: Ante::One,
@@ -193,6 +199,11 @@ impl Game {
         self.money += self.reward;
         self.reward = 0;
         self.stage = Stage::Shop;
+        return Ok(());
+    }
+
+    pub fn buy_joker(&mut self, joker: Jokers) -> Result<(), GameError> {
+        self.jokers.push(joker);
         return Ok(());
     }
 
@@ -404,6 +415,15 @@ impl Game {
         }
     }
 
+    // get buy joker moves
+    pub fn gen_moves_buy_joker(&self) -> Option<impl Iterator<Item = Action>> {
+        // If stage is not shop, cannot buy
+        if self.stage != Stage::Shop {
+            return None;
+        }
+        return self.shop.gen_moves_buy_joker();
+    }
+
     // get all legal moves that can be executed given current state
     pub fn gen_moves(&self) -> impl Iterator<Item = Action> {
         let plays = self.gen_moves_play();
@@ -412,6 +432,7 @@ impl Game {
         let cashouts = self.gen_moves_cash_out();
         let nextrounds = self.gen_moves_next_round();
         let selectblinds = self.gen_moves_select_blind();
+        let buy_jokers = self.gen_moves_buy_joker();
 
         return plays
             .into_iter()
@@ -420,7 +441,8 @@ impl Game {
             .chain(move_cards.into_iter().flatten())
             .chain(cashouts.into_iter().flatten())
             .chain(nextrounds.into_iter().flatten())
-            .chain(selectblinds.into_iter().flatten());
+            .chain(selectblinds.into_iter().flatten())
+            .chain(buy_jokers.into_iter().flatten());
     }
 
     pub fn handle_action(&mut self, action: Action) -> Result<(), GameError> {
@@ -440,6 +462,10 @@ impl Game {
             },
             Action::CashOut(_reward) => match self.stage {
                 Stage::PostBlind => self.cashout(),
+                _ => Err(GameError::InvalidAction),
+            },
+            Action::BuyJoker(joker) => match self.stage {
+                Stage::Shop => self.buy_joker(joker),
                 _ => Err(GameError::InvalidAction),
             },
             Action::NextRound() => match self.stage {
