@@ -1,3 +1,243 @@
+use pyo3::pyclass;
+use std::sync::{Arc, Mutex};
+
+pub type PlanetEffect = Arc<Mutex<dyn Fn(&mut Planetarium) + Send + 'static>>;
+
+pub trait Planet {
+    fn name(&self) -> String;
+    fn effect(&self) -> PlanetEffect;
+}
+
+// Similar to what we do for jokers.
+// We could pass around `Box<dyn Planet>` but it doesn't work so nice with pyo3 and serde.
+// Since we know all variants (one for each planet), we define an enum that implements
+// our `Planet` trait.
+macro_rules! make_planets {
+    ($($x:ident), *) => {
+        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+        #[cfg_attr(feature = "python", pyclass(eq))]
+        #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+        pub enum Planets {
+            $(
+                $x($x),
+            )*
+        }
+
+        impl Planet for Planets {
+            fn name(&self) -> String {
+                match self {
+                    $(
+                        Planets::$x(planet) => planet.name(),
+                    )*
+                }
+            }
+            fn effect(&self) -> PlanetEffect {
+                match self {
+                    $(
+                        Planets::$x(planet) => planet.effect(),
+                    )*
+                }
+            }
+        }
+    }
+}
+
+make_planets!(
+    Pluto, Mercury, Uranus, Venus, Saturn, Jupiter, Earth, Mars, Neptune, PlanetX, Ceres, Eris
+);
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Pluto {}
+
+impl Planet for Pluto {
+    fn name(&self) -> String {
+        "Pluto".to_string()
+    }
+    fn effect(&self) -> PlanetEffect {
+        fn apply(p: &mut Planetarium) {
+            p.level_up(HandRank::HighCard);
+        }
+        Arc::new(Mutex::new(apply))
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Mercury {}
+
+impl Planet for Mercury {
+    fn name(&self) -> String {
+        "Mercury".to_string()
+    }
+    fn effect(&self) -> PlanetEffect {
+        fn apply(p: &mut Planetarium) {
+            p.level_up(HandRank::OnePair);
+        }
+        Arc::new(Mutex::new(apply))
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Uranus {}
+
+impl Planet for Uranus {
+    fn name(&self) -> String {
+        "Uranus".to_string()
+    }
+    fn effect(&self) -> PlanetEffect {
+        fn apply(p: &mut Planetarium) {
+            p.level_up(HandRank::TwoPair);
+        }
+        Arc::new(Mutex::new(apply))
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Venus {}
+
+impl Planet for Venus {
+    fn name(&self) -> String {
+        "Venus".to_string()
+    }
+    fn effect(&self) -> PlanetEffect {
+        fn apply(p: &mut Planetarium) {
+            p.level_up(HandRank::ThreeOfAKind);
+        }
+        Arc::new(Mutex::new(apply))
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Saturn {}
+
+impl Planet for Saturn {
+    fn name(&self) -> String {
+        "Saturn".to_string()
+    }
+    fn effect(&self) -> PlanetEffect {
+        fn apply(p: &mut Planetarium) {
+            p.level_up(HandRank::Straight);
+        }
+        Arc::new(Mutex::new(apply))
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Jupiter {}
+
+impl Planet for Jupiter {
+    fn name(&self) -> String {
+        "Jupiter".to_string()
+    }
+    fn effect(&self) -> PlanetEffect {
+        fn apply(p: &mut Planetarium) {
+            p.level_up(HandRank::Flush);
+        }
+        Arc::new(Mutex::new(apply))
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Earth {}
+
+impl Planet for Earth {
+    fn name(&self) -> String {
+        "Earth".to_string()
+    }
+    fn effect(&self) -> PlanetEffect {
+        fn apply(p: &mut Planetarium) {
+            p.level_up(HandRank::FullHouse);
+        }
+        Arc::new(Mutex::new(apply))
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Mars {}
+
+impl Planet for Mars {
+    fn name(&self) -> String {
+        "Mars".to_string()
+    }
+    fn effect(&self) -> PlanetEffect {
+        fn apply(p: &mut Planetarium) {
+            p.level_up(HandRank::FourOfAKind);
+        }
+        Arc::new(Mutex::new(apply))
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Neptune {}
+
+impl Planet for Neptune {
+    fn name(&self) -> String {
+        "Neptune".to_string()
+    }
+    fn effect(&self) -> PlanetEffect {
+        fn apply(p: &mut Planetarium) {
+            p.level_up(HandRank::StraightFlush);
+        }
+        Arc::new(Mutex::new(apply))
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct PlanetX {}
+
+impl Planet for PlanetX {
+    fn name(&self) -> String {
+        "Planet X".to_string()
+    }
+    fn effect(&self) -> PlanetEffect {
+        fn apply(p: &mut Planetarium) {
+            p.level_up(HandRank::FiveOfAKind);
+        }
+        Arc::new(Mutex::new(apply))
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Ceres {}
+
+impl Planet for Ceres {
+    fn name(&self) -> String {
+        "Ceres".to_string()
+    }
+    fn effect(&self) -> PlanetEffect {
+        fn apply(p: &mut Planetarium) {
+            p.level_up(HandRank::FlushHouse);
+        }
+        Arc::new(Mutex::new(apply))
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Eris {}
+
+impl Planet for Eris {
+    fn name(&self) -> String {
+        "Eris".to_string()
+    }
+    fn effect(&self) -> PlanetEffect {
+        fn apply(p: &mut Planetarium) {
+            p.level_up(HandRank::FlushFive);
+        }
+        Arc::new(Mutex::new(apply))
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Copy)]
 pub struct Level {
@@ -26,6 +266,7 @@ pub enum HandRank {
     FlushFive,
 }
 
+// Planetarium tracks hand leveling and play count
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub struct Planetarium {

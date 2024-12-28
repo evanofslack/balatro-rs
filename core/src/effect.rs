@@ -28,6 +28,7 @@ impl EffectRegistry {
                     Effects::OnDiscard(_) => self.on_discard.push(e),
                     Effects::OnScore(_) => self.on_score.push(e),
                     Effects::OnHandRank(_) => self.on_handrank.push(e),
+                    _ => {}
                 }
             }
         }
@@ -42,6 +43,7 @@ pub enum Effects {
     OnDiscard(Arc<Mutex<dyn Fn(&mut Game, MadeHand) + Send + 'static>>),
     OnScore(Arc<Mutex<dyn Fn(&mut Game, MadeHand) + Send + 'static>>),
     OnHandRank(Arc<Mutex<dyn Fn(&mut Game) + Send + 'static>>),
+    OnUse(Arc<Mutex<dyn Fn(&mut Game) + Send + 'static>>),
 }
 
 impl std::fmt::Debug for Effects {
@@ -51,6 +53,7 @@ impl std::fmt::Debug for Effects {
             Self::OnDiscard(_) => write!(f, "OnDiscard"),
             Self::OnScore(_) => write!(f, "OnScore"),
             Self::OnHandRank(_) => write!(f, "OnHandRank"),
+            Self::OnUse(_) => write!(f, "OnUse"),
         }
     }
 }

@@ -56,9 +56,9 @@ impl fmt::Display for Rarity {
 // We could pass around `Box<dyn Joker>` but it doesn't work so nice with pyo3 and serde.
 // Since we know all variants (one for each joker), we define an enum that implements
 // our `Joker` trait. This macro just reduces the amount of boilerplate we have to copy
-// to match each joker and call its methods.
-// It ends up creating an enum `Jokers` that contains each joker struct (where each struct impl `Joker`), and we impl `Joker`
-// for `Jokers` enum by matching each case and calling underlying methods.
+// to match each joker and call its methods. It ends up creating an enum `Jokers` that
+// contains each joker struct (where each struct impl `Joker`), and we impl `Joker` for
+// `Jokers` enum by matching each case and calling underlying methods.
 // https://stackoverflow.com/questions/63848427/using-enums-for-dynamic-polymorphism-in-rust/63849405#63849405
 macro_rules! make_jokers {
     ($($x:ident), *) => {
