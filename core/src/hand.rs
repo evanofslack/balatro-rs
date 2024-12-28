@@ -7,7 +7,7 @@ use crate::card::Card;
 use crate::card::Suit;
 use crate::card::Value;
 use crate::error::PlayHandError;
-use crate::rank::HandRank;
+use crate::planet::HandRank;
 
 // Hand, SelectHand and MadeHand are all representations of a collection of Card,
 // just at different phases in the cycle of selecting, executing and scoring cards.

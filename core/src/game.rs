@@ -8,6 +8,7 @@ use crate::effect::{EffectRegistry, Effects};
 use crate::error::GameError;
 use crate::hand::{MadeHand, SelectHand};
 use crate::joker::{Joker, Jokers};
+use crate::planet::Planetarium;
 use crate::shop::Shop;
 use crate::stage::{Blind, End, Stage};
 
@@ -17,6 +18,7 @@ use std::fmt;
 pub struct Game {
     pub config: Config,
     pub shop: Shop,
+    pub planetarium: Planetarium,
     pub deck: Deck,
     pub available: Available,
     pub discarded: Vec<Card>,
@@ -49,6 +51,7 @@ impl Game {
         let ante_start = Ante::try_from(config.ante_start).unwrap_or(Ante::One);
         Self {
             shop: Shop::new(),
+            planetarium: Planetarium::new(),
             deck: Deck::default(),
             available: Available::default(),
             discarded: Vec::new(),
@@ -164,8 +167,9 @@ impl Game {
 
     pub(crate) fn calc_score(&mut self, hand: MadeHand) -> usize {
         // compute chips and mult from hand level
-        self.chips += hand.rank.level().chips;
-        self.mult += hand.rank.level().mult;
+        let level = self.planetarium.play(hand.rank);
+        self.chips += level.chips;
+        self.mult += level.mult;
 
         // add chips for each played card
         let card_chips: usize = hand.hand.cards().iter().map(|c| c.chips()).sum();
