@@ -85,6 +85,33 @@ impl JokerGenerator {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
+pub struct PlanetGenerator {}
+
+impl PlanetGenerator {
+    // Randomly generate planet
+    // 70% chance Common, 25% chance Uncommon, 5% chance Rare.
+    // Legendary can only appear from Soul Spectral Card.
+    fn gen_rarity(&self) -> Rarity {
+        // For now, we only have common jokers...
+        return Rarity::Common;
+        // let choices = [Rarity::Common, Rarity::Uncommon, Rarity::Rare];
+        // let weights = [70, 25, 5];
+        // let dist = WeightedIndex::new(&weights).unwrap();
+        // let mut rng = thread_rng();
+        // return choices[dist.sample(&mut rng)].clone();
+    }
+
+    // Generate a random new joker
+    pub(crate) fn gen_planet(&self) -> Planets {
+        let i = thread_rng().gen_range(0..choices.len());
+        // TODO: don't regenerate already generated jokers.
+        // track with hashmap.
+        return choices[i].clone();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

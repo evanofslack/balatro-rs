@@ -1,5 +1,6 @@
 use pyo3::pyclass;
 use std::sync::{Arc, Mutex};
+use strum::EnumIter;
 
 pub type PlanetEffect = Arc<Mutex<dyn Fn(&mut Planetarium) + Send + 'static>>;
 
@@ -16,7 +17,7 @@ macro_rules! make_planets {
     ($($x:ident), *) => {
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         #[cfg_attr(feature = "python", pyclass(eq))]
-        #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+        #[derive(Debug, Clone, EnumIter, Eq, PartialEq, Hash)]
         pub enum Planets {
             $(
                 $x($x),
