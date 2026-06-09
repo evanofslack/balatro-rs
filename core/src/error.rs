@@ -1,4 +1,6 @@
+#[cfg(feature = "python")]
 use pyo3::exceptions::PyException;
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 use thiserror::Error;
 

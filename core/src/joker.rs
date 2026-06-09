@@ -2,6 +2,7 @@ use crate::card::Suit;
 use crate::effect::Effects;
 use crate::game::Game;
 use crate::hand::MadeHand;
+#[cfg(feature = "python")]
 use pyo3::pyclass;
 use std::fmt;
 use std::sync::{Arc, Mutex};

@@ -3,6 +3,7 @@ use crate::config::Config;
 use crate::error::ActionSpaceError;
 use crate::game::Game;
 use crate::stage::Blind;
+#[cfg(feature = "python")]
 use pyo3::pyclass;
 
 // Hard code a bounded action space.

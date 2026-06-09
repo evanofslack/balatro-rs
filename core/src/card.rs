@@ -1,5 +1,6 @@
 #[cfg(feature = "colored")]
 use colored::Colorize;
+#[cfg(feature = "python")]
 use pyo3::pyclass;
 use std::{
     fmt,
