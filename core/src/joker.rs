@@ -10,9 +10,21 @@ use strum::{EnumIter, IntoEnumIterator};
 
 pub trait Joker: std::fmt::Debug + Clone {
     fn name(&self) -> String;
-    fn desc(&self) -> String;
-    fn cost(&self) -> usize;
+    fn blueprint_compatible(&self) -> bool {
+        true
+    }
+    fn perishable_compatible(&self) -> bool {
+        true
+    }
+    fn eternal_compatible(&self) -> bool {
+        true
+    }
     fn rarity(&self) -> Rarity;
+    fn cost(&self) -> usize;
+    fn sell_value(&self) -> usize {
+        std::cmp::max(1, self.cost() / 2)
+    }
+    fn desc(&self) -> String;
     fn categories(&self) -> Vec<Categories>;
     fn effects(&self, game: &Game) -> Vec<Effects>;
 }
@@ -80,10 +92,31 @@ macro_rules! make_jokers {
                     )*
                 }
             }
-            fn desc(&self) -> String {
+            fn blueprint_compatible(&self) -> bool {
                 match self {
                     $(
-                        Jokers::$x(joker) => joker.desc(),
+                        Jokers::$x(joker) => joker.blueprint_compatible(),
+                    )*
+                }
+            }
+            fn perishable_compatible(&self) -> bool {
+                match self {
+                    $(
+                        Jokers::$x(joker) => joker.perishable_compatible(),
+                    )*
+                }
+            }
+            fn eternal_compatible(&self) -> bool {
+                match self {
+                    $(
+                        Jokers::$x(joker) => joker.eternal_compatible(),
+                    )*
+                }
+            }
+            fn rarity(&self) -> Rarity {
+                match self {
+                    $(
+                        Jokers::$x(joker) => joker.rarity(),
                     )*
                 }
             }
@@ -94,10 +127,17 @@ macro_rules! make_jokers {
                     )*
                 }
             }
-            fn rarity(&self) -> Rarity {
+            fn sell_value(&self) -> usize {
                 match self {
                     $(
-                        Jokers::$x(joker) => joker.rarity(),
+                        Jokers::$x(joker) => joker.sell_value(),
+                    )*
+                }
+            }
+            fn desc(&self) -> String {
+                match self {
+                    $(
+                        Jokers::$x(joker) => joker.desc(),
                     )*
                 }
             }
@@ -181,14 +221,14 @@ impl Joker for TheJoker {
     fn name(&self) -> String {
         "Joker".to_string()
     }
-    fn desc(&self) -> String {
-        "+4 Mult".to_string()
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
     }
     fn cost(&self) -> usize {
         2
     }
-    fn rarity(&self) -> Rarity {
-        Rarity::Common
+    fn desc(&self) -> String {
+        "+4 Mult".to_string()
     }
     fn categories(&self) -> Vec<Categories> {
         vec![Categories::MultPlus]
