@@ -164,7 +164,7 @@ impl Game {
         return Ok(());
     }
 
-    pub fn calc_score(&mut self, hand: MadeHand) -> usize {
+    pub fn calc_score(&mut self, mut hand: MadeHand) -> usize {
         // compute chips and mult from hand level
         self.chips += hand.rank.level().chips;
         self.mult += hand.rank.level().mult;
@@ -172,6 +172,14 @@ impl Game {
         // add chips for each played card
         let card_chips: usize = hand.hand.cards().iter().map(|c| c.chips()).sum();
         self.chips += card_chips;
+
+        // Run hand modifiers (e.g. Pareidolia) before scoring effects
+        for e in self.effect_registry.on_modify_hand.clone() {
+            match e {
+                Effects::OnModifyHand(f) => f.lock().unwrap()(self, &mut hand),
+                _ => (),
+            }
+        }
 
         // Apply effects that modify game.chips and game.mult
         for e in self.effect_registry.on_score.clone() {
@@ -390,7 +398,7 @@ pub fn score_hand(
     played_cards: &[Card],
     held_cards: &[Card],
     jokers: &[Jokers],
-    hand: MadeHand,
+    mut hand: MadeHand,
 ) -> usize {
     let card_chips: usize = played_cards.iter().map(|c| c.chips()).sum();
     let mut g = Game::default();
@@ -402,9 +410,18 @@ pub fn score_hand(
 
     for j in jokers {
         for e in j.effects(&g) {
-            if let Effects::OnScore(_) = &e {
-                g.effect_registry.on_score.push(e);
+            match e {
+                Effects::OnScore(_) => g.effect_registry.on_score.push(e),
+                Effects::OnModifyHand(_) => g.effect_registry.on_modify_hand.push(e),
+                _ => (),
             }
+        }
+    }
+
+    for e in g.effect_registry.on_modify_hand.clone() {
+        match e {
+            Effects::OnModifyHand(f) => f.lock().unwrap()(&mut g, &mut hand),
+            _ => (),
         }
     }
 

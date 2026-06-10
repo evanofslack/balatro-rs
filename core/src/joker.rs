@@ -1,7 +1,7 @@
-use crate::card::{Suit, Value};
+use crate::card::{Card, Suit, Value};
 use crate::effect::Effects;
 use crate::game::Game;
-use crate::hand::MadeHand;
+use crate::hand::{MadeHand, SelectHand};
 #[cfg(feature = "python")]
 use pyo3::pyclass;
 use std::fmt;
@@ -194,6 +194,9 @@ make_jokers!(
     //SteelJoker,
     ScaryFace,
     AbstractJoker,
+    //DelayedGratification,
+    //Hack,
+    Pareidolia,
     ShootTheMoon,
     GreenJoker
 );
@@ -899,6 +902,44 @@ impl Joker for AbstractJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Pareidolia {}
+
+impl Joker for Pareidolia {
+    fn name(&self) -> String {
+        "Pareidolia".to_string()
+    }
+    fn blueprint_compatible(&self) -> bool {
+        false
+    }
+    fn desc(&self) -> String {
+        "All cards are considered face cards".to_string()
+    }
+    fn cost(&self) -> usize {
+        5
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Uncommon
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Effect]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(_g: &mut Game, hand: &mut MadeHand) {
+            for card in &mut hand.all {
+                card.is_face_card = true;
+            }
+            let cards: Vec<Card> = hand.hand.cards().into_iter().map(|mut c| {
+                c.is_face_card = true;
+                c
+            }).collect();
+            hand.hand = SelectHand::new(cards);
+        }
+        vec![Effects::OnModifyHand(Arc::new(Mutex::new(apply)))]
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
 pub struct ShootTheMoon {}
 
 impl Joker for ShootTheMoon {
@@ -1513,5 +1554,44 @@ mod tests {
         g.buy_joker(sf).unwrap();
         g.stage = Stage::Blind(Blind::Small);
         assert_eq!(g.calc_score(best.clone()), 112);
+    }
+
+    #[test]
+    fn test_pareidolia_scary_face() {
+        // Ace low straight: no natural face cards
+        let ace = Card::new(Value::Ace, Suit::Club);
+        let two = Card::new(Value::Two, Suit::Heart);
+        let three = Card::new(Value::Three, Suit::Spade);
+        let four = Card::new(Value::Four, Suit::Diamond);
+        let five = Card::new(Value::Five, Suit::Club);
+        let hand = SelectHand::new(vec![ace, two, three, four, five]);
+        let best = hand.best_hand().unwrap();
+
+        // Straight (level 1): 30 chips, 4 mult
+        // Card chips: 11 + 2 + 3 + 4 + 5 = 25
+        // (30 + 25) * 4 = 220
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 220);
+
+        // Add Scary Face: still no face cards, so still 220
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let sf = Jokers::ScaryFace(ScaryFace {});
+        g.shop.jokers.push(sf.clone());
+        g.buy_joker(sf).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 220);
+
+        // Add Pareidolia: now all cards are face cards
+        // Scary Face gives +30 chips × 5 = +150
+        // (30 + 25 + 150) * 4 = 820
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let p = Jokers::Pareidolia(Pareidolia {});
+        g.shop.jokers.push(p.clone());
+        g.buy_joker(p).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 820);
     }
 }
