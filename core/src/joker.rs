@@ -1,4 +1,4 @@
-use crate::card::Suit;
+use crate::card::{Suit, Value};
 use crate::effect::Effects;
 use crate::game::Game;
 use crate::hand::MadeHand;
@@ -134,7 +134,10 @@ make_jokers!(
     WilyJoker,
     CleverJoker,
     DeviousJoker,
-    CraftyJoker
+    CraftyJoker,
+    ShootTheMoon,
+    MysticSummit,
+    GreenJoker
 );
 
 impl Jokers {
@@ -614,6 +617,98 @@ impl Joker for CraftyJoker {
         fn apply(g: &mut Game, hand: MadeHand) {
             if hand.hand.is_flush().is_some() {
                 g.chips += 80
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct ShootTheMoon {}
+
+impl Joker for ShootTheMoon {
+    fn name(&self) -> String {
+        "Shoot the Moon".to_string()
+    }
+    fn desc(&self) -> String {
+        "Each Queen held in hand gives +13 Mult".to_string()
+    }
+    fn cost(&self) -> usize {
+        7
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultPlus]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            let queens = g.held.iter().filter(|c| c.value == Value::Queen).count();
+            g.mult += queens * 13;
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct MysticSummit {}
+
+impl Joker for MysticSummit {
+    fn name(&self) -> String {
+        "Mystic Summit".to_string()
+    }
+    fn desc(&self) -> String {
+        "+15 Mult when 0 discards remaining".to_string()
+    }
+    fn cost(&self) -> usize {
+        5
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultPlus]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            if g.discards == 0 {
+                g.mult += 15;
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct GreenJoker {}
+
+impl Joker for GreenJoker {
+    fn name(&self) -> String {
+        "Green Joker".to_string()
+    }
+    fn desc(&self) -> String {
+        "+1 Mult per hand played this round, -1 Mult per discard".to_string()
+    }
+    fn cost(&self) -> usize {
+        5
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultPlus]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            let hands_used = g.config.plays.saturating_sub(g.plays);
+            let discards_used = g.config.discards.saturating_sub(g.discards);
+            let net = (hands_used as isize) - (discards_used as isize);
+            if net > 0 {
+                g.mult += net as usize;
             }
         }
         vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
