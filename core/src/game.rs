@@ -397,6 +397,7 @@ pub fn score_hand(
     g.deck = Deck::new();
     g.chips = base_chips + card_chips;
     g.mult = base_mult;
+    g.jokers = jokers.to_vec();
     g.held = held_cards.to_vec();
 
     for j in jokers {
