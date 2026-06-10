@@ -190,6 +190,7 @@ make_jokers!(
     //Dusk,
     //RaisedFist,
     //ChaosTheClown,
+    Fibonacci,
     ShootTheMoon,
     GreenJoker
 );
@@ -795,6 +796,44 @@ impl Joker for MysticSummit {
         vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
     }
 }
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Fibonacci {}
+
+impl Joker for Fibonacci {
+    fn name(&self) -> String {
+        "Fibonacci".to_string()
+    }
+    fn desc(&self) -> String {
+        "Each played Ace, 2, 3, 5, and 8 give +8 Mult when scored".to_string()
+    }
+    fn cost(&self) -> usize {
+        8
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Uncommon
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultPlus]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            for card in _hand.hand.cards() {
+                if card.value == Value::Ace
+                    || card.value == Value::Two
+                    || card.value == Value::Three
+                    || card.value == Value::Five
+                    || card.value == Value::Eight
+                {
+                    g.mult += 8;
+                }
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct ShootTheMoon {}
@@ -1070,15 +1109,15 @@ mod tests {
 
         // Score straight without joker
         // straight (level 1) -> 30 chips, 4 mult
-        // Played cards (2, 3, 4, 5, 6) -> 15 chips
-        // (15 + 30) * (4) = 180
-        let before = 180;
+        // Played cards (2, 3, 4, 5, 6) -> 20 chips
+        // (20 + 30) * (4) = 200
+        let before = 200;
         // Score straight with joker
         // straight (level 1) -> 30 chips, 4 mult
-        // Played cards (2, 3, 4, 5, 6) -> 15 chips
+        // Played cards (2, 3, 4, 5, 6) -> 20 chips
         // joker w/ straight = +12 mult
-        // (15+ 30) * (4 + 12) = 720
-        let after = 720;
+        // (20 + 30) * (4 + 12) = 800
+        let after = 800;
 
         let j = Jokers::CrazyJoker(CrazyJoker {});
         score_before_after_joker(j, hand, before, after);
@@ -1095,15 +1134,15 @@ mod tests {
 
         // Score flush without joker
         // flush (level 1) -> 35 chips, 4 mult
-        // Played cards (2, 3, 4, 5, 10) -> 19 chips
-        // (19 + 35) * (4) = 216
-        let before = 216;
+        // Played cards (2, 3, 4, 5, 10) -> 24 chips
+        // (24 + 35) * (4) = 236
+        let before = 236;
         // Score flush with joker
         // flush (level 1) -> 35 chips, 4 mult
-        // Played cards (2, 3, 4, 5, 10) -> 19 chips
+        // Played cards (2, 3, 4, 5, 10) -> 24 chips
         // joker w/ flush = +10 mult
-        // (19 + 35) * (4 + 10) = 756
-        let after = 756;
+        // (24 + 35) * (4 + 10) = 826
+        let after = 826;
 
         let j = Jokers::DrollJoker(DrollJoker {});
         score_before_after_joker(j, hand, before, after);
@@ -1184,15 +1223,15 @@ mod tests {
 
         // Score straight without joker
         // straight (level 1) -> 30 chips, 4 mult
-        // Played cards (2, 3, 4, 5, 6) -> 15 chips
-        // (15 + 30) * (4) = 180
-        let before = 180;
+        // Played cards (2, 3, 4, 5, 6) -> 20 chips
+        // (20 + 30) * (4) = 200
+        let before = 200;
         // Score straight with joker
         // straight (level 1) -> 30 chips, 4 mult
-        // Played cards (2, 3, 4, 5, 6) -> 15 chips
+        // Played cards (2, 3, 4, 5, 6) -> 20 chips
         // joker w/ straight = +100 chips
-        // (15+ 30 + 100) * (4) = 580
-        let after = 580;
+        // (20 + 30 + 100) * (4) = 600
+        let after = 600;
 
         let j = Jokers::DeviousJoker(DeviousJoker {});
         score_before_after_joker(j, hand, before, after);
@@ -1209,15 +1248,15 @@ mod tests {
 
         // Score flush without joker
         // flush (level 1) -> 35 chips, 4 mult
-        // Played cards (2, 3, 4, 5, 10) -> 19 chips
-        // (19 + 35) * (4) = 216
-        let before = 216;
+        // Played cards (2, 3, 4, 5, 10) -> 24 chips
+        // (24 + 35) * (4) = 236
+        let before = 236;
         // Score flush with joker
         // flush (level 1) -> 35 chips, 4 mult
-        // Played cards (2, 3, 4, 5, 10) -> 19 chips
+        // Played cards (2, 3, 4, 5, 10) -> 24 chips
         // joker w/ flush = +80 chips
-        // (19 + 35 + 80) * (4) = 536
-        let after = 536;
+        // (24 + 35 + 80) * (4) = 556
+        let after = 556;
         let j = Jokers::CraftyJoker(CraftyJoker {});
         score_before_after_joker(j, hand, before, after);
     }
@@ -1335,5 +1374,26 @@ mod tests {
         g.discards = 0;
         // (5 + 11) * (1 + 15) = 16 * 16 = 256
         assert_eq!(g.calc_score(best.clone()), 256);
+    }
+
+    #[test]
+    fn test_fibonacci() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let two = Card::new(Value::Two, Suit::Heart);
+        let three = Card::new(Value::Three, Suit::Heart);
+        let five = Card::new(Value::Five, Suit::Heart);
+        let eight = Card::new(Value::Eight, Suit::Heart);
+        let hand = SelectHand::new(vec![ace, two, three, five, eight]);
+        let j = Jokers::Fibonacci(Fibonacci {});
+
+        // Flush (level 1): 35 chips, 4 mult
+        // Played (5 cards): 11 + 2 + 3 + 5 + 8 = 29 chips
+        // (35 + 29) * 4 = 256
+        let before = 256;
+
+        // Fibonacci: 1 ace, 1 two, 1 three, 1 five, 1 eight -> +8 mult each
+        // (35 + 29) * (4 + 40) = 64 * 44 = 2816
+        let after = 2816;
+        score_before_after_joker(j, hand, before, after);
     }
 }
