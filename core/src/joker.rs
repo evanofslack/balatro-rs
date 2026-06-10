@@ -860,10 +860,7 @@ impl Joker for ScaryFace {
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
             for card in _hand.hand.cards() {
-                if card.value == Value::Jack
-                    || card.value == Value::Queen
-                    || card.value == Value::King
-                {
+                if card.is_face_card {
                     g.chips += 30;
                 }
             }
