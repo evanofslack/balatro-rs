@@ -810,7 +810,9 @@ impl Joker for GreenJoker {
             let discards_used = g.config.discards.saturating_sub(g.discards);
             let net = (hands_used as isize) - (discards_used as isize);
             if net > 0 {
-                g.mult += net as usize;
+                g.mult = g.mult.saturating_add(net as usize);
+            } else if net < 0 {
+                g.mult = g.mult.saturating_sub((-net) as usize);
             }
         }
         vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
