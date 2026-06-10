@@ -191,6 +191,8 @@ make_jokers!(
     //RaisedFist,
     //ChaosTheClown,
     Fibonacci,
+    //SteelJoker,
+    ScaryFace,
     ShootTheMoon,
     GreenJoker
 );
@@ -836,6 +838,41 @@ impl Joker for Fibonacci {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
+pub struct ScaryFace {}
+
+impl Joker for ScaryFace {
+    fn name(&self) -> String {
+        "Scary Face".to_string()
+    }
+    fn desc(&self) -> String {
+        "Played face cards give +30 chips when scored".to_string()
+    }
+    fn cost(&self) -> usize {
+        4
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Chips]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            for card in _hand.hand.cards() {
+                if card.value == Value::Jack
+                    || card.value == Value::Queen
+                    || card.value == Value::King
+                {
+                    g.chips += 30;
+                }
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
 pub struct ShootTheMoon {}
 
 impl Joker for ShootTheMoon {
@@ -1394,6 +1431,27 @@ mod tests {
         // Fibonacci: 1 ace, 1 two, 1 three, 1 five, 1 eight -> +8 mult each
         // (35 + 29) * (4 + 40) = 64 * 44 = 2816
         let after = 2816;
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_scary_face() {
+        let ace = Card::new(Value::Ace, Suit::Club);
+        let king = Card::new(Value::King, Suit::Club);
+        let queen = Card::new(Value::Queen, Suit::Spade);
+        let jack = Card::new(Value::Jack, Suit::Heart);
+        let ten = Card::new(Value::Ten, Suit::Diamond);
+        let hand = SelectHand::new(vec![ace, jack, queen, king, ten]);
+        let j = Jokers::ScaryFace(ScaryFace {});
+
+        // Straight (level 1): 30 chips, 4 mult
+        // Played (5 cards): 11 + 10 + 10 + 10 + 10 = 51 chips
+        // (30 + 51) * 4 = 324
+        let before = 324;
+
+        // Scary Face: jack, queen, king -> +30 chips each
+        // (30 + 51 + 90) * 4 = 684
+        let after = 684;
         score_before_after_joker(j, hand, before, after);
     }
 }
