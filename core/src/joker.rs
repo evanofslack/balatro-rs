@@ -135,8 +135,22 @@ make_jokers!(
     CleverJoker,
     DeviousJoker,
     CraftyJoker,
-    ShootTheMoon,
+    HalfJoker,
+    JokerStencil,
+    //FourFingers,
+    //Mime,
+    //CreditCard,
+    //CeremonialDagger,
+    Banner,
     MysticSummit,
+    //MarbleJoker,
+    //LoyaltyCard,
+    //8Ball,
+    //Misprint,
+    //Dusk,
+    //RaisedFist,
+    //ChaosTheClown,
+    ShootTheMoon,
     GreenJoker
 );
 
@@ -625,17 +639,17 @@ impl Joker for CraftyJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct ShootTheMoon {}
+pub struct HalfJoker {}
 
-impl Joker for ShootTheMoon {
+impl Joker for HalfJoker {
     fn name(&self) -> String {
-        "Shoot the Moon".to_string()
+        "Half Joker".to_string()
     }
     fn desc(&self) -> String {
-        "Each Queen held in hand gives +13 Mult".to_string()
+        "+20 Mult if played hand contains 3 or fewer cards".to_string()
     }
     fn cost(&self) -> usize {
-        7
+        5
     }
     fn rarity(&self) -> Rarity {
         Rarity::Common
@@ -644,9 +658,69 @@ impl Joker for ShootTheMoon {
         vec![Categories::MultPlus]
     }
     fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, hand: MadeHand) {
+            if hand.hand.len() <= 3 {
+                g.mult += 20;
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct JokerStencil {}
+
+impl Joker for JokerStencil {
+    fn name(&self) -> String {
+        "Joker Stencil".to_string()
+    }
+    fn desc(&self) -> String {
+        "X1 Mult for each empty Joker Slot Joker Stencil included".to_string()
+    }
+    fn cost(&self) -> usize {
+        8
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Uncommon
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultMult]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
-            let queens = g.held.iter().filter(|c| c.value == Value::Queen).count();
-            g.mult += queens * 13;
+            let empty = g.config.joker_slots.saturating_sub(g.jokers.len());
+            if empty > 0 {
+                g.mult *= empty;
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Banner {}
+
+impl Joker for Banner {
+    fn name(&self) -> String {
+        "Banner".to_string()
+    }
+    fn desc(&self) -> String {
+        "+30 Chips for each remaining discard".to_string()
+    }
+    fn cost(&self) -> usize {
+        5
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Chips]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            g.chips += 30 * g.discards;
         }
         vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
     }
@@ -677,6 +751,34 @@ impl Joker for MysticSummit {
             if g.discards == 0 {
                 g.mult += 15;
             }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct ShootTheMoon {}
+
+impl Joker for ShootTheMoon {
+    fn name(&self) -> String {
+        "Shoot the Moon".to_string()
+    }
+    fn desc(&self) -> String {
+        "Each Queen held in hand gives +13 Mult".to_string()
+    }
+    fn cost(&self) -> usize {
+        7
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultPlus]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            let queens = g.held.iter().filter(|c| c.value == Value::Queen).count();
+            g.mult += queens * 13;
         }
         vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
     }
@@ -1076,5 +1178,120 @@ mod tests {
         let after = 536;
         let j = Jokers::CraftyJoker(CraftyJoker {});
         score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_half_joker() {
+        let ac = Card::new(Value::Ace, Suit::Club);
+        let hand = SelectHand::new(vec![ac, ac, ac]);
+
+        // Score 3ok without joker
+        // 3ok (level 1) -> 30 chips, 3 mult
+        // Played cards (3 ace) -> 33 chips
+        // (30 + 33) * 3 = 189
+        let before = 189;
+        // Score 3ok with joker
+        // 3ok (level 1) -> 30 chips, 3 mult
+        // Played cards (3 ace) -> 33 chips
+        // joker w/ <=3 cards = +20 mult
+        // (30 + 33) * (3 + 20) = 1449
+        let after = 1449;
+
+        let j = Jokers::HalfJoker(HalfJoker {});
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_joker_stencil() {
+        let ace = Card::new(Value::Ace, Suit::Club);
+        let hand = SelectHand::new(vec![ace]);
+        let best = hand.best_hand().unwrap();
+
+        // High card (level 1) -> 5 chips, 1 mult
+        // Played cards (1 ace) -> 11 chips
+        // (5 + 11) * 1 = 16
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 16);
+
+        // Stencil alone in 5 slots = 4 empty -> X4
+        // (5 + 11) * (1 * 4) = 64
+        let j = Jokers::JokerStencil(JokerStencil {});
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 64);
+
+        // Add another joker -> 3 empty -> X3
+        let j2 = Jokers::Banner(Banner {});
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j2.clone());
+        g.buy_joker(j2).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        // (5 + 11 + 4*30) * (1 * 3) = 136 * 3 = 408
+        assert_eq!(g.calc_score(best.clone()), 408);
+    }
+
+    #[test]
+    fn test_banner_joker() {
+        let ace = Card::new(Value::Ace, Suit::Club);
+        let hand = SelectHand::new(vec![ace]);
+        let best = hand.best_hand().unwrap();
+        let j = Jokers::Banner(Banner {});
+
+        // High card (level 1) -> 5 chips, 1 mult
+        // Played cards (1 ace) -> 11 chips
+        // (5 + 11) * (1) = 16
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 16);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // Banner: 4 discards * 30 chips = +120
+        // (5 + 11 + 120) * 1 = 136
+        assert_eq!(g.calc_score(best.clone()), 136);
+
+        g.discards = 0;
+        // Banner: +0 chips
+        // (5 + 11 + 0) * 1 = 16
+        assert_eq!(g.calc_score(best.clone()), 16);
+    }
+
+    #[test]
+    fn test_mystic_summit() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let best = hand.best_hand().unwrap();
+        let j = Jokers::MysticSummit(MysticSummit {});
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 ace): 11 chips
+        // (5 + 11) * 1 = 16
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 16);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // discards = 4 (default), so Mystic Summit does NOT fire
+        // (5 + 11) * 1 = 16
+        assert_eq!(g.calc_score(best.clone()), 16);
+
+        // Now set discards to 0 -> +15 mult
+        g.discards = 0;
+        // (5 + 11) * (1 + 15) = 16 * 16 = 256
+        assert_eq!(g.calc_score(best.clone()), 256);
     }
 }

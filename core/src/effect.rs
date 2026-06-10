@@ -21,7 +21,11 @@ impl EffectRegistry {
         };
     }
     pub fn register_jokers(&mut self, jokers: Vec<Jokers>, game: &Game) {
-        for j in jokers.clone() {
+        self.on_play.clear();
+        self.on_discard.clear();
+        self.on_score.clear();
+        self.on_handrank.clear();
+        for j in jokers {
             for e in j.effects(game) {
                 match e {
                     Effects::OnPlay(_) => self.on_play.push(e),
