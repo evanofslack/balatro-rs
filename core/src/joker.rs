@@ -193,6 +193,7 @@ make_jokers!(
     Fibonacci,
     //SteelJoker,
     ScaryFace,
+    AbstractJoker,
     ShootTheMoon,
     GreenJoker
 );
@@ -873,6 +874,34 @@ impl Joker for ScaryFace {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
+pub struct AbstractJoker {}
+
+impl Joker for AbstractJoker {
+    fn name(&self) -> String {
+        "Abstract Joker".to_string()
+    }
+    fn desc(&self) -> String {
+        "+3 Mult for each Joker card".to_string()
+    }
+    fn cost(&self) -> usize {
+        4
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultPlus]
+    }
+    fn effects(&self, _game: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            g.mult += g.jokers.len() * 3;
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
 pub struct ShootTheMoon {}
 
 impl Joker for ShootTheMoon {
@@ -1453,5 +1482,39 @@ mod tests {
         // (30 + 51 + 90) * 4 = 684
         let after = 684;
         score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_abstract_joker() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let best = hand.best_hand().unwrap();
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 ace): 11 chips
+        // (5 + 11) * 1 = 16
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 16);
+
+        // Buy Abstract Joker -> 1 joker, +3 mult
+        // (5 + 11) * (1 + 3) = 64
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let aj = Jokers::AbstractJoker(AbstractJoker {});
+        g.shop.jokers.push(aj.clone());
+        g.buy_joker(aj).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 64);
+
+        // Buy Scary Face -> 2 jokers, +6 mult
+        // (5 + 11) * (1 + 6) = 112
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let sf = Jokers::ScaryFace(ScaryFace {});
+        g.shop.jokers.push(sf.clone());
+        g.buy_joker(sf).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 112);
     }
 }
