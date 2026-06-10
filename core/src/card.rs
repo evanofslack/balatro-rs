@@ -165,11 +165,13 @@ pub struct Card {
     pub edition: Edition,
     pub enhancement: Option<Enhancement>,
     pub seal: Option<Seal>,
+    pub is_face_card: bool,
 }
 
 impl Card {
     pub fn new(value: Value, suit: Suit) -> Self {
         let id = CARD_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let is_face_card = value == Value::Jack || value == Value::Queen || value == Value::King;
         Self {
             value,
             suit,
@@ -177,22 +179,16 @@ impl Card {
             edition: Edition::Base,
             enhancement: None,
             seal: None,
-        }
-    }
-
-    pub fn is_face(&self) -> bool {
-        match self.value {
-            Value::Jack | Value::Queen | Value::King => true,
-            _ => false,
+            is_face_card,
         }
     }
 
     pub fn is_even(&self) -> bool {
-        self.value != Value::Ace && !self.is_face() && self.value as u16 % 2 == 0
+        self.value != Value::Ace && !self.is_face_card && self.value as u16 % 2 == 0
     }
 
     pub fn is_odd(&self) -> bool {
-        self.value == Value::Ace || !self.is_face() && self.value as u16 % 2 != 0
+        self.value == Value::Ace || !self.is_face_card && self.value as u16 % 2 != 0
     }
 
     pub fn chips(&self) -> usize {
@@ -258,9 +254,9 @@ mod tests {
     #[test]
     fn test_face() {
         let king = Card::new(Value::King, Suit::Heart);
-        assert_eq!(king.is_face(), true);
+        assert_eq!(king.is_face_card, true);
         let two = Card::new(Value::Two, Suit::Diamond);
-        assert_eq!(two.is_face(), false);
+        assert_eq!(two.is_face_card, false);
     }
 
     #[test]
