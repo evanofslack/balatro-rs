@@ -198,7 +198,8 @@ make_jokers!(
     //Hack,
     Pareidolia,
     //GrosMichel,
-    EvenSteven
+    EvenSteven,
+    OddTodd
 );
 
 impl Jokers {
@@ -975,6 +976,38 @@ impl Joker for EvenSteven {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct OddTodd {}
+
+impl Joker for OddTodd {
+    fn name(&self) -> String {
+        "Odd Todd".to_string()
+    }
+    fn desc(&self) -> String {
+        "Played cards with odd rank give +31 Chips when scored".to_string()
+    }
+    fn cost(&self) -> usize {
+        4
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Chips]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            for card in _hand.hand.cards() {
+                if card.is_odd() {
+                    g.chips += 31;
+                }
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::{Card, Suit, Value};
@@ -1606,6 +1639,47 @@ mod tests {
 
         // Even Steven: 0 even cards -> no bonus
         let after = 280;
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_odd_todd() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let three = Card::new(Value::Three, Suit::Heart);
+        let five = Card::new(Value::Five, Suit::Heart);
+        let seven = Card::new(Value::Seven, Suit::Heart);
+        let nine = Card::new(Value::Nine, Suit::Heart);
+        let hand = SelectHand::new(vec![ace, three, five, seven, nine]);
+        let j = Jokers::OddTodd(OddTodd {});
+
+        // Flush (level 1): 35 chips, 4 mult
+        // Played (5 cards): 11 + 3 + 5 + 7 + 9 = 35 chips
+        // (35 + 35) * 4 = 280
+        let before = 280;
+
+        // Odd Todd: 5 odd cards * +31 chips = +155 chips
+        // (35 + 35 + 155) * 4 = 225 * 4 = 900
+        let after = 900;
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_odd_todd_even_cards() {
+        let two = Card::new(Value::Two, Suit::Club);
+        let four = Card::new(Value::Four, Suit::Club);
+        let six = Card::new(Value::Six, Suit::Club);
+        let eight = Card::new(Value::Eight, Suit::Club);
+        let ten = Card::new(Value::Ten, Suit::Club);
+        let hand = SelectHand::new(vec![two, four, six, eight, ten]);
+        let j = Jokers::OddTodd(OddTodd {});
+
+        // Flush (level 1): 35 chips, 4 mult
+        // Played (5 cards): 2 + 4 + 6 + 8 + 10 = 30 chips
+        // (35 + 30) * 4 = 260
+        let before = 260;
+
+        // Odd Todd: 0 odd cards -> no bonus
+        let after = 260;
         score_before_after_joker(j, hand, before, after);
     }
 }
