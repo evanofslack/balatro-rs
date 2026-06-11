@@ -1,4 +1,4 @@
-use crate::card::{Card, Suit, Value};
+use crate::card::{Card, Enhancement, Suit, Value};
 use crate::effect::Effects;
 use crate::game::Game;
 use crate::hand::{MadeHand, SelectHand};
@@ -232,7 +232,11 @@ make_jokers!(
     //Shortcut,
     //Hologram,
     //Vagabond,
-    Baron
+    Baron,
+    //Cloud9,
+    //Rocket,
+    //Obelisk,
+    MidasMask
 );
 
 impl Jokers {
@@ -1168,9 +1172,52 @@ impl Joker for Baron {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct MidasMask {}
+
+impl Joker for MidasMask {
+    fn name(&self) -> String {
+        "Midas Mask".to_string()
+    }
+    fn blueprint_compatible(&self) -> bool {
+        false
+    }
+    fn desc(&self) -> String {
+        "All played cards are converted to Gold cards when scored".to_string()
+    }
+    fn cost(&self) -> usize {
+        7
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Uncommon
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Effect]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(_g: &mut Game, hand: &mut MadeHand) {
+            for card in &mut hand.all {
+                card.enhancement = Some(Enhancement::Gold);
+            }
+            let cards: Vec<Card> = hand
+                .hand
+                .cards()
+                .into_iter()
+                .map(|mut c| {
+                    c.enhancement = Some(Enhancement::Gold);
+                    c
+                })
+                .collect();
+            hand.hand = SelectHand::new(cards);
+        }
+        vec![Effects::OnModifyHand(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::card::{Card, Suit, Value};
+    use crate::card::{Card, Enhancement, Suit, Value};
     use crate::hand::SelectHand;
     use crate::stage::{Blind, Stage};
 
@@ -2035,5 +2082,21 @@ mod tests {
 
         // Baron: 0 kings -> no bonus
         assert_eq!(g.calc_score(best.clone()), 64);
+    }
+
+    #[test]
+    fn test_midas_mask() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace, ace]);
+        let j = Jokers::MidasMask(MidasMask {});
+
+        // Pair (level 1): 10 chips, 2 mult
+        // Played (2 aces): 22 chips
+        // (10 + 22) * 2 = 64
+        let before = 64;
+
+        // Midas Mask converts to Gold but Gold has no game logic yet -> same score
+        let after = 64;
+        score_before_after_joker(j, hand, before, after);
     }
 }
