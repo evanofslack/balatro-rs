@@ -266,7 +266,9 @@ make_jokers!(
     //Castle,
     SmileyFace,
     //Campfire,
-    GoldenTicket
+    GoldenTicket,
+    //MrBones,
+    Acrobat
 );
 
 impl Jokers {
@@ -1465,6 +1467,36 @@ impl Joker for GoldenTicket {
                 if card.enhancement == Some(Enhancement::Gold) {
                     g.money += 4;
                 }
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Acrobat {}
+
+impl Joker for Acrobat {
+    fn name(&self) -> String {
+        "Acrobat".to_string()
+    }
+    fn desc(&self) -> String {
+        "X3 Mult on final hand of round".to_string()
+    }
+    fn cost(&self) -> usize {
+        6
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Uncommon
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultMult]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            if g.plays == 0 {
+                g.mult *= 3;
             }
         }
         vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
@@ -2675,5 +2707,48 @@ mod tests {
         let money_before = g.money;
         g.calc_score(hand.best_hand().unwrap());
         assert_eq!(g.money, money_before + 4);
+    }
+
+    #[test]
+    fn test_acrobat_final_hand() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::Acrobat(Acrobat {});
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        g.calc_score(hand.best_hand().unwrap());
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // Final hand: plays == 0
+        g.plays = 0;
+        // High card ace: (5 + 11) * 1 = 16
+        // Acrobat X3: 16 * 3 = 48
+        assert_eq!(g.calc_score(hand.best_hand().unwrap()), 48);
+    }
+
+    #[test]
+    fn test_acrobat_not_final_hand() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::Acrobat(Acrobat {});
+
+        let mut g = Game::default();
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // Not final hand: plays > 0
+        g.plays = 1;
+        // High card ace: (5 + 11) * 1 = 16
+        // Acrobat: no bonus
+        assert_eq!(g.calc_score(hand.best_hand().unwrap()), 16);
     }
 }
