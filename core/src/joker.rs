@@ -264,7 +264,9 @@ make_jokers!(
     WalkieTalkie,
     //Seltzer,
     //Castle,
-    SmileyFace
+    SmileyFace,
+    //Campfire,
+    GoldenTicket
 );
 
 impl Jokers {
@@ -1437,6 +1439,38 @@ impl Joker for SmileyFace {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct GoldenTicket {}
+
+impl Joker for GoldenTicket {
+    fn name(&self) -> String {
+        "Golden Ticket".to_string()
+    }
+    fn desc(&self) -> String {
+        "Played Gold cards give $4 when scored".to_string()
+    }
+    fn cost(&self) -> usize {
+        5
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Economy]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            for card in _hand.hand.cards() {
+                if card.enhancement == Some(Enhancement::Gold) {
+                    g.money += 4;
+                }
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::{Card, Enhancement, Suit, Value};
@@ -2600,5 +2634,46 @@ mod tests {
         // Smiley Face: 0 face cards -> no bonus
         let after = 16;
         score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_golden_ticket_no_gold() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace, ace]);
+        let j = Jokers::GoldenTicket(GoldenTicket {});
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        let score = g.calc_score(hand.best_hand().unwrap());
+        assert_eq!(score, 64);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let money_before = g.money;
+        g.calc_score(hand.best_hand().unwrap());
+        assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_golden_ticket_with_gold() {
+        let mut ace = Card::new(Value::Ace, Suit::Heart);
+        ace.enhancement = Some(Enhancement::Gold);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::GoldenTicket(GoldenTicket {});
+
+        let mut g = Game::default();
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let money_before = g.money;
+        g.calc_score(hand.best_hand().unwrap());
+        assert_eq!(g.money, money_before + 4);
     }
 }
