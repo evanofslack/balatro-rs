@@ -252,7 +252,8 @@ make_jokers!(
     //StoneJoker,
     //GoldenJoker,
     //LuckyCat,
-    BaseballCard
+    BaseballCard,
+    Bull
 );
 
 impl Jokers {
@@ -1332,6 +1333,34 @@ impl Joker for BaseballCard {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Bull {}
+
+impl Joker for Bull {
+    fn name(&self) -> String {
+        "Bull".to_string()
+    }
+    fn desc(&self) -> String {
+        "+2 Chips for each dollar you have".to_string()
+    }
+    fn cost(&self) -> usize {
+        6
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Uncommon
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Chips]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            g.chips += g.money * 2;
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::{Card, Enhancement, Suit, Value};
@@ -2372,6 +2401,60 @@ mod tests {
 
         // High card (level 1): 5 chips, 1 mult
         // Played (1 ace): 11 chips
+        // (5 + 11) * 1 = 16
+        assert_eq!(g.calc_score(best.clone()), 16);
+    }
+
+    #[test]
+    fn test_bull() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::Bull(Bull {});
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        g.money = 100;
+        let best = hand.best_hand().unwrap();
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 ace): 11 chips
+        // (5 + 11) * 1 = 16
+        assert_eq!(g.calc_score(best.clone()), 16);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // Bull: (100 + 1000 - 6) * 2 = 1094 * 2 = 2188 chips
+        // (5 + 11 + 2188) * 1 = 2204
+        assert_eq!(g.calc_score(best.clone()), 2204);
+    }
+
+    #[test]
+    fn test_bull_no_money() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::Bull(Bull {});
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        let best = hand.best_hand().unwrap();
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 ace): 11 chips
+        // (5 + 11) * 1 = 16
+        assert_eq!(g.calc_score(best.clone()), 16);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        g.money = 0;
+
+        // Bull: 0 / 5 * 2 = 0 chips
         // (5 + 11) * 1 = 16
         assert_eq!(g.calc_score(best.clone()), 16);
     }
