@@ -193,6 +193,7 @@ make_jokers!(
     Fibonacci,
     //SteelJoker,
     ScaryFace,
+    Scholar,
     AbstractJoker,
     //DelayedGratification,
     //Hack,
@@ -1008,6 +1009,39 @@ impl Joker for OddTodd {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Scholar {}
+
+impl Joker for Scholar {
+    fn name(&self) -> String {
+        "Scholar".to_string()
+    }
+    fn desc(&self) -> String {
+        "Played Aces give +20 Chips and +4 Mult when scored".to_string()
+    }
+    fn cost(&self) -> usize {
+        4
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Chips, Categories::MultPlus]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            for card in _hand.hand.cards() {
+                if card.value == Value::Ace {
+                    g.chips += 20;
+                    g.mult += 4;
+                }
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::{Card, Suit, Value};
@@ -1680,6 +1714,39 @@ mod tests {
 
         // Odd Todd: 0 odd cards -> no bonus
         let after = 260;
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_scholar() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace, ace]);
+        let j = Jokers::Scholar(Scholar {});
+
+        // Pair (level 1): 10 chips, 2 mult
+        // Played (2 aces): 2 * 11 = 22 chips
+        // (10 + 22) * 2 = 64
+        let before = 64;
+
+        // Scholar: 2 aces * (+20 chips, +4 mult) = +40 chips, +8 mult
+        // (10 + 22 + 40) * (2 + 8) = 72 * 10 = 720
+        let after = 720;
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_scholar_no_aces() {
+        let king = Card::new(Value::King, Suit::Club);
+        let hand = SelectHand::new(vec![king]);
+        let j = Jokers::Scholar(Scholar {});
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 king): 10 chips
+        // (5 + 10) * 1 = 15
+        let before = 15;
+
+        // Scholar: 0 aces -> no bonus
+        let after = 15;
         score_before_after_joker(j, hand, before, after);
     }
 }
