@@ -197,8 +197,8 @@ make_jokers!(
     //DelayedGratification,
     //Hack,
     Pareidolia,
-    ShootTheMoon,
-    GreenJoker
+    //GrosMichel,
+    EvenSteven
 );
 
 impl Jokers {
@@ -928,10 +928,15 @@ impl Joker for Pareidolia {
             for card in &mut hand.all {
                 card.is_face_card = true;
             }
-            let cards: Vec<Card> = hand.hand.cards().into_iter().map(|mut c| {
-                c.is_face_card = true;
-                c
-            }).collect();
+            let cards: Vec<Card> = hand
+                .hand
+                .cards()
+                .into_iter()
+                .map(|mut c| {
+                    c.is_face_card = true;
+                    c
+                })
+                .collect();
             hand.hand = SelectHand::new(cards);
         }
         vec![Effects::OnModifyHand(Arc::new(Mutex::new(apply)))]
@@ -940,17 +945,17 @@ impl Joker for Pareidolia {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct ShootTheMoon {}
+pub struct EvenSteven {}
 
-impl Joker for ShootTheMoon {
+impl Joker for EvenSteven {
     fn name(&self) -> String {
-        "Shoot the Moon".to_string()
+        "Even Steven".to_string()
     }
     fn desc(&self) -> String {
-        "Each Queen held in hand gives +13 Mult".to_string()
+        "Played cards with even rank give +4 Mult when scored".to_string()
     }
     fn cost(&self) -> usize {
-        7
+        4
     }
     fn rarity(&self) -> Rarity {
         Rarity::Common
@@ -960,42 +965,10 @@ impl Joker for ShootTheMoon {
     }
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
-            let queens = g.held.iter().filter(|c| c.value == Value::Queen).count();
-            g.mult += queens * 13;
-        }
-        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct GreenJoker {}
-
-impl Joker for GreenJoker {
-    fn name(&self) -> String {
-        "Green Joker".to_string()
-    }
-    fn desc(&self) -> String {
-        "+1 Mult per hand played this round, -1 Mult per discard".to_string()
-    }
-    fn cost(&self) -> usize {
-        5
-    }
-    fn rarity(&self) -> Rarity {
-        Rarity::Common
-    }
-    fn categories(&self) -> Vec<Categories> {
-        vec![Categories::MultPlus]
-    }
-    fn effects(&self, _in: &Game) -> Vec<Effects> {
-        fn apply(g: &mut Game, _hand: MadeHand) {
-            let hands_used = g.config.plays.saturating_sub(g.plays);
-            let discards_used = g.config.discards.saturating_sub(g.discards);
-            let net = (hands_used as isize) - (discards_used as isize);
-            if net > 0 {
-                g.mult = g.mult.saturating_add(net as usize);
-            } else if net < 0 {
-                g.mult = g.mult.saturating_sub((-net) as usize);
+            for card in _hand.hand.cards() {
+                if card.is_even() {
+                    g.mult += 4;
+                }
             }
         }
         vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
@@ -1593,5 +1566,46 @@ mod tests {
         g.buy_joker(p).unwrap();
         g.stage = Stage::Blind(Blind::Small);
         assert_eq!(g.calc_score(best.clone()), 820);
+    }
+
+    #[test]
+    fn test_even_steven() {
+        let two = Card::new(Value::Two, Suit::Club);
+        let four = Card::new(Value::Four, Suit::Club);
+        let six = Card::new(Value::Six, Suit::Club);
+        let eight = Card::new(Value::Eight, Suit::Club);
+        let ten = Card::new(Value::Ten, Suit::Club);
+        let hand = SelectHand::new(vec![two, four, six, eight, ten]);
+        let j = Jokers::EvenSteven(EvenSteven {});
+
+        // Flush (level 1): 35 chips, 4 mult
+        // Played (5 cards): 2 + 4 + 6 + 8 + 10 = 30 chips
+        // (35 + 30) * 4 = 260
+        let before = 260;
+
+        // Even Steven: 5 even cards * +4 mult = +20 mult
+        // (35 + 30) * (4 + 20) = 65 * 24 = 1560
+        let after = 1560;
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_even_steven_odd_cards() {
+        let three = Card::new(Value::Three, Suit::Club);
+        let five = Card::new(Value::Five, Suit::Club);
+        let seven = Card::new(Value::Seven, Suit::Club);
+        let nine = Card::new(Value::Nine, Suit::Club);
+        let ace = Card::new(Value::Ace, Suit::Club);
+        let hand = SelectHand::new(vec![three, five, seven, nine, ace]);
+        let j = Jokers::EvenSteven(EvenSteven {});
+
+        // Flush (level 1): 35 chips, 4 mult
+        // Played (5 cards): 3 + 5 + 7 + 9 + 11 = 35 chips
+        // (35 + 35) * 4 = 280
+        let before = 280;
+
+        // Even Steven: 0 even cards -> no bonus
+        let after = 280;
+        score_before_after_joker(j, hand, before, after);
     }
 }

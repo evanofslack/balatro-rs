@@ -634,24 +634,6 @@ mod tests {
     }
 
     #[test]
-    fn test_score_hand_shoot_the_moon() {
-        use crate::hand::SelectHand;
-        use crate::joker::*;
-        let ace = Card::new(Value::Ace, Suit::Heart);
-        let queen = Card::new(Value::Queen, Suit::Spade);
-        // Play one ace, hold two queens in hand
-        let played = vec![ace];
-        let held = vec![queen, queen];
-        let jokers = vec![Jokers::ShootTheMoon(ShootTheMoon {})];
-        let hand = SelectHand::new(played.clone()).best_hand().unwrap();
-        // High card (level 1): chips=5, mult=1
-        // Played cards (1 ace): 11 chips
-        // (5 + 11) * (1 + 2*13) = 16 * 27 = 432
-        let score = score_hand(5, 1, &played, &held, &jokers, hand);
-        assert_eq!(score, 432);
-    }
-
-    #[test]
     fn test_score_hand_mystic_summit_active() {
         use crate::hand::SelectHand;
         use crate::joker::*;
