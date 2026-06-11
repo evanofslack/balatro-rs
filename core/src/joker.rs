@@ -238,7 +238,11 @@ make_jokers!(
     //Obelisk,
     MidasMask,
     //Luchador,
-    Photograph
+    Photograph,
+    //GiftCard,
+    //TurtleBean,
+    //Erosion,
+    ReservedParking
 );
 
 impl Jokers {
@@ -1250,6 +1254,39 @@ impl Joker for Photograph {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct ReservedParking {}
+
+impl Joker for ReservedParking {
+    fn name(&self) -> String {
+        "Reserved Parking".to_string()
+    }
+    fn desc(&self) -> String {
+        "Each face card held in hand has a 1 in 2 chance to give $1".to_string()
+    }
+    fn cost(&self) -> usize {
+        6
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Economy]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            let mut rng = rand::thread_rng();
+            for card in &g.held {
+                if card.is_face_card && rng.gen_bool(0.5) {
+                    g.money += 1;
+                }
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::{Card, Enhancement, Suit, Value};
@@ -2166,5 +2203,65 @@ mod tests {
         // Photograph: 0 face cards -> no bonus
         let after = 16;
         score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_reserved_parking() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::ReservedParking(ReservedParking {});
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        g.held = vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::Queen, Suit::Spade),
+            Card::new(Value::Jack, Suit::Heart),
+        ];
+        let best = hand.best_hand().unwrap();
+        g.calc_score(best.clone());
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let mut saw_increase = false;
+        for _ in 0..100 {
+            g.money = 994;
+            g.calc_score(best.clone());
+            if g.money > 994 {
+                saw_increase = true;
+                break;
+            }
+        }
+        assert!(saw_increase, "Reserved Parking should sometimes give money");
+    }
+
+    #[test]
+    fn test_reserved_parking_no_face() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::ReservedParking(ReservedParking {});
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        g.held = vec![
+            Card::new(Value::Ace, Suit::Club),
+            Card::new(Value::Two, Suit::Spade),
+        ];
+        let best = hand.best_hand().unwrap();
+        g.calc_score(best.clone());
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let money_before = g.money;
+        g.calc_score(best.clone());
+        assert_eq!(g.money, money_before);
     }
 }
