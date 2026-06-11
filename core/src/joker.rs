@@ -276,7 +276,8 @@ make_jokers!(
     //SmearedJoker,
     //Throwback,
     //HangingChad,
-    RoughGem
+    RoughGem,
+    Bloodstone
 );
 
 impl Jokers {
@@ -1536,6 +1537,38 @@ impl Joker for RoughGem {
             for card in _hand.hand.cards() {
                 if card.suit == Suit::Diamond {
                     g.money += 1;
+                }
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Bloodstone {}
+
+impl Joker for Bloodstone {
+    fn name(&self) -> String {
+        "Bloodstone".to_string()
+    }
+    fn desc(&self) -> String {
+        "1 in 2 chance for each scored Heart card to give X1.5 Mult".to_string()
+    }
+    fn cost(&self) -> usize {
+        7
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Uncommon
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultMult]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            for card in _hand.hand.cards() {
+                if card.suit == Suit::Heart && rand::thread_rng().gen_bool(0.5) {
+                    g.mult = (g.mult as f64 * 1.5) as usize;
                 }
             }
         }
@@ -2830,5 +2863,58 @@ mod tests {
         let money_before = g.money;
         g.calc_score(hand.best_hand().unwrap());
         assert_eq!(g.money, money_before + 1);
+    }
+
+    #[test]
+    fn test_bloodstone_no_hearts() {
+        let ace = Card::new(Value::Ace, Suit::Club);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::Bloodstone(Bloodstone {});
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        g.calc_score(hand.best_hand().unwrap());
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // High card club: (5 + 11) * 1 = 16, no hearts -> no Xmult
+        assert_eq!(g.calc_score(hand.best_hand().unwrap()), 16);
+    }
+
+    #[test]
+    fn test_bloodstone_with_hearts() {
+        let heart = Card::new(Value::Ace, Suit::Heart);
+        let heart2 = Card::new(Value::Ace, Suit::Diamond);
+        let hand = SelectHand::new(vec![heart, heart2]);
+        let j = Jokers::Bloodstone(Bloodstone {});
+
+        let mut g = Game::default();
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // Pair of aces (level 1): 10 chips, 2 mult
+        // Played: Ace heart (11 chips) + Ace diamond (11 chips) = 22 chips
+        // (10 + 22) * 2 = 64
+        // With Bloodstone: 1 heart card, 50% chance X1.5
+        // Expected: sometimes 64, sometimes 96
+        let mut saw_increase = false;
+        let mut saw_no_increase = false;
+        for _ in 0..50 {
+            let score = g.calc_score(hand.best_hand().unwrap());
+            if score == 96 {
+                saw_increase = true;
+            } else if score == 64 {
+                saw_no_increase = true;
+            }
+        }
+        assert!(saw_increase, "Bloodstone should sometimes Xmult");
+        assert!(saw_no_increase, "Bloodstone should sometimes not Xmult");
     }
 }
