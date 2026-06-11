@@ -4,6 +4,7 @@ use crate::game::Game;
 use crate::hand::{MadeHand, SelectHand};
 #[cfg(feature = "python")]
 use pyo3::pyclass;
+use rand::Rng;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use strum::{EnumIter, IntoEnumIterator};
@@ -193,14 +194,30 @@ make_jokers!(
     Fibonacci,
     //SteelJoker,
     ScaryFace,
-    Scholar,
     AbstractJoker,
     //DelayedGratification,
     //Hack,
     Pareidolia,
     //GrosMichel,
     EvenSteven,
-    OddTodd
+    OddTodd,
+    Scholar,
+    BusinessCard
+    //Supernova,
+    //RideTheBus,
+    //SpaceJoker,
+    //Egg,
+    //Burglar,
+    //Blackboard,
+    //Runner,
+    //IceCream,
+    //DNA,
+    //Splash,
+    //BlueJoker,
+    //SixthSense,
+    //Constellation,
+    //Hiker,
+    //FacelessJoker
 );
 
 impl Jokers {
@@ -1042,6 +1059,39 @@ impl Joker for Scholar {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct BusinessCard {}
+
+impl Joker for BusinessCard {
+    fn name(&self) -> String {
+        "Business Card".to_string()
+    }
+    fn desc(&self) -> String {
+        "Played face cards have a 1 in 2 chance to give $2 when scored".to_string()
+    }
+    fn cost(&self) -> usize {
+        4
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Economy]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            let mut rng = rand::thread_rng();
+            for card in _hand.hand.cards() {
+                if card.is_face_card && rng.gen_bool(0.5) {
+                    g.money += 2;
+                }
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::{Card, Suit, Value};
@@ -1748,5 +1798,57 @@ mod tests {
         // Scholar: 0 aces -> no bonus
         let after = 15;
         score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_business_card_no_face_cards() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace, ace]);
+        let j = Jokers::BusinessCard(BusinessCard {});
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        let score = g.calc_score(hand.best_hand().unwrap());
+        assert_eq!(score, 64);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let money_before = g.money;
+        g.calc_score(hand.best_hand().unwrap());
+        assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_business_card_face_cards() {
+        let king = Card::new(Value::King, Suit::Heart);
+        let queen = Card::new(Value::Queen, Suit::Heart);
+        let jack = Card::new(Value::Jack, Suit::Heart);
+        let hand = SelectHand::new(vec![king, queen, jack]);
+        let j = Jokers::BusinessCard(BusinessCard {});
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        g.calc_score(hand.best_hand().unwrap());
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let mut saw_increase = false;
+        for _ in 0..100 {
+            g.money = 1000;
+            g.calc_score(hand.best_hand().unwrap());
+            if g.money > 1000 {
+                saw_increase = true;
+                break;
+            }
+        }
+        assert!(saw_increase, "Business Card should sometimes give money");
     }
 }
