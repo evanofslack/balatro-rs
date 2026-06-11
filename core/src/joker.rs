@@ -268,7 +268,15 @@ make_jokers!(
     //Campfire,
     GoldenTicket,
     //MrBones,
-    Acrobat
+    Acrobat,
+    //SockAndBuskin,
+    //Swashbuckler,
+    //Troubadour,
+    //Certificate,
+    //SmearedJoker,
+    //Throwback,
+    //HangingChad,
+    RoughGem
 );
 
 impl Jokers {
@@ -1497,6 +1505,38 @@ impl Joker for Acrobat {
         fn apply(g: &mut Game, _hand: MadeHand) {
             if g.plays == 0 {
                 g.mult *= 3;
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct RoughGem {}
+
+impl Joker for RoughGem {
+    fn name(&self) -> String {
+        "Rough Gem".to_string()
+    }
+    fn desc(&self) -> String {
+        "Each played Diamond earns $1".to_string()
+    }
+    fn cost(&self) -> usize {
+        7
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Uncommon
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Economy]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            for card in _hand.hand.cards() {
+                if card.suit == Suit::Diamond {
+                    g.money += 1;
+                }
             }
         }
         vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
@@ -2750,5 +2790,45 @@ mod tests {
         // High card ace: (5 + 11) * 1 = 16
         // Acrobat: no bonus
         assert_eq!(g.calc_score(hand.best_hand().unwrap()), 16);
+    }
+
+    #[test]
+    fn test_rough_gem_no_diamonds() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace, ace]);
+        let j = Jokers::RoughGem(RoughGem {});
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        g.calc_score(hand.best_hand().unwrap());
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let money_before = g.money;
+        g.calc_score(hand.best_hand().unwrap());
+        assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_rough_gem_with_diamonds() {
+        let dia1 = Card::new(Value::Ace, Suit::Diamond);
+        let dia2 = Card::new(Value::Ace, Suit::Club);
+        let hand = SelectHand::new(vec![dia1, dia2]);
+        let j = Jokers::RoughGem(RoughGem {});
+
+        let mut g = Game::default();
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let money_before = g.money;
+        g.calc_score(hand.best_hand().unwrap());
+        assert_eq!(g.money, money_before + 1);
     }
 }
