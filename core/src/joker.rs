@@ -253,7 +253,15 @@ make_jokers!(
     //GoldenJoker,
     //LuckyCat,
     BaseballCard,
-    Bull
+    Bull,
+    //DietCola,
+    //TradingCard,
+    //FlashCard,
+    //Popcorn,
+    //SpareTrousers,
+    //AncientJoker,
+    //Ramen,
+    WalkieTalkie
 );
 
 impl Jokers {
@@ -1361,6 +1369,39 @@ impl Joker for Bull {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct WalkieTalkie {}
+
+impl Joker for WalkieTalkie {
+    fn name(&self) -> String {
+        "Walkie Talkie".to_string()
+    }
+    fn desc(&self) -> String {
+        "Each played 10 or 4 gives +10 Chips and +4 Mult when scored".to_string()
+    }
+    fn cost(&self) -> usize {
+        4
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Chips, Categories::MultPlus]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            for card in _hand.hand.cards() {
+                if card.value == Value::Ten || card.value == Value::Four {
+                    g.chips += 10;
+                    g.mult += 4;
+                }
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::{Card, Enhancement, Suit, Value};
@@ -2454,8 +2495,41 @@ mod tests {
         g.stage = Stage::Blind(Blind::Small);
         g.money = 0;
 
-        // Bull: 0 / 5 * 2 = 0 chips
+        // Bull: 0 * 2 = 0 chips
         // (5 + 11) * 1 = 16
         assert_eq!(g.calc_score(best.clone()), 16);
+    }
+
+    #[test]
+    fn test_walkie_talkie() {
+        let ten = Card::new(Value::Ten, Suit::Heart);
+        let hand = SelectHand::new(vec![ten, ten]);
+        let j = Jokers::WalkieTalkie(WalkieTalkie {});
+
+        // Pair (level 1): 10 chips, 2 mult
+        // Played (2 tens): 20 chips
+        // (10 + 20) * 2 = 60
+        let before = 60;
+
+        // WalkieTalkie: 2 tens * (+10 chips, +4 mult) = +20 chips, +8 mult
+        // (10 + 20 + 20) * (2 + 8) = 50 * 10 = 500
+        let after = 500;
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_walkie_talkie_other_cards() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::WalkieTalkie(WalkieTalkie {});
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 ace): 11 chips
+        // (5 + 11) * 1 = 16
+        let before = 16;
+
+        // WalkieTalkie: 0 tens or fours -> no bonus
+        let after = 16;
+        score_before_after_joker(j, hand, before, after);
     }
 }
