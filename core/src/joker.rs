@@ -261,7 +261,10 @@ make_jokers!(
     //SpareTrousers,
     //AncientJoker,
     //Ramen,
-    WalkieTalkie
+    WalkieTalkie,
+    //Seltzer,
+    //Castle,
+    SmileyFace
 );
 
 impl Jokers {
@@ -1402,6 +1405,38 @@ impl Joker for WalkieTalkie {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct SmileyFace {}
+
+impl Joker for SmileyFace {
+    fn name(&self) -> String {
+        "Smiley Face".to_string()
+    }
+    fn desc(&self) -> String {
+        "+5 Mult for each scored face card".to_string()
+    }
+    fn cost(&self) -> usize {
+        4
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultPlus]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            for card in _hand.hand.cards() {
+                if card.is_face_card {
+                    g.mult += 5;
+                }
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::{Card, Enhancement, Suit, Value};
@@ -2529,6 +2564,40 @@ mod tests {
         let before = 16;
 
         // WalkieTalkie: 0 tens or fours -> no bonus
+        let after = 16;
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_smiley_face() {
+        let king = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Diamond);
+        let hand = SelectHand::new(vec![king, king2]);
+        let j = Jokers::SmileyFace(SmileyFace {});
+
+        // Pair (level 1): 10 chips, 2 mult
+        // Played (2 kings): 10 + 10 = 20 chips
+        // (10 + 20) * 2 = 60
+        let before = 60;
+
+        // Smiley Face: 2 face cards * +5 mult = +10 mult
+        // (10 + 20) * (2 + 10) = 30 * 12 = 360
+        let after = 360;
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_smiley_face_no_face() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::SmileyFace(SmileyFace {});
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 ace): 11 chips
+        // (5 + 11) * 1 = 16
+        let before = 16;
+
+        // Smiley Face: 0 face cards -> no bonus
         let after = 16;
         score_before_after_joker(j, hand, before, after);
     }
