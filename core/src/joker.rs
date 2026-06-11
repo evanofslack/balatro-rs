@@ -236,7 +236,9 @@ make_jokers!(
     //Cloud9,
     //Rocket,
     //Obelisk,
-    MidasMask
+    MidasMask,
+    //Luchador,
+    Photograph
 );
 
 impl Jokers {
@@ -1215,6 +1217,39 @@ impl Joker for MidasMask {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Photograph {}
+
+impl Joker for Photograph {
+    fn name(&self) -> String {
+        "Photograph".to_string()
+    }
+    fn desc(&self) -> String {
+        "First face card scored gives X2 Mult".to_string()
+    }
+    fn cost(&self) -> usize {
+        5
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultMult]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            for card in _hand.hand.cards() {
+                if card.is_face_card {
+                    g.mult *= 2;
+                    break;
+                }
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::{Card, Enhancement, Suit, Value};
@@ -2097,6 +2132,39 @@ mod tests {
 
         // Midas Mask converts to Gold but Gold has no game logic yet -> same score
         let after = 64;
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_photograph() {
+        let king = Card::new(Value::King, Suit::Heart);
+        let hand = SelectHand::new(vec![king]);
+        let j = Jokers::Photograph(Photograph {});
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 king): 10 chips
+        // (5 + 10) * 1 = 15
+        let before = 15;
+
+        // Photograph: 1 face card -> X2 mult
+        // (5 + 10) * (1 * 2) = 30
+        let after = 30;
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_photograph_no_face() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::Photograph(Photograph {});
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 ace): 11 chips
+        // (5 + 11) * 1 = 16
+        let before = 16;
+
+        // Photograph: 0 face cards -> no bonus
+        let after = 16;
         score_before_after_joker(j, hand, before, after);
     }
 }
