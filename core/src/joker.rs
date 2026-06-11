@@ -217,7 +217,22 @@ make_jokers!(
     //SixthSense,
     //Constellation,
     //Hiker,
-    FacelessJoker
+    FacelessJoker,
+    //GreenJoker,
+    //Superposition,
+    //ToDoList,
+    //Cavendish,
+    //CardSharp,
+    //RedCard,
+    //Madness,
+    //SquareJoker,
+    //Seance,
+    //Riff-raff,
+    //Vampire,
+    //Shortcut,
+    //Hologram,
+    //Vagabond,
+    Baron
 );
 
 impl Jokers {
@@ -1122,6 +1137,37 @@ impl Joker for FacelessJoker {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct Baron {}
+
+impl Joker for Baron {
+    fn name(&self) -> String {
+        "Baron".to_string()
+    }
+    fn desc(&self) -> String {
+        "Each King held in hand gives X1.5 Mult".to_string()
+    }
+    fn cost(&self) -> usize {
+        8
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Rare
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultMult]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            let kings = g.held.iter().filter(|c| c.value == Value::King).count();
+            for _ in 0..kings {
+                g.mult = (g.mult as f64 * 1.5) as usize;
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::{Card, Suit, Value};
@@ -1930,5 +1976,64 @@ mod tests {
 
         g.discard_selected().expect("can discard");
         assert_eq!(g.money, 996);
+    }
+
+    #[test]
+    fn test_baron() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace, ace]);
+        let j = Jokers::Baron(Baron {});
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        g.held = vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Spade),
+        ];
+        let best = hand.best_hand().unwrap();
+
+        // Pair (level 1): 10 chips, 2 mult
+        // Played (2 aces): 22 chips
+        // (10 + 22) * 2 = 64
+        assert_eq!(g.calc_score(best.clone()), 64);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // Baron: 2 kings -> 2 * 1.5 = 3, then 3 * 1.5 = 4 (truncated)
+        // (10 + 22) * (2 * 1.5 * 1.5) = 32 * 4 = 128
+        assert_eq!(g.calc_score(best.clone()), 128);
+    }
+
+    #[test]
+    fn test_baron_no_kings() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace, ace]);
+        let j = Jokers::Baron(Baron {});
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+        g.held = vec![
+            Card::new(Value::Queen, Suit::Club),
+            Card::new(Value::Jack, Suit::Spade),
+        ];
+        let best = hand.best_hand().unwrap();
+
+        // Pair (level 1): 10 chips, 2 mult
+        // Played (2 aces): 22 chips
+        // (10 + 22) * 2 = 64
+        assert_eq!(g.calc_score(best.clone()), 64);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // Baron: 0 kings -> no bonus
+        assert_eq!(g.calc_score(best.clone()), 64);
     }
 }
