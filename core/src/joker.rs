@@ -202,7 +202,7 @@ make_jokers!(
     EvenSteven,
     OddTodd,
     Scholar,
-    BusinessCard
+    BusinessCard,
     //Supernova,
     //RideTheBus,
     //SpaceJoker,
@@ -217,7 +217,7 @@ make_jokers!(
     //SixthSense,
     //Constellation,
     //Hiker,
-    //FacelessJoker
+    FacelessJoker
 );
 
 impl Jokers {
@@ -1092,6 +1092,36 @@ impl Joker for BusinessCard {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct FacelessJoker {}
+
+impl Joker for FacelessJoker {
+    fn name(&self) -> String {
+        "Faceless Joker".to_string()
+    }
+    fn desc(&self) -> String {
+        "If you discard at least 5 cards in a single discard, gain $5".to_string()
+    }
+    fn cost(&self) -> usize {
+        4
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Common
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::Economy]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            if _hand.all.len() >= 5 {
+                g.money += 5;
+            }
+        }
+        vec![Effects::OnDiscard(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::{Card, Suit, Value};
@@ -1850,5 +1880,55 @@ mod tests {
             }
         }
         assert!(saw_increase, "Business Card should sometimes give money");
+    }
+
+    #[test]
+    fn test_faceless_joker() {
+        let j = Jokers::FacelessJoker(FacelessJoker {});
+
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let cards: Vec<Card> = g.available.cards().iter().take(5).copied().collect();
+        for card in &cards {
+            g.available.select_card(*card).expect("can select");
+        }
+        assert_eq!(g.available.selected().len(), 5);
+
+        g.discard_selected().expect("can discard");
+        assert_eq!(g.money, 1001);
+    }
+
+    #[test]
+    fn test_faceless_joker_few_cards() {
+        let j = Jokers::FacelessJoker(FacelessJoker {});
+
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let cards: Vec<Card> = g.available.cards().iter().take(3).copied().collect();
+        for card in &cards {
+            g.available.select_card(*card).expect("can select");
+        }
+        assert_eq!(g.available.selected().len(), 3);
+
+        g.discard_selected().expect("can discard");
+        assert_eq!(g.money, 996);
     }
 }

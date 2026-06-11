@@ -7,6 +7,7 @@ use crate::deck::Deck;
 use crate::effect::{EffectRegistry, Effects};
 use crate::error::GameError;
 use crate::hand::{MadeHand, SelectHand};
+use crate::rank::HandRank;
 use crate::joker::{Joker, Jokers};
 use crate::shop::Shop;
 use crate::stage::{Blind, End, Stage};
@@ -158,9 +159,22 @@ impl Game {
             return Err(GameError::NoRemainingDiscards);
         }
         self.discards -= 1;
-        self.discarded.extend(self.available.selected());
+        let discarded = self.available.selected();
+        self.discarded.extend(discarded.clone());
         let removed = self.available.remove_selected();
         self.draw(removed);
+
+        let hand = MadeHand {
+            hand: SelectHand::new(discarded.clone()),
+            rank: HandRank::HighCard,
+            all: discarded,
+        };
+        for e in self.effect_registry.on_discard.clone() {
+            match e {
+                Effects::OnDiscard(f) => f.lock().unwrap()(self, hand.clone()),
+                _ => (),
+            }
+        }
         return Ok(());
     }
 
