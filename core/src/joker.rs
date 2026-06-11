@@ -242,7 +242,17 @@ make_jokers!(
     //GiftCard,
     //TurtleBean,
     //Erosion,
-    ReservedParking
+    ReservedParking,
+    //Mail-InRebate,
+    //ToTheMoon,
+    //Hallucination,
+    //FortuneTeller,
+    //Juggler,
+    //Drunkard,
+    //StoneJoker,
+    //GoldenJoker,
+    //LuckyCat,
+    BaseballCard
 );
 
 impl Jokers {
@@ -1287,6 +1297,41 @@ impl Joker for ReservedParking {
     }
 }
 
+#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "python", pyclass(eq))]
+pub struct BaseballCard {}
+
+impl Joker for BaseballCard {
+    fn name(&self) -> String {
+        "Baseball Card".to_string()
+    }
+    fn desc(&self) -> String {
+        "Each Uncommon joker gives X1.5 Mult".to_string()
+    }
+    fn cost(&self) -> usize {
+        8
+    }
+    fn rarity(&self) -> Rarity {
+        Rarity::Rare
+    }
+    fn categories(&self) -> Vec<Categories> {
+        vec![Categories::MultMult]
+    }
+    fn effects(&self, _in: &Game) -> Vec<Effects> {
+        fn apply(g: &mut Game, _hand: MadeHand) {
+            let uncommon = g
+                .jokers
+                .iter()
+                .filter(|j| j.rarity() == Rarity::Uncommon)
+                .count();
+            for _ in 0..uncommon {
+                g.mult = (g.mult as f64 * 1.5) as usize;
+            }
+        }
+        vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::card::{Card, Enhancement, Suit, Value};
@@ -2263,5 +2308,71 @@ mod tests {
         let money_before = g.money;
         g.calc_score(best.clone());
         assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_baseball_card() {
+        let ten = Card::new(Value::Ten, Suit::Heart);
+        let hand = SelectHand::new(vec![ten, ten]);
+        let best = hand.best_hand().unwrap();
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // Pair (level 1): 10 chips, 2 mult
+        // Played (2 tens): 20 chips
+        // (10 + 20) * 2 = 60
+        assert_eq!(g.calc_score(best.clone()), 60);
+
+        // Buy 2 uncommon jokers (MidasMask, Pareidolia) and BaseballCard
+        let midas = Jokers::MidasMask(MidasMask {});
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(midas.clone());
+        g.buy_joker(midas).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        g.calc_score(best.clone());
+
+        let pareidolia = Jokers::Pareidolia(Pareidolia {});
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(pareidolia.clone());
+        g.buy_joker(pareidolia).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        g.calc_score(best.clone());
+
+        let bb = Jokers::BaseballCard(BaseballCard {});
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(bb.clone());
+        g.buy_joker(bb).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // BaseballCard: 2 uncommon * X1.5
+        // (10 + 20) * (2 * 1.5 * 1.5) = 30 * 4 = 120
+        assert_eq!(g.calc_score(best.clone()), 120);
+    }
+
+    #[test]
+    fn test_baseball_card_no_uncommon() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let best = hand.best_hand().unwrap();
+
+        let mut g = Game::default();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // Buy BaseballCard with no uncommon jokers
+        let bb = Jokers::BaseballCard(BaseballCard {});
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(bb.clone());
+        g.buy_joker(bb).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 ace): 11 chips
+        // (5 + 11) * 1 = 16
+        assert_eq!(g.calc_score(best.clone()), 16);
     }
 }
