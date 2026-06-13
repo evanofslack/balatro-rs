@@ -45,11 +45,11 @@ The follow features are implemented (including move generation)
 - [x] ante progression (up to ante 8)
 - [x] blind progression (small, big, boss)
 - [x] stage transition (pre-blind, blind, post-blind, shop)
+- [x] buying/selling/using planets (no selling yet)
 - [x] buying/selling/using jokers (very partial support)
 
 The following features are missing and may or may not be added
 - [ ] buying/selling/using tarots
-- [ ] buying/selling/using planets
 - [ ] buying/selling/using spectrals
 - [ ] boss blind modifiers
 - [ ] skip blind/tags
