@@ -23,6 +23,12 @@ impl Consumable {
             Self::Planet(p) => p.name(),
         }
     }
+
+    pub fn type_label(&self) -> &str {
+        match self {
+            Self::Planet(_) => "planet",
+        }
+    }
 }
 
 #[cfg(test)]
