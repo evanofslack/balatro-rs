@@ -431,23 +431,43 @@ impl Game {
 
 impl fmt::Display for Game {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "deck length: {}", self.deck.len())?;
-        writeln!(f, "available length: {}", self.available.cards().len())?;
-        writeln!(f, "selected length: {}", self.available.selected().len())?;
-        writeln!(f, "discard length: {}", self.discarded.len())?;
-        writeln!(f, "jokers: ")?;
-        for j in self.jokers.clone() {
-            writeln!(f, "{}", j)?
+        let hand_str: String = self.available.cards_and_selected()
+            .iter()
+            .map(|(c, sel)| if *sel { format!("[{}]", c) } else { format!("{}", c) })
+            .collect::<Vec<_>>()
+            .join(" ");
+        writeln!(f, "hand: {}", hand_str)?;
+        writeln!(f, "discard pile: {}", self.discarded.len())?;
+        writeln!(f, "deck: {}", self.deck.len())?;
+        if self.jokers.is_empty() {
+            writeln!(f, "jokers: (none)")?;
+        } else {
+            writeln!(f, "jokers:")?;
+            for j in self.jokers.clone() {
+                writeln!(f, "  {}", j)?;
+            }
         }
-        writeln!(f, "action history length: {}", self.action_history.len())?;
-        writeln!(f, "blind: {:?}", self.blind)?;
+        if self.consumables.is_empty() {
+            writeln!(f, "consumables: (none)")?;
+        } else {
+            let parts: Vec<String> = self.consumables.iter()
+                .map(|c| format!("[{}] {}", c.type_label(), c.name()))
+                .collect();
+            writeln!(f, "consumables: {}", parts.join(", "))?;
+        }
+        writeln!(f, "planetarium: {}", self.planetarium)?;
         writeln!(f, "stage: {:?}", self.stage)?;
         writeln!(f, "ante: {:?}", self.ante_current)?;
+        writeln!(f, "blind: {:?}", self.blind)?;
         writeln!(f, "round: {}", self.round)?;
         writeln!(f, "hands remaining: {}", self.plays)?;
         writeln!(f, "discards remaining: {}", self.discards)?;
         writeln!(f, "money: {}", self.money)?;
-        writeln!(f, "score: {}", self.score)
+        if matches!(self.stage, Stage::Blind(_)) {
+            writeln!(f, "score: {}  target: {}", self.score, self.required_score())
+        } else {
+            writeln!(f, "score: {}", self.score)
+        }
     }
 }
 
