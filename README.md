@@ -59,6 +59,10 @@ The following features are missing and may or may not be added
 - [ ] alternative stakes
 
 
+## CLI
+
+An interactive terminal client is available in [/cli](https://github.com/evanofslack/balatro-rs/tree/main/cli). Run `cargo run -p balatro-cli` to start a game, or load a saved state with `--load <file>`.
+
 ## Python bindings
 
 This library uses [pyo3](https://pyo3.rs) to provide python bindings. For more details on the python work and attempts at applying reinforcement learning, check the work in the directory [/pylatro](https://github.com/evanofslack/balatro-rs/tree/main/pylatro).
