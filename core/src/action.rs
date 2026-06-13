@@ -1,4 +1,5 @@
 use crate::card::Card;
+use crate::consumable::Consumable;
 use crate::joker::Jokers;
 use crate::stage::Blind;
 #[cfg(feature = "python")]
@@ -36,6 +37,8 @@ pub enum Action {
     Discard(),
     CashOut(usize),
     BuyJoker(Jokers),
+    BuyConsumable(Consumable),
+    UseConsumable(Consumable),
     NextRound(),
     SelectBlind(Blind),
     // SkipBlind(Blind),
@@ -61,6 +64,12 @@ impl fmt::Display for Action {
             }
             Self::BuyJoker(joker) => {
                 write!(f, "BuyJoker: {}", joker)
+            }
+            Self::BuyConsumable(consumable) => {
+                write!(f, "BuyConsumable: {}", consumable.name())
+            }
+            Self::UseConsumable(consumable) => {
+                write!(f, "UseConsumable: {}", consumable.name())
             }
             Self::NextRound() => {
                 write!(f, "NextRound")

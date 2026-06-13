@@ -3,12 +3,14 @@ use crate::ante::Ante;
 use crate::available::Available;
 use crate::card::Card;
 use crate::config::Config;
+use crate::consumable::Consumable;
 use crate::deck::Deck;
 use crate::effect::{EffectRegistry, Effects};
 use crate::error::GameError;
 use crate::hand::{MadeHand, SelectHand};
-use crate::rank::HandRank;
 use crate::joker::{Joker, Jokers};
+use crate::planet::Planetarium;
+use crate::rank::HandRank;
 use crate::shop::Shop;
 use crate::stage::{Blind, End, Stage};
 
@@ -18,6 +20,7 @@ use std::fmt;
 pub struct Game {
     pub config: Config,
     pub shop: Shop,
+    pub planetarium: Planetarium,
     pub deck: Deck,
     pub available: Available,
     pub discarded: Vec<Card>,
@@ -33,6 +36,9 @@ pub struct Game {
     // jokers and their effects
     pub jokers: Vec<Jokers>,
     pub effect_registry: EffectRegistry,
+
+    // held consumables (planets, tarots, etc.)
+    pub consumables: Vec<Consumable>,
 
     // playing
     pub plays: usize,
@@ -51,6 +57,7 @@ impl Game {
         let ante_start = Ante::try_from(config.ante_start).unwrap_or(Ante::One);
         Self {
             shop: Shop::new(),
+            planetarium: Planetarium::new(),
             deck: Deck::default(),
             available: Available::default(),
             discarded: Vec::new(),
@@ -58,6 +65,7 @@ impl Game {
             action_history: Vec::new(),
             jokers: Vec::new(),
             effect_registry: EffectRegistry::new(),
+            consumables: Vec::new(),
             blind: None,
             stage: Stage::PreBlind(),
             ante_start,
@@ -180,8 +188,9 @@ impl Game {
 
     pub fn calc_score(&mut self, mut hand: MadeHand) -> usize {
         // compute chips and mult from hand level
-        self.chips += hand.rank.level().chips;
-        self.mult += hand.rank.level().mult;
+        let level = self.planetarium.play(hand.rank);
+        self.chips += level.chips;
+        self.mult += level.mult;
 
         // add chips for each played card
         let card_chips: usize = hand.hand.cards().iter().map(|c| c.chips()).sum();
@@ -238,7 +247,9 @@ impl Game {
         self.money += self.reward;
         self.reward = 0;
         self.stage = Stage::Shop();
-        self.shop.refresh();
+        let planetarium = self.planetarium.clone();
+        let held = self.consumables.clone();
+        self.shop.refresh(&planetarium, &held, false);
         return Ok(());
     }
 
@@ -258,6 +269,40 @@ impl Game {
         self.effect_registry
             .register_jokers(self.jokers.clone(), &self.clone());
         return Ok(());
+    }
+
+    pub(crate) fn buy_consumable(&mut self, consumable: Consumable) -> Result<(), GameError> {
+        if self.stage != Stage::Shop() {
+            return Err(GameError::InvalidStage);
+        }
+        if self.consumables.len() >= self.config.consumable_slots {
+            return Err(GameError::NoAvailableSlot);
+        }
+        if consumable.cost() > self.money {
+            return Err(GameError::InvalidBalance);
+        }
+        self.shop.buy_consumable(&consumable)?;
+        self.money -= consumable.cost();
+        self.consumables.push(consumable);
+        Ok(())
+    }
+
+    pub(crate) fn use_consumable(&mut self, consumable: Consumable) -> Result<(), GameError> {
+        if matches!(self.stage, Stage::End(_)) {
+            return Err(GameError::InvalidStage);
+        }
+        let i = self
+            .consumables
+            .iter()
+            .position(|c| c == &consumable)
+            .ok_or(GameError::InvalidAction)?;
+        self.consumables.remove(i);
+        match consumable {
+            Consumable::Planet(planet) => {
+                self.planetarium.level_up(planet.hand_rank());
+            }
+        }
+        Ok(())
     }
 
     fn select_blind(&mut self, blind: Blind) -> Result<(), GameError> {
@@ -359,6 +404,14 @@ impl Game {
                 Stage::Shop() => self.buy_joker(joker),
                 _ => Err(GameError::InvalidAction),
             },
+            Action::BuyConsumable(consumable) => match self.stage {
+                Stage::Shop() => self.buy_consumable(consumable),
+                _ => Err(GameError::InvalidAction),
+            },
+            Action::UseConsumable(consumable) => match self.stage {
+                Stage::End(_) => Err(GameError::InvalidAction),
+                _ => self.use_consumable(consumable),
+            },
             Action::NextRound() => match self.stage {
                 Stage::Shop() => self.next_round(),
                 _ => Err(GameError::InvalidAction),
@@ -373,29 +426,49 @@ impl Game {
     pub fn handle_action_index(&mut self, index: usize) -> Result<(), GameError> {
         let space = self.gen_action_space();
         let action = space.to_action(index, self)?;
-        return self.handle_action(action);
+        self.handle_action(action)
     }
 }
 
 impl fmt::Display for Game {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "deck length: {}", self.deck.len())?;
-        writeln!(f, "available length: {}", self.available.cards().len())?;
-        writeln!(f, "selected length: {}", self.available.selected().len())?;
-        writeln!(f, "discard length: {}", self.discarded.len())?;
-        writeln!(f, "jokers: ")?;
-        for j in self.jokers.clone() {
-            writeln!(f, "{}", j)?
+        let hand_str: String = self.available.cards_and_selected()
+            .iter()
+            .map(|(c, sel)| if *sel { format!("[{}]", c) } else { format!("{}", c) })
+            .collect::<Vec<_>>()
+            .join(" ");
+        writeln!(f, "hand: {}", hand_str)?;
+        writeln!(f, "discard pile: {}", self.discarded.len())?;
+        writeln!(f, "deck: {}", self.deck.len())?;
+        if self.jokers.is_empty() {
+            writeln!(f, "jokers: (none)")?;
+        } else {
+            writeln!(f, "jokers:")?;
+            for j in self.jokers.clone() {
+                writeln!(f, "  {}", j)?;
+            }
         }
-        writeln!(f, "action history length: {}", self.action_history.len())?;
-        writeln!(f, "blind: {:?}", self.blind)?;
+        if self.consumables.is_empty() {
+            writeln!(f, "consumables: (none)")?;
+        } else {
+            let parts: Vec<String> = self.consumables.iter()
+                .map(|c| format!("[{}] {}", c.type_label(), c.name()))
+                .collect();
+            writeln!(f, "consumables: {}", parts.join(", "))?;
+        }
+        writeln!(f, "planetarium: {}", self.planetarium)?;
         writeln!(f, "stage: {:?}", self.stage)?;
         writeln!(f, "ante: {:?}", self.ante_current)?;
+        writeln!(f, "blind: {:?}", self.blind)?;
         writeln!(f, "round: {}", self.round)?;
         writeln!(f, "hands remaining: {}", self.plays)?;
         writeln!(f, "discards remaining: {}", self.discards)?;
         writeln!(f, "money: {}", self.money)?;
-        writeln!(f, "score: {}", self.score)
+        if matches!(self.stage, Stage::Blind(_)) {
+            writeln!(f, "score: {}  target: {}", self.score, self.required_score())
+        } else {
+            writeln!(f, "score: {}", self.score)
+        }
     }
 }
 
@@ -623,7 +696,7 @@ mod tests {
         g.start();
         g.stage = Stage::Shop();
         g.money = 10;
-        g.shop.refresh();
+        g.shop.refresh(&g.planetarium.clone(), &g.consumables.clone(), false);
 
         let j1 = g.shop.joker_from_index(0).expect("is joker");
         g.buy_joker(j1.clone()).expect("buy joker");

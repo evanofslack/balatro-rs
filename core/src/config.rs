@@ -23,6 +23,7 @@ const DEFAULT_STORE_CONSUMABLE_SLOTS_MAX: usize = 4;
 const DEFAULT_DECK_MAX: usize = 100;
 const DEFAULT_DISCARDED_MAX: usize = 100;
 const DEFAULT_SELECTED_MAX: usize = 5;
+const DEFAULT_CONSUMABLE_SLOTS: usize = 2;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass)]
@@ -48,6 +49,7 @@ pub struct Config {
     pub available: usize,
     pub available_max: usize,
     pub store_consumable_slots_max: usize,
+    pub consumable_slots: usize,
     pub deck_max: usize,
     pub discarded_max: usize,
 }
@@ -75,6 +77,7 @@ impl Config {
             available: DEFAULT_AVAILABLE,
             available_max: DEFAULT_AVAILABLE_MAX,
             store_consumable_slots_max: DEFAULT_STORE_CONSUMABLE_SLOTS_MAX,
+            consumable_slots: DEFAULT_CONSUMABLE_SLOTS,
             deck_max: DEFAULT_DECK_MAX,
             discarded_max: DEFAULT_DISCARDED_MAX,
         };
@@ -194,6 +197,16 @@ impl Config {
     fn set_money_max(&mut self, i: usize) {
         self.money_max = i;
     }
+    #[getter]
+    fn get_consumable_slots(&mut self) -> usize {
+        return self.consumable_slots;
+    }
+
+    #[setter]
+    fn set_consumable_slots(&mut self, i: usize) {
+        self.consumable_slots = i;
+    }
+
     #[getter]
     fn get_stage_max(&self) -> usize {
         return 8;

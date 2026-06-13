@@ -32,6 +32,8 @@ pub enum GameError {
     NoCardMatch,
     #[error("No joker match")]
     NoJokerMatch,
+    #[error("No consumable match")]
+    NoConsumableMatch,
     #[error("Invalid move direction")]
     InvalidMoveDirection,
     #[error("No available slot")]

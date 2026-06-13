@@ -1,5 +1,6 @@
 use balatro_rs::action::Action;
 use balatro_rs::game::Game;
+use std::fmt::Write as FmtWrite;
 use text_io::read;
 
 fn input_loop(max: usize) -> usize {
@@ -22,7 +23,20 @@ fn game_loop(game: &mut Game) {
         println!("Select action:");
         println!("[0] Show game state");
         for (i, action) in actions.clone().iter().enumerate() {
-            println!("[{}] {:}", i + 1, action);
+            let label = match action {
+                Action::Play() | Action::Discard() => {
+                    let selected = game.available.selected();
+                    let cards: String = selected.iter().enumerate().fold(String::new(), |mut s, (j, c)| {
+                        if j > 0 { s.push(' '); }
+                        let _ = write!(s, "{}", c);
+                        s
+                    });
+                    let verb = if matches!(action, Action::Play()) { "Play" } else { "Discard" };
+                    format!("{}: [{}]", verb, cards)
+                }
+                _ => format!("{}", action),
+            };
+            println!("[{}] {}", i + 1, label);
         }
         let index = input_loop(actions.len());
         if index == 0 {
