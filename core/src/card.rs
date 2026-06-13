@@ -1,5 +1,6 @@
 #[cfg(feature = "colored")]
 use colored::Colorize;
+#[cfg(feature = "python")]
 use pyo3::pyclass;
 use std::{
     fmt,
@@ -164,11 +165,13 @@ pub struct Card {
     pub edition: Edition,
     pub enhancement: Option<Enhancement>,
     pub seal: Option<Seal>,
+    pub is_face_card: bool,
 }
 
 impl Card {
     pub fn new(value: Value, suit: Suit) -> Self {
         let id = CARD_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
+        let is_face_card = value == Value::Jack || value == Value::Queen || value == Value::King;
         Self {
             value,
             suit,
@@ -176,35 +179,29 @@ impl Card {
             edition: Edition::Base,
             enhancement: None,
             seal: None,
-        }
-    }
-
-    pub fn is_face(&self) -> bool {
-        match self.value {
-            Value::Jack | Value::Queen | Value::King => true,
-            _ => false,
+            is_face_card,
         }
     }
 
     pub fn is_even(&self) -> bool {
-        self.value != Value::Ace && !self.is_face() && self.value as u16 % 2 == 0
+        self.value != Value::Ace && !self.is_face_card && self.value as u16 % 2 == 0
     }
 
     pub fn is_odd(&self) -> bool {
-        self.value == Value::Ace || !self.is_face() && self.value as u16 % 2 != 0
+        self.value == Value::Ace || !self.is_face_card && self.value as u16 % 2 != 0
     }
 
     pub fn chips(&self) -> usize {
         match self.value {
-            Value::Two => 1,
-            Value::Three => 2,
-            Value::Four => 3,
-            Value::Five => 4,
-            Value::Six => 5,
-            Value::Seven => 6,
-            Value::Eight => 7,
-            Value::Nine => 8,
-            Value::Ten => 9,
+            Value::Two => 2,
+            Value::Three => 3,
+            Value::Four => 4,
+            Value::Five => 5,
+            Value::Six => 6,
+            Value::Seven => 7,
+            Value::Eight => 8,
+            Value::Nine => 9,
+            Value::Ten => 10,
             Value::Jack => 10,
             Value::Queen => 10,
             Value::King => 10,
@@ -257,9 +254,9 @@ mod tests {
     #[test]
     fn test_face() {
         let king = Card::new(Value::King, Suit::Heart);
-        assert_eq!(king.is_face(), true);
+        assert_eq!(king.is_face_card, true);
         let two = Card::new(Value::Two, Suit::Diamond);
-        assert_eq!(two.is_face(), false);
+        assert_eq!(two.is_face_card, false);
     }
 
     #[test]

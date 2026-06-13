@@ -1,6 +1,7 @@
 use crate::card::Card;
 use crate::joker::Jokers;
 use crate::stage::Blind;
+#[cfg(feature = "python")]
 use pyo3::pyclass;
 use std::fmt;
 

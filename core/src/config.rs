@@ -1,3 +1,4 @@
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 
 const DEFAULT_ROUND_START: usize = 0;
