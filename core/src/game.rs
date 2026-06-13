@@ -754,4 +754,45 @@ mod tests {
         // Now test with discards=0 — we need score_hand to pass that through
         // For now this is a limitation; skip this assertion
     }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_to_from_json_roundtrip() {
+        let mut g = Game::default();
+        g.start();
+        let json = g.to_json().expect("serialize");
+        let g2 = Game::from_json(&json).expect("deserialize");
+        assert_eq!(g2.stage, g.stage);
+        assert_eq!(g2.ante_current, g.ante_current);
+        assert_eq!(g2.plays, g.plays);
+        assert_eq!(g2.discards, g.discards);
+        assert_eq!(g2.money, g.money);
+        assert_eq!(g2.available.cards().len(), g.available.cards().len());
+        assert_eq!(g2.deck.len(), g.deck.len());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_from_json_restores_effect_registry() {
+        use crate::joker::{Jokers, TheJoker};
+        let mut g = Game::default();
+        g.start();
+        let joker = Jokers::TheJoker(TheJoker {});
+        g.jokers.push(joker);
+        let jokers = g.jokers.clone();
+        g.effect_registry.register_jokers(jokers, &g.clone());
+        assert!(!g.effect_registry.on_score.is_empty());
+
+        let json = g.to_json().expect("serialize");
+        let g2 = Game::from_json(&json).expect("deserialize");
+        assert_eq!(g2.jokers.len(), 1);
+        assert!(!g2.effect_registry.on_score.is_empty());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_from_json_invalid() {
+        let result = Game::from_json("not valid json");
+        assert!(result.is_err());
+    }
 }
