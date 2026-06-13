@@ -25,13 +25,23 @@ impl Shop {
         }
     }
 
-    pub(crate) fn refresh(&mut self, planetarium: &Planetarium) {
+    pub(crate) fn refresh(&mut self, planetarium: &Planetarium, held: &[Consumable], allow_duplicates: bool) {
         let j1 = self.joker_gen.gen_joker();
         let j2 = self.joker_gen.gen_joker();
         self.jokers = vec![j1, j2];
 
-        let c1 = self.consumable_gen.gen_consumable(planetarium);
-        let c2 = self.consumable_gen.gen_consumable(planetarium);
+        let held_planets: Vec<Planets> = if allow_duplicates {
+            vec![]
+        } else {
+            held.iter().filter_map(|c| match c { Consumable::Planet(p) => Some(p.clone()) }).collect()
+        };
+
+        let c1 = self.consumable_gen.gen_consumable_excluding(planetarium, &held_planets);
+        let mut exclude_c2 = held_planets.clone();
+        if !allow_duplicates {
+            if let Consumable::Planet(p) = &c1 { exclude_c2.push(p.clone()); }
+        }
+        let c2 = self.consumable_gen.gen_consumable_excluding(planetarium, &exclude_c2);
         self.consumables = vec![c1, c2];
     }
 
@@ -131,10 +141,14 @@ impl JokerGenerator {
 pub(crate) struct ConsumableGenerator {}
 
 impl ConsumableGenerator {
-    /// Generate a random planet, excluding secret planets unless their hand has been played.
-    fn gen_planet(&self, planetarium: &Planetarium) -> Planets {
+    /// Generate a random planet, excluding secret planets unless their hand has been played,
+    /// and excluding any already-picked planets.
+    fn gen_planet(&self, planetarium: &Planetarium, exclude: &[Planets]) -> Planets {
         let available: Vec<Planets> = Planets::iter()
             .filter(|p| {
+                if exclude.contains(p) {
+                    return false;
+                }
                 if p.is_secret() {
                     planetarium.level(p.hand_rank()).plays > 0
                 } else {
@@ -142,12 +156,15 @@ impl ConsumableGenerator {
                 }
             })
             .collect();
+        if available.is_empty() {
+            return self.gen_planet(planetarium, &[]);
+        }
         let i = thread_rng().gen_range(0..available.len());
         available[i].clone()
     }
 
-    pub(crate) fn gen_consumable(&self, planetarium: &Planetarium) -> Consumable {
-        Consumable::Planet(self.gen_planet(planetarium))
+    pub(crate) fn gen_consumable_excluding(&self, planetarium: &Planetarium, exclude: &[Planets]) -> Consumable {
+        Consumable::Planet(self.gen_planet(planetarium, exclude))
     }
 }
 
@@ -161,7 +178,7 @@ mod tests {
         let planetarium = Planetarium::new();
         assert_eq!(shop.jokers.len(), 0);
         assert_eq!(shop.consumables.len(), 0);
-        shop.refresh(&planetarium);
+        shop.refresh(&planetarium, &[], false);
         assert_eq!(shop.jokers.len(), 2);
         assert_eq!(shop.consumables.len(), 2);
     }
@@ -170,7 +187,7 @@ mod tests {
     fn test_shop_buy_joker() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium);
+        shop.refresh(&planetarium, &[], false);
         assert_eq!(shop.jokers.len(), 2);
         let j1 = shop.jokers[0].clone();
         assert_eq!(shop.joker_from_index(0).expect("first joker"), j1.clone());
@@ -181,7 +198,7 @@ mod tests {
     fn test_shop_buy_consumable() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium);
+        shop.refresh(&planetarium, &[], false);
         assert_eq!(shop.consumables.len(), 2);
         let c1 = shop.consumables[0].clone();
         shop.buy_consumable(&c1).expect("buy consumable");
@@ -193,7 +210,7 @@ mod tests {
         let planetarium = Planetarium::new();
         let gen = ConsumableGenerator {};
         for _ in 0..500 {
-            let c = gen.gen_consumable(&planetarium);
+            let c = gen.gen_consumable_excluding(&planetarium, &[]);
             let Consumable::Planet(planet) = c;
             assert!(!planet.is_secret(), "secret planet generated before discovery");
         }
@@ -203,7 +220,7 @@ mod tests {
     fn test_gen_moves_buy_consumable_slots_full() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium);
+        shop.refresh(&planetarium, &[], false);
         // slots full (held == consumable_slots)
         let moves = shop.gen_moves_buy_consumable(100, 2, 2);
         assert!(moves.is_none());
@@ -213,7 +230,7 @@ mod tests {
     fn test_gen_moves_buy_consumable_no_funds() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium);
+        shop.refresh(&planetarium, &[], false);
         // 0 money can't afford any planet ($3)
         let moves: Option<Vec<Action>> =
             shop.gen_moves_buy_consumable(0, 2, 0).map(|i| i.collect());

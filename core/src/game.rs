@@ -248,7 +248,8 @@ impl Game {
         self.reward = 0;
         self.stage = Stage::Shop();
         let planetarium = self.planetarium.clone();
-        self.shop.refresh(&planetarium);
+        let held = self.consumables.clone();
+        self.shop.refresh(&planetarium, &held, false);
         return Ok(());
     }
 
@@ -695,7 +696,7 @@ mod tests {
         g.start();
         g.stage = Stage::Shop();
         g.money = 10;
-        g.shop.refresh(&g.planetarium.clone());
+        g.shop.refresh(&g.planetarium.clone(), &g.consumables.clone(), false);
 
         let j1 = g.shop.joker_from_index(0).expect("is joker");
         g.buy_joker(j1.clone()).expect("buy joker");
