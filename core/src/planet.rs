@@ -1,273 +1,92 @@
+use crate::rank::{HandRank, Level};
+#[cfg(feature = "python")]
 use pyo3::pyclass;
-use std::sync::{Arc, Mutex};
 use strum::EnumIter;
 
-pub type PlanetEffect = Arc<Mutex<dyn Fn(&mut Planetarium) + Send + 'static>>;
-
-pub trait Planet {
-    fn name(&self) -> String;
-    fn effect(&self) -> PlanetEffect;
-}
-
-// Similar to what we do for jokers.
-// We could pass around `Box<dyn Planet>` but it doesn't work so nice with pyo3 and serde.
-// Since we know all variants (one for each planet), we define an enum that implements
-// our `Planet` trait.
-macro_rules! make_planets {
-    ($($x:ident), *) => {
-        #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-        #[cfg_attr(feature = "python", pyclass(eq))]
-        #[derive(Debug, Clone, EnumIter, Eq, PartialEq, Hash)]
-        pub enum Planets {
-            $(
-                $x($x),
-            )*
-        }
-
-        impl Planet for Planets {
-            fn name(&self) -> String {
-                match self {
-                    $(
-                        Planets::$x(planet) => planet.name(),
-                    )*
-                }
-            }
-            fn effect(&self) -> PlanetEffect {
-                match self {
-                    $(
-                        Planets::$x(planet) => planet.effect(),
-                    )*
-                }
-            }
-        }
-    }
-}
-
-make_planets!(
-    Pluto, Mercury, Uranus, Venus, Saturn, Jupiter, Earth, Mars, Neptune, PlanetX, Ceres, Eris
-);
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Pluto {}
-
-impl Planet for Pluto {
-    fn name(&self) -> String {
-        "Pluto".to_string()
-    }
-    fn effect(&self) -> PlanetEffect {
-        fn apply(p: &mut Planetarium) {
-            p.level_up(HandRank::HighCard);
-        }
-        Arc::new(Mutex::new(apply))
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Mercury {}
-
-impl Planet for Mercury {
-    fn name(&self) -> String {
-        "Mercury".to_string()
-    }
-    fn effect(&self) -> PlanetEffect {
-        fn apply(p: &mut Planetarium) {
-            p.level_up(HandRank::OnePair);
-        }
-        Arc::new(Mutex::new(apply))
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Uranus {}
-
-impl Planet for Uranus {
-    fn name(&self) -> String {
-        "Uranus".to_string()
-    }
-    fn effect(&self) -> PlanetEffect {
-        fn apply(p: &mut Planetarium) {
-            p.level_up(HandRank::TwoPair);
-        }
-        Arc::new(Mutex::new(apply))
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Venus {}
-
-impl Planet for Venus {
-    fn name(&self) -> String {
-        "Venus".to_string()
-    }
-    fn effect(&self) -> PlanetEffect {
-        fn apply(p: &mut Planetarium) {
-            p.level_up(HandRank::ThreeOfAKind);
-        }
-        Arc::new(Mutex::new(apply))
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Saturn {}
-
-impl Planet for Saturn {
-    fn name(&self) -> String {
-        "Saturn".to_string()
-    }
-    fn effect(&self) -> PlanetEffect {
-        fn apply(p: &mut Planetarium) {
-            p.level_up(HandRank::Straight);
-        }
-        Arc::new(Mutex::new(apply))
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Jupiter {}
-
-impl Planet for Jupiter {
-    fn name(&self) -> String {
-        "Jupiter".to_string()
-    }
-    fn effect(&self) -> PlanetEffect {
-        fn apply(p: &mut Planetarium) {
-            p.level_up(HandRank::Flush);
-        }
-        Arc::new(Mutex::new(apply))
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Earth {}
-
-impl Planet for Earth {
-    fn name(&self) -> String {
-        "Earth".to_string()
-    }
-    fn effect(&self) -> PlanetEffect {
-        fn apply(p: &mut Planetarium) {
-            p.level_up(HandRank::FullHouse);
-        }
-        Arc::new(Mutex::new(apply))
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Mars {}
-
-impl Planet for Mars {
-    fn name(&self) -> String {
-        "Mars".to_string()
-    }
-    fn effect(&self) -> PlanetEffect {
-        fn apply(p: &mut Planetarium) {
-            p.level_up(HandRank::FourOfAKind);
-        }
-        Arc::new(Mutex::new(apply))
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Neptune {}
-
-impl Planet for Neptune {
-    fn name(&self) -> String {
-        "Neptune".to_string()
-    }
-    fn effect(&self) -> PlanetEffect {
-        fn apply(p: &mut Planetarium) {
-            p.level_up(HandRank::StraightFlush);
-        }
-        Arc::new(Mutex::new(apply))
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct PlanetX {}
-
-impl Planet for PlanetX {
-    fn name(&self) -> String {
-        "Planet X".to_string()
-    }
-    fn effect(&self) -> PlanetEffect {
-        fn apply(p: &mut Planetarium) {
-            p.level_up(HandRank::FiveOfAKind);
-        }
-        Arc::new(Mutex::new(apply))
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Ceres {}
-
-impl Planet for Ceres {
-    fn name(&self) -> String {
-        "Ceres".to_string()
-    }
-    fn effect(&self) -> PlanetEffect {
-        fn apply(p: &mut Planetarium) {
-            p.level_up(HandRank::FlushHouse);
-        }
-        Arc::new(Mutex::new(apply))
-    }
-}
-
-#[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
-#[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Eris {}
-
-impl Planet for Eris {
-    fn name(&self) -> String {
-        "Eris".to_string()
-    }
-    fn effect(&self) -> PlanetEffect {
-        fn apply(p: &mut Planetarium) {
-            p.level_up(HandRank::FlushFive);
-        }
-        Arc::new(Mutex::new(apply))
-    }
-}
-
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Copy)]
-pub struct Level {
-    pub level: usize,
-    pub chips: usize,
-    pub mult: usize,
-    pub plays: usize,
+#[cfg_attr(feature = "python", pyclass(eq))]
+#[derive(Debug, Clone, EnumIter, Eq, PartialEq, Hash)]
+pub enum Planets {
+    Pluto,
+    Mercury,
+    Uranus,
+    Venus,
+    Saturn,
+    Jupiter,
+    Earth,
+    Mars,
+    Neptune,
+    PlanetX,
+    Ceres,
+    Eris,
 }
 
-/// All the different possible hand ranks.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Copy)]
-pub enum HandRank {
-    HighCard,
-    OnePair,
-    TwoPair,
-    ThreeOfAKind,
-    Straight,
-    Flush,
-    FullHouse,
-    FourOfAKind,
-    StraightFlush,
-    RoyalFlush,
-    FiveOfAKind,
-    FlushHouse,
-    FlushFive,
+impl Planets {
+    pub fn hand_rank(&self) -> HandRank {
+        match self {
+            Self::Pluto => HandRank::HighCard,
+            Self::Mercury => HandRank::OnePair,
+            Self::Uranus => HandRank::TwoPair,
+            Self::Venus => HandRank::ThreeOfAKind,
+            Self::Saturn => HandRank::Straight,
+            Self::Jupiter => HandRank::Flush,
+            Self::Earth => HandRank::FullHouse,
+            Self::Mars => HandRank::FourOfAKind,
+            Self::Neptune => HandRank::StraightFlush,
+            Self::PlanetX => HandRank::FiveOfAKind,
+            Self::Ceres => HandRank::FlushHouse,
+            Self::Eris => HandRank::FlushFive,
+        }
+    }
+
+    pub fn cost(&self) -> usize {
+        3
+    }
+
+    pub fn name(&self) -> String {
+        match self {
+            Self::Pluto => "Pluto".to_string(),
+            Self::Mercury => "Mercury".to_string(),
+            Self::Uranus => "Uranus".to_string(),
+            Self::Venus => "Venus".to_string(),
+            Self::Saturn => "Saturn".to_string(),
+            Self::Jupiter => "Jupiter".to_string(),
+            Self::Earth => "Earth".to_string(),
+            Self::Mars => "Mars".to_string(),
+            Self::Neptune => "Neptune".to_string(),
+            Self::PlanetX => "Planet X".to_string(),
+            Self::Ceres => "Ceres".to_string(),
+            Self::Eris => "Eris".to_string(),
+        }
+    }
+
+    pub fn desc(&self) -> String {
+        format!("Levels up {}", self.hand_rank_name())
+    }
+
+    fn hand_rank_name(&self) -> &str {
+        match self {
+            Self::Pluto => "High Card",
+            Self::Mercury => "One Pair",
+            Self::Uranus => "Two Pair",
+            Self::Venus => "Three of a Kind",
+            Self::Saturn => "Straight",
+            Self::Jupiter => "Flush",
+            Self::Earth => "Full House",
+            Self::Mars => "Four of a Kind",
+            Self::Neptune => "Straight Flush",
+            Self::PlanetX => "Five of a Kind",
+            Self::Ceres => "Flush House",
+            Self::Eris => "Flush Five",
+        }
+    }
+
+    pub fn is_secret(&self) -> bool {
+        matches!(self, Self::PlanetX | Self::Ceres | Self::Eris)
+    }
 }
 
-// Planetarium tracks hand leveling and play count
+/// Tracks the current level, chip/mult values, and play count for each hand rank.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub struct Planetarium {
@@ -288,88 +107,24 @@ pub struct Planetarium {
 
 impl Planetarium {
     pub fn new() -> Self {
-        return Planetarium {
-            highcard: Level {
-                level: 1,
-                chips: 5,
-                mult: 1,
-                plays: 0,
-            },
-            onepair: Level {
-                level: 1,
-                chips: 10,
-                mult: 2,
-                plays: 0,
-            },
-            twopair: Level {
-                level: 1,
-                chips: 20,
-                mult: 2,
-                plays: 0,
-            },
-            threeofkind: Level {
-                level: 1,
-                chips: 30,
-                mult: 3,
-                plays: 0,
-            },
-            straight: Level {
-                level: 1,
-                chips: 30,
-                mult: 4,
-                plays: 0,
-            },
-            flush: Level {
-                level: 1,
-                chips: 35,
-                mult: 4,
-                plays: 0,
-            },
-            fullhouse: Level {
-                level: 1,
-                chips: 40,
-                mult: 4,
-                plays: 0,
-            },
-            fourofkind: Level {
-                level: 1,
-                chips: 60,
-                mult: 7,
-                plays: 0,
-            },
-            straightflush: Level {
-                level: 1,
-                chips: 100,
-                mult: 8,
-                plays: 0,
-            },
-            royalflush: Level {
-                level: 1,
-                chips: 100,
-                mult: 8,
-                plays: 0,
-            },
-            fiveofkind: Level {
-                level: 1,
-                chips: 120,
-                mult: 12,
-                plays: 0,
-            },
-            flushhouse: Level {
-                level: 1,
-                chips: 140,
-                mult: 14,
-                plays: 0,
-            },
-            flushfive: Level {
-                level: 1,
-                chips: 160,
-                mult: 16,
-                plays: 0,
-            },
-        };
+        Planetarium {
+            highcard: Level { level: 1, chips: 5, mult: 1, plays: 0 },
+            onepair: Level { level: 1, chips: 10, mult: 2, plays: 0 },
+            twopair: Level { level: 1, chips: 20, mult: 2, plays: 0 },
+            threeofkind: Level { level: 1, chips: 30, mult: 3, plays: 0 },
+            straight: Level { level: 1, chips: 30, mult: 4, plays: 0 },
+            flush: Level { level: 1, chips: 35, mult: 4, plays: 0 },
+            fullhouse: Level { level: 1, chips: 40, mult: 4, plays: 0 },
+            fourofkind: Level { level: 1, chips: 60, mult: 7, plays: 0 },
+            straightflush: Level { level: 1, chips: 100, mult: 8, plays: 0 },
+            royalflush: Level { level: 1, chips: 100, mult: 8, plays: 0 },
+            fiveofkind: Level { level: 1, chips: 120, mult: 12, plays: 0 },
+            flushhouse: Level { level: 1, chips: 140, mult: 14, plays: 0 },
+            flushfive: Level { level: 1, chips: 160, mult: 16, plays: 0 },
+        }
     }
 
+    /// Increment play count for the rank and return current level data.
     pub fn play(&mut self, rank: HandRank) -> Level {
         match rank {
             HandRank::HighCard => self.highcard.plays += 1,
@@ -386,27 +141,29 @@ impl Planetarium {
             HandRank::FlushHouse => self.flushhouse.plays += 1,
             HandRank::FlushFive => self.flushfive.plays += 1,
         }
-        return self.level(rank);
+        self.level(rank)
     }
 
-    fn level(&self, rank: HandRank) -> Level {
+    pub fn level(&self, rank: HandRank) -> Level {
         match rank {
-            HandRank::HighCard => return self.highcard.clone(),
-            HandRank::OnePair => return self.onepair.clone(),
-            HandRank::TwoPair => return self.twopair.clone(),
-            HandRank::ThreeOfAKind => return self.threeofkind.clone(),
-            HandRank::Straight => return self.straight.clone(),
-            HandRank::Flush => return self.flush.clone(),
-            HandRank::FullHouse => return self.fullhouse.clone(),
-            HandRank::FourOfAKind => return self.fourofkind.clone(),
-            HandRank::StraightFlush => return self.straightflush.clone(),
-            HandRank::RoyalFlush => return self.royalflush.clone(),
-            HandRank::FiveOfAKind => return self.fiveofkind.clone(),
-            HandRank::FlushHouse => return self.flushhouse.clone(),
-            HandRank::FlushFive => return self.flushfive.clone(),
+            HandRank::HighCard => self.highcard,
+            HandRank::OnePair => self.onepair,
+            HandRank::TwoPair => self.twopair,
+            HandRank::ThreeOfAKind => self.threeofkind,
+            HandRank::Straight => self.straight,
+            HandRank::Flush => self.flush,
+            HandRank::FullHouse => self.fullhouse,
+            HandRank::FourOfAKind => self.fourofkind,
+            HandRank::StraightFlush => self.straightflush,
+            HandRank::RoyalFlush => self.royalflush,
+            HandRank::FiveOfAKind => self.fiveofkind,
+            HandRank::FlushHouse => self.flushhouse,
+            HandRank::FlushFive => self.flushfive,
         }
     }
 
+    /// Apply one level-up for the given rank, using the per-planet chip/mult increments.
+    /// Neptune (StraightFlush) also co-levels RoyalFlush.
     pub fn level_up(&mut self, rank: HandRank) {
         match rank {
             HandRank::HighCard => {
@@ -425,9 +182,9 @@ impl Planetarium {
                 self.twopair.mult += 1;
             }
             HandRank::ThreeOfAKind => {
-                self.threeofkind.level += 2;
+                self.threeofkind.level += 1;
                 self.threeofkind.chips += 20;
-                self.threeofkind.mult += 1;
+                self.threeofkind.mult += 2;
             }
             HandRank::Straight => {
                 self.straight.level += 1;
@@ -453,7 +210,6 @@ impl Planetarium {
                 self.straightflush.level += 1;
                 self.straightflush.chips += 40;
                 self.straightflush.mult += 4;
-
                 self.royalflush.level += 1;
                 self.royalflush.chips += 40;
                 self.royalflush.mult += 4;
@@ -475,5 +231,103 @@ impl Planetarium {
                 self.flushfive.mult += 3;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_planet_hand_ranks() {
+        assert_eq!(Planets::Pluto.hand_rank(), HandRank::HighCard);
+        assert_eq!(Planets::Mercury.hand_rank(), HandRank::OnePair);
+        assert_eq!(Planets::Uranus.hand_rank(), HandRank::TwoPair);
+        assert_eq!(Planets::Venus.hand_rank(), HandRank::ThreeOfAKind);
+        assert_eq!(Planets::Saturn.hand_rank(), HandRank::Straight);
+        assert_eq!(Planets::Jupiter.hand_rank(), HandRank::Flush);
+        assert_eq!(Planets::Earth.hand_rank(), HandRank::FullHouse);
+        assert_eq!(Planets::Mars.hand_rank(), HandRank::FourOfAKind);
+        assert_eq!(Planets::Neptune.hand_rank(), HandRank::StraightFlush);
+        assert_eq!(Planets::PlanetX.hand_rank(), HandRank::FiveOfAKind);
+        assert_eq!(Planets::Ceres.hand_rank(), HandRank::FlushHouse);
+        assert_eq!(Planets::Eris.hand_rank(), HandRank::FlushFive);
+    }
+
+    #[test]
+    fn test_planet_is_secret() {
+        assert!(!Planets::Pluto.is_secret());
+        assert!(!Planets::Neptune.is_secret());
+        assert!(Planets::PlanetX.is_secret());
+        assert!(Planets::Ceres.is_secret());
+        assert!(Planets::Eris.is_secret());
+    }
+
+    #[test]
+    fn test_planetarium_level_up_highcard() {
+        let mut p = Planetarium::new();
+        let before = p.level(HandRank::HighCard);
+        p.level_up(HandRank::HighCard);
+        let after = p.level(HandRank::HighCard);
+        assert_eq!(after.level, before.level + 1);
+        assert_eq!(after.chips, before.chips + 10);
+        assert_eq!(after.mult, before.mult + 1);
+    }
+
+    #[test]
+    fn test_planetarium_level_up_threeofkind() {
+        let mut p = Planetarium::new();
+        let before = p.level(HandRank::ThreeOfAKind);
+        p.level_up(HandRank::ThreeOfAKind);
+        let after = p.level(HandRank::ThreeOfAKind);
+        assert_eq!(after.level, before.level + 1);
+        assert_eq!(after.chips, before.chips + 20);
+        assert_eq!(after.mult, before.mult + 2);
+    }
+
+    #[test]
+    fn test_planetarium_level_up_royalflush_colevels_with_straightflush() {
+        let mut p = Planetarium::new();
+        let sf_before = p.level(HandRank::StraightFlush);
+        let rf_before = p.level(HandRank::RoyalFlush);
+        p.level_up(HandRank::StraightFlush);
+        let sf_after = p.level(HandRank::StraightFlush);
+        let rf_after = p.level(HandRank::RoyalFlush);
+        assert_eq!(sf_after.level, sf_before.level + 1);
+        assert_eq!(sf_after.chips, sf_before.chips + 40);
+        assert_eq!(sf_after.mult, sf_before.mult + 4);
+        assert_eq!(rf_after.level, rf_before.level + 1);
+        assert_eq!(rf_after.chips, rf_before.chips + 40);
+        assert_eq!(rf_after.mult, rf_before.mult + 4);
+    }
+
+    #[test]
+    fn test_planetarium_royalflush_level_up_noop() {
+        let mut p = Planetarium::new();
+        let before = p.level(HandRank::RoyalFlush);
+        p.level_up(HandRank::RoyalFlush);
+        let after = p.level(HandRank::RoyalFlush);
+        assert_eq!(after, before);
+    }
+
+    #[test]
+    fn test_planetarium_play_increments_count() {
+        let mut p = Planetarium::new();
+        assert_eq!(p.level(HandRank::OnePair).plays, 0);
+        p.play(HandRank::OnePair);
+        assert_eq!(p.level(HandRank::OnePair).plays, 1);
+        p.play(HandRank::OnePair);
+        assert_eq!(p.level(HandRank::OnePair).plays, 2);
+        assert_eq!(p.level(HandRank::HighCard).plays, 0);
+    }
+
+    #[test]
+    fn test_planetarium_play_returns_current_level() {
+        let mut p = Planetarium::new();
+        p.level_up(HandRank::OnePair);
+        let level = p.play(HandRank::OnePair);
+        assert_eq!(level.chips, 10 + 15);
+        assert_eq!(level.mult, 2 + 1);
+        assert_eq!(level.plays, 1);
     }
 }
