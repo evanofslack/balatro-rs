@@ -131,6 +131,34 @@ impl Game {
         return self.shop.gen_moves_buy_joker(self.money);
     }
 
+    // Get buy consumable actions
+    fn gen_actions_buy_consumable(&self) -> Option<impl Iterator<Item = Action>> {
+        if self.stage != Stage::Shop() {
+            return None;
+        }
+        self.shop.gen_moves_buy_consumable(
+            self.money,
+            self.config.consumable_slots,
+            self.consumables.len(),
+        )
+    }
+
+    // Get use consumable actions
+    fn gen_actions_use_consumable(&self) -> Option<impl Iterator<Item = Action>> {
+        if !matches!(self.stage, Stage::Shop() | Stage::PostBlind()) {
+            return None;
+        }
+        if self.consumables.is_empty() {
+            return None;
+        }
+        Some(
+            self.consumables
+                .clone()
+                .into_iter()
+                .map(|c| Action::UseConsumable(c)),
+        )
+    }
+
     // Get all legal actions that can be executed given current state
     pub fn gen_actions(&self) -> impl Iterator<Item = Action> {
         let select_cards = self.gen_actions_select_card();
@@ -141,6 +169,8 @@ impl Game {
         let next_rounds = self.gen_actions_next_round();
         let select_blinds = self.gen_actions_select_blind();
         let buy_jokers = self.gen_actions_buy_joker();
+        let buy_consumables = self.gen_actions_buy_consumable();
+        let use_consumables = self.gen_actions_use_consumable();
 
         return select_cards
             .into_iter()
@@ -151,7 +181,9 @@ impl Game {
             .chain(cash_outs.into_iter().flatten())
             .chain(next_rounds.into_iter().flatten())
             .chain(select_blinds.into_iter().flatten())
-            .chain(buy_jokers.into_iter().flatten());
+            .chain(buy_jokers.into_iter().flatten())
+            .chain(buy_consumables.into_iter().flatten())
+            .chain(use_consumables.into_iter().flatten());
     }
 
     fn unmask_action_space_select_cards(&self, space: &mut ActionSpace) {
@@ -260,6 +292,36 @@ impl Game {
             });
     }
 
+    fn unmask_action_space_buy_consumable(&self, space: &mut ActionSpace) {
+        if self.stage != Stage::Shop() {
+            return;
+        }
+        if self.consumables.len() >= self.config.consumable_slots {
+            return;
+        }
+        self.shop
+            .consumables
+            .iter()
+            .enumerate()
+            .filter(|(_i, c)| c.cost() <= self.money)
+            .for_each(|(i, _c)| {
+                space
+                    .unmask_buy_consumable(i)
+                    .expect("valid index for buy consumable")
+            });
+    }
+
+    fn unmask_action_space_use_consumable(&self, space: &mut ActionSpace) {
+        if !matches!(self.stage, Stage::Shop() | Stage::PostBlind()) {
+            return;
+        }
+        self.consumables.iter().enumerate().for_each(|(i, _c)| {
+            space
+                .unmask_use_consumable(i)
+                .expect("valid index for use consumable")
+        });
+    }
+
     // Get an action space, masked for legal actions only
     pub fn gen_action_space(&self) -> ActionSpace {
         let mut space = ActionSpace::from(self.config.clone());
@@ -270,6 +332,8 @@ impl Game {
         self.unmask_action_space_next_round(&mut space);
         self.unmask_action_space_select_blind(&mut space);
         self.unmask_action_space_buy_joker(&mut space);
+        self.unmask_action_space_buy_consumable(&mut space);
+        self.unmask_action_space_use_consumable(&mut space);
         return space;
     }
 }

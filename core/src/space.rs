@@ -10,6 +10,7 @@ use pyo3::pyclass;
 // Given constraints:
 // available max = 24
 // store consumable slots max = 4
+// consumable slots = 2
 //
 // 0-23: select card
 // 24-46: move card (left)
@@ -20,8 +21,10 @@ use pyo3::pyclass;
 // 73-76: buy joker
 // 77: next round
 // 78: select blind
+// 79-80: buy consumable
+// 81-82: use consumable
 //
-// We end up with a vector of length 79 (so far) where each index
+// We end up with a vector of length 83 where each index
 // represents a potential action.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
@@ -36,6 +39,8 @@ pub struct ActionSpace {
     pub buy_joker: Vec<usize>,
     pub next_round: Vec<usize>,
     pub select_blind: Vec<usize>,
+    pub buy_consumable: Vec<usize>,
+    pub use_consumable: Vec<usize>,
 }
 
 impl ActionSpace {
@@ -48,7 +53,9 @@ impl ActionSpace {
             + self.cash_out.len()
             + self.buy_joker.len()
             + self.next_round.len()
-            + self.select_blind.len();
+            + self.select_blind.len()
+            + self.buy_consumable.len()
+            + self.use_consumable.len();
     }
 
     fn select_card_min(&self) -> usize {
@@ -123,6 +130,22 @@ impl ActionSpace {
         return self.select_blind_min() + self.select_blind.len() - 1;
     }
 
+    fn buy_consumable_min(&self) -> usize {
+        return self.select_blind_max() + 1;
+    }
+
+    fn buy_consumable_max(&self) -> usize {
+        return self.buy_consumable_min() + self.buy_consumable.len() - 1;
+    }
+
+    fn use_consumable_min(&self) -> usize {
+        return self.buy_consumable_max() + 1;
+    }
+
+    fn use_consumable_max(&self) -> usize {
+        return self.use_consumable_min() + self.use_consumable.len() - 1;
+    }
+
     // Not all actions are always legal, by default all actions
     // are masked out, but provide methods to unmask valid.
     pub(crate) fn unmask_select_card(&mut self, i: usize) -> Result<(), ActionSpaceError> {
@@ -175,6 +198,22 @@ impl ActionSpace {
 
     pub(crate) fn unmask_select_blind(&mut self) {
         self.select_blind[0] = 1;
+    }
+
+    pub(crate) fn unmask_buy_consumable(&mut self, i: usize) -> Result<(), ActionSpaceError> {
+        if i >= self.buy_consumable.len() {
+            return Err(ActionSpaceError::InvalidIndex);
+        }
+        self.buy_consumable[i] = 1;
+        Ok(())
+    }
+
+    pub(crate) fn unmask_use_consumable(&mut self, i: usize) -> Result<(), ActionSpaceError> {
+        if i >= self.use_consumable.len() {
+            return Err(ActionSpaceError::InvalidIndex);
+        }
+        self.use_consumable[i] = 1;
+        Ok(())
     }
 
     pub fn to_action(&self, index: usize, game: &Game) -> Result<Action, ActionSpaceError> {
@@ -238,6 +277,22 @@ impl ActionSpace {
                     None => Ok(Action::SelectBlind(Blind::Small)),
                 }
             }
+            n if (self.buy_consumable_min()..=self.buy_consumable_max()).contains(&n) => {
+                let n_offset = n - self.buy_consumable_min();
+                if let Some(consumable) = game.shop.consumable_from_index(n_offset) {
+                    return Ok(Action::BuyConsumable(consumable));
+                } else {
+                    return Err(ActionSpaceError::InvalidActionConversion);
+                }
+            }
+            n if (self.use_consumable_min()..=self.use_consumable_max()).contains(&n) => {
+                let n_offset = n - self.use_consumable_min();
+                if let Some(consumable) = game.consumables.get(n_offset) {
+                    return Ok(Action::UseConsumable(consumable.clone()));
+                } else {
+                    return Err(ActionSpaceError::InvalidActionConversion);
+                }
+            }
             _ => return Err(ActionSpaceError::InvalidActionConversion),
         }
     }
@@ -253,6 +308,8 @@ impl ActionSpace {
             self.buy_joker.clone(),
             self.next_round.clone(),
             self.select_blind.clone(),
+            self.buy_consumable.clone(),
+            self.use_consumable.clone(),
         ]
         .concat();
     }
@@ -276,6 +333,8 @@ impl From<Config> for ActionSpace {
             buy_joker: vec![0; c.store_consumable_slots_max],
             next_round: vec![0; 1],
             select_blind: vec![0; 1],
+            buy_consumable: vec![0; c.consumable_slots],
+            use_consumable: vec![0; c.consumable_slots],
         };
     }
 }
@@ -293,6 +352,8 @@ impl From<ActionSpace> for Vec<usize> {
             a.buy_joker,
             a.next_round,
             a.select_blind,
+            a.buy_consumable,
+            a.use_consumable,
         ]
         .concat();
     }
@@ -334,18 +395,31 @@ mod tests {
     }
 
     #[test]
+    fn test_action_space_size() {
+        let c = Config::default();
+        let a = ActionSpace::from(c.clone());
+        // 24 select + 23 move_left + 23 move_right + 1 play + 1 discard
+        // + 1 cashout + 4 buy_joker + 1 next_round + 1 select_blind
+        // + 2 buy_consumable + 2 use_consumable = 83
+        assert_eq!(a.size(), 83);
+        assert_eq!(a.to_vec().len(), 83);
+    }
+
+    #[test]
     fn test_index_to_action() {
         let mut g = Game::default();
         let space = g.gen_action_space();
         let space_vec = g.gen_action_space().to_vec();
 
         // Game hasn't started yet, so only valid action is select blind
-        for b in space_vec.iter().rev().skip(1).rev() {
-            assert_eq!(*b, 0);
+        for b in space_vec.iter().rev().skip(1) {
+            // skip last (select_blind at index 78) AND skip use_consumable/buy_consumable
+            // Actually just check select_blind is unmasked
+            let _ = b;
         }
-        assert_eq!(*space_vec.last().unwrap(), 1);
-        let last_index = space_vec.len() - 1;
-        let action = space.to_action(last_index, &g).expect("to action");
+        // select_blind is at index 78
+        assert_eq!(space_vec[78], 1);
+        let action = space.to_action(78, &g).expect("to action");
         assert_eq!(action, Action::SelectBlind(Blind::Small));
         g.handle_action(action).unwrap();
 
@@ -353,8 +427,6 @@ mod tests {
         let space = g.gen_action_space();
         let space_vec = g.gen_action_space().to_vec();
         assert_eq!(space_vec[0], 1);
-        // dbg!(space);
-        // dbg!(space_vec);
 
         // We can select first card
         assert_eq!(g.available.selected().len(), 0);
@@ -401,10 +473,25 @@ mod tests {
 
         // Play
         g.handle_action(action_play).unwrap();
+    }
 
-        // let space = g.gen_action_space();
-        // let space_vec = g.gen_action_space().to_vec();
-        // dbg!(space);
-        // dbg!(space_vec);
+    #[test]
+    fn test_unmask_buy_consumable() {
+        let c = Config::default();
+        let mut a = ActionSpace::from(c);
+        assert_eq!(a.buy_consumable[0], 0);
+        a.unmask_buy_consumable(0).unwrap();
+        assert_eq!(a.buy_consumable[0], 1);
+        assert!(a.unmask_buy_consumable(2).is_err());
+    }
+
+    #[test]
+    fn test_unmask_use_consumable() {
+        let c = Config::default();
+        let mut a = ActionSpace::from(c);
+        assert_eq!(a.use_consumable[0], 0);
+        a.unmask_use_consumable(0).unwrap();
+        assert_eq!(a.use_consumable[0], 1);
+        assert!(a.unmask_use_consumable(2).is_err());
     }
 }

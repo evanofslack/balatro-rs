@@ -3,6 +3,7 @@ use crate::ante::Ante;
 use crate::available::Available;
 use crate::card::Card;
 use crate::config::Config;
+use crate::consumable::Consumable;
 use crate::deck::Deck;
 use crate::effect::{EffectRegistry, Effects};
 use crate::error::GameError;
@@ -36,6 +37,9 @@ pub struct Game {
     pub jokers: Vec<Jokers>,
     pub effect_registry: EffectRegistry,
 
+    // held consumables (planets, tarots, etc.)
+    pub consumables: Vec<Consumable>,
+
     // playing
     pub plays: usize,
     pub discards: usize,
@@ -61,6 +65,7 @@ impl Game {
             action_history: Vec::new(),
             jokers: Vec::new(),
             effect_registry: EffectRegistry::new(),
+            consumables: Vec::new(),
             blind: None,
             stage: Stage::PreBlind(),
             ante_start,
@@ -242,7 +247,8 @@ impl Game {
         self.money += self.reward;
         self.reward = 0;
         self.stage = Stage::Shop();
-        self.shop.refresh();
+        let planetarium = self.planetarium.clone();
+        self.shop.refresh(&planetarium);
         return Ok(());
     }
 
@@ -262,6 +268,40 @@ impl Game {
         self.effect_registry
             .register_jokers(self.jokers.clone(), &self.clone());
         return Ok(());
+    }
+
+    pub(crate) fn buy_consumable(&mut self, consumable: Consumable) -> Result<(), GameError> {
+        if self.stage != Stage::Shop() {
+            return Err(GameError::InvalidStage);
+        }
+        if self.consumables.len() >= self.config.consumable_slots {
+            return Err(GameError::NoAvailableSlot);
+        }
+        if consumable.cost() > self.money {
+            return Err(GameError::InvalidBalance);
+        }
+        self.shop.buy_consumable(&consumable)?;
+        self.money -= consumable.cost();
+        self.consumables.push(consumable);
+        Ok(())
+    }
+
+    pub(crate) fn use_consumable(&mut self, consumable: Consumable) -> Result<(), GameError> {
+        if !matches!(self.stage, Stage::Shop() | Stage::PostBlind()) {
+            return Err(GameError::InvalidStage);
+        }
+        let i = self
+            .consumables
+            .iter()
+            .position(|c| c == &consumable)
+            .ok_or(GameError::InvalidAction)?;
+        self.consumables.remove(i);
+        match consumable {
+            Consumable::Planet(planet) => {
+                self.planetarium.level_up(planet.hand_rank());
+            }
+        }
+        Ok(())
     }
 
     fn select_blind(&mut self, blind: Blind) -> Result<(), GameError> {
@@ -361,6 +401,14 @@ impl Game {
             },
             Action::BuyJoker(joker) => match self.stage {
                 Stage::Shop() => self.buy_joker(joker),
+                _ => Err(GameError::InvalidAction),
+            },
+            Action::BuyConsumable(consumable) => match self.stage {
+                Stage::Shop() => self.buy_consumable(consumable),
+                _ => Err(GameError::InvalidAction),
+            },
+            Action::UseConsumable(consumable) => match self.stage {
+                Stage::Shop() | Stage::PostBlind() => self.use_consumable(consumable),
                 _ => Err(GameError::InvalidAction),
             },
             Action::NextRound() => match self.stage {
@@ -627,7 +675,7 @@ mod tests {
         g.start();
         g.stage = Stage::Shop();
         g.money = 10;
-        g.shop.refresh();
+        g.shop.refresh(&g.planetarium.clone());
 
         let j1 = g.shop.joker_from_index(0).expect("is joker");
         g.buy_joker(j1.clone()).expect("buy joker");
