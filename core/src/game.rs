@@ -16,6 +16,7 @@ use crate::stage::{Blind, End, Stage};
 
 use std::fmt;
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub struct Game {
     pub config: Config,
@@ -35,6 +36,7 @@ pub struct Game {
 
     // jokers and their effects
     pub jokers: Vec<Jokers>,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub effect_registry: EffectRegistry,
 
     // held consumables (planets, tarots, etc.)
@@ -475,6 +477,20 @@ impl fmt::Display for Game {
 impl Default for Game {
     fn default() -> Self {
         return Self::new(Config::default());
+    }
+}
+
+#[cfg(feature = "serde")]
+impl Game {
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
+        let mut game: Self = serde_json::from_str(s)?;
+        let jokers = game.jokers.clone();
+        game.effect_registry.register_jokers(jokers, &game.clone());
+        Ok(game)
     }
 }
 

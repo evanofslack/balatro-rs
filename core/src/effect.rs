@@ -22,6 +22,15 @@ impl EffectRegistry {
             on_modify_hand: Vec::new(),
         };
     }
+}
+
+impl Default for EffectRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EffectRegistry {
     pub fn register_jokers(&mut self, jokers: Vec<Jokers>, game: &Game) {
         self.on_play.clear();
         self.on_discard.clear();
