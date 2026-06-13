@@ -8,9 +8,9 @@ use crate::deck::Deck;
 use crate::effect::{EffectRegistry, Effects};
 use crate::error::GameError;
 use crate::hand::{MadeHand, SelectHand};
-use crate::rank::HandRank;
 use crate::joker::{Joker, Jokers};
 use crate::planet::Planetarium;
+use crate::rank::HandRank;
 use crate::shop::Shop;
 use crate::stage::{Blind, End, Stage};
 
@@ -287,7 +287,7 @@ impl Game {
     }
 
     pub(crate) fn use_consumable(&mut self, consumable: Consumable) -> Result<(), GameError> {
-        if !matches!(self.stage, Stage::Shop() | Stage::PostBlind()) {
+        if matches!(self.stage, Stage::End(_)) {
             return Err(GameError::InvalidStage);
         }
         let i = self
@@ -408,8 +408,8 @@ impl Game {
                 _ => Err(GameError::InvalidAction),
             },
             Action::UseConsumable(consumable) => match self.stage {
-                Stage::Shop() | Stage::PostBlind() => self.use_consumable(consumable),
-                _ => Err(GameError::InvalidAction),
+                Stage::End(_) => Err(GameError::InvalidAction),
+                _ => self.use_consumable(consumable),
             },
             Action::NextRound() => match self.stage {
                 Stage::Shop() => self.next_round(),
@@ -425,7 +425,7 @@ impl Game {
     pub fn handle_action_index(&mut self, index: usize) -> Result<(), GameError> {
         let space = self.gen_action_space();
         let action = space.to_action(index, self)?;
-        return self.handle_action(action);
+        self.handle_action(action)
     }
 }
 

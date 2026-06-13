@@ -111,10 +111,33 @@ mod tests {
     }
 
     #[test]
-    fn test_use_consumable_invalid_in_blind() {
+    fn test_use_consumable_valid_in_blind() {
         let mut g = Game::default();
         g.start();
         g.stage = Stage::Blind(crate::stage::Blind::Small);
+        g.consumables = vec![Consumable::Planet(Planets::Mercury)];
+        let before = g.planetarium.level(HandRank::OnePair);
+        let res = g.handle_action(Action::UseConsumable(Consumable::Planet(Planets::Mercury)));
+        assert!(res.is_ok());
+        assert_eq!(g.planetarium.level(HandRank::OnePair).chips, before.chips + 15);
+    }
+
+    #[test]
+    fn test_use_consumable_valid_in_preblind() {
+        let mut g = Game::default();
+        g.start();
+        g.consumables = vec![Consumable::Planet(Planets::Saturn)];
+        let before = g.planetarium.level(HandRank::Straight);
+        let res = g.handle_action(Action::UseConsumable(Consumable::Planet(Planets::Saturn)));
+        assert!(res.is_ok());
+        assert_eq!(g.planetarium.level(HandRank::Straight).chips, before.chips + 30);
+    }
+
+    #[test]
+    fn test_use_consumable_invalid_at_end() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::End(crate::stage::End::Win);
         g.consumables = vec![Consumable::Planet(Planets::Mercury)];
         let res = g.handle_action(Action::UseConsumable(Consumable::Planet(Planets::Mercury)));
         assert!(matches!(res, Err(GameError::InvalidAction)));
@@ -142,15 +165,16 @@ mod tests {
     }
 
     #[test]
-    fn test_gen_actions_no_consumable_in_blind() {
+    fn test_gen_actions_use_consumable_in_blind() {
         let mut g = Game::default();
         g.start();
         g.stage = Stage::Blind(crate::stage::Blind::Small);
         g.consumables = vec![Consumable::Planet(Planets::Mercury)];
         let actions: Vec<Action> = g.gen_actions().collect();
-        assert!(!actions
+        assert!(actions
             .iter()
             .any(|a| matches!(a, Action::UseConsumable(_))));
+        // buy is still shop-only
         assert!(!actions
             .iter()
             .any(|a| matches!(a, Action::BuyConsumable(_))));

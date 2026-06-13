@@ -145,7 +145,7 @@ impl Game {
 
     // Get use consumable actions
     fn gen_actions_use_consumable(&self) -> Option<impl Iterator<Item = Action>> {
-        if !matches!(self.stage, Stage::Shop() | Stage::PostBlind()) {
+        if matches!(self.stage, Stage::End(_)) {
             return None;
         }
         if self.consumables.is_empty() {
