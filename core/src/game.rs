@@ -16,6 +16,7 @@ use crate::stage::{Blind, End, Stage};
 
 use std::fmt;
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub struct Game {
     pub config: Config,
@@ -35,6 +36,7 @@ pub struct Game {
 
     // jokers and their effects
     pub jokers: Vec<Jokers>,
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub effect_registry: EffectRegistry,
 
     // held consumables (planets, tarots, etc.)
@@ -478,6 +480,20 @@ impl Default for Game {
     }
 }
 
+#[cfg(feature = "serde")]
+impl Game {
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
+    }
+
+    pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
+        let mut game: Self = serde_json::from_str(s)?;
+        let jokers = game.jokers.clone();
+        game.effect_registry.register_jokers(jokers, &game.clone());
+        Ok(game)
+    }
+}
+
 /// Compute a score from base values and jokers, without needing a full Game.
 pub fn score_hand(
     base_chips: usize,
@@ -737,5 +753,46 @@ mod tests {
 
         // Now test with discards=0 — we need score_hand to pass that through
         // For now this is a limitation; skip this assertion
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_to_from_json_roundtrip() {
+        let mut g = Game::default();
+        g.start();
+        let json = g.to_json().expect("serialize");
+        let g2 = Game::from_json(&json).expect("deserialize");
+        assert_eq!(g2.stage, g.stage);
+        assert_eq!(g2.ante_current, g.ante_current);
+        assert_eq!(g2.plays, g.plays);
+        assert_eq!(g2.discards, g.discards);
+        assert_eq!(g2.money, g.money);
+        assert_eq!(g2.available.cards().len(), g.available.cards().len());
+        assert_eq!(g2.deck.len(), g.deck.len());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_from_json_restores_effect_registry() {
+        use crate::joker::{Jokers, TheJoker};
+        let mut g = Game::default();
+        g.start();
+        let joker = Jokers::TheJoker(TheJoker {});
+        g.jokers.push(joker);
+        let jokers = g.jokers.clone();
+        g.effect_registry.register_jokers(jokers, &g.clone());
+        assert!(!g.effect_registry.on_score.is_empty());
+
+        let json = g.to_json().expect("serialize");
+        let g2 = Game::from_json(&json).expect("deserialize");
+        assert_eq!(g2.jokers.len(), 1);
+        assert!(!g2.effect_registry.on_score.is_empty());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_from_json_invalid() {
+        let result = Game::from_json("not valid json");
+        assert!(result.is_err());
     }
 }

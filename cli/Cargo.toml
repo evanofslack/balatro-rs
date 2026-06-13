@@ -9,4 +9,5 @@ repository ="https://github.com/evanofslack/balatro-rs"
 [dependencies]
 text_io = "0.1.9"
 colored = "2.2.0"
+clap = { version = "4", features = ["derive"] }
 balatro-rs = {path = "../core/", version = "0.0.1", features = ["colored"]}

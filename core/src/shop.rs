@@ -39,7 +39,8 @@ impl Shop {
         let c1 = self.consumable_gen.gen_consumable_excluding(planetarium, &held_planets);
         let mut exclude_c2 = held_planets.clone();
         if !allow_duplicates {
-            if let Consumable::Planet(p) = &c1 { exclude_c2.push(p.clone()); }
+            let Consumable::Planet(p) = &c1;
+            exclude_c2.push(p.clone());
         }
         let c2 = self.consumable_gen.gen_consumable_excluding(planetarium, &exclude_c2);
         self.consumables = vec![c1, c2];
