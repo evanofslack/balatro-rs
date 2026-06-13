@@ -1,4 +1,5 @@
 use crate::rank::{HandRank, Level};
+use std::fmt;
 #[cfg(feature = "python")]
 use pyo3::pyclass;
 use strum::EnumIter;
@@ -231,6 +232,28 @@ impl Planetarium {
                 self.flushfive.mult += 3;
             }
         }
+    }
+}
+
+impl fmt::Display for Planetarium {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ranks = [
+            ("HC", self.highcard),
+            ("1P", self.onepair),
+            ("2P", self.twopair),
+            ("3K", self.threeofkind),
+            ("ST", self.straight),
+            ("FL", self.flush),
+            ("FH", self.fullhouse),
+            ("4K", self.fourofkind),
+            ("SF", self.straightflush),
+            ("RF", self.royalflush),
+            ("5K", self.fiveofkind),
+            ("FLH", self.flushhouse),
+            ("FF", self.flushfive),
+        ];
+        let parts: Vec<String> = ranks.iter().map(|(abbr, lvl)| format!("{}:L{}", abbr, lvl.level)).collect();
+        write!(f, "{}", parts.join(" | "))
     }
 }
 
