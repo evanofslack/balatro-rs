@@ -3,6 +3,7 @@ pub mod ante;
 pub mod available;
 pub mod card;
 pub mod config;
+pub mod consumable;
 pub mod deck;
 pub mod effect;
 pub mod error;
@@ -19,10 +20,141 @@ pub mod stage;
 #[cfg(test)]
 mod tests {
     use crate::action::Action;
+    use crate::consumable::Consumable;
+    use crate::error::GameError;
     use crate::game::Game;
+    use crate::planet::Planets;
+    use crate::rank::HandRank;
     use crate::stage::Stage;
 
     use rand::Rng;
+
+    #[test]
+    fn test_planetarium_level_up_changes_scoring() {
+        let mut g = Game::default();
+        let before = g.planetarium.level(HandRank::OnePair);
+        g.planetarium.level_up(HandRank::OnePair);
+        let after = g.planetarium.level(HandRank::OnePair);
+        assert_eq!(after.chips, before.chips + 15);
+        assert_eq!(after.mult, before.mult + 1);
+        assert_eq!(after.level, before.level + 1);
+    }
+
+    #[test]
+    fn test_buy_consumable() {
+        let mut g = Game::default();
+        g.start();
+        g.money = 100;
+        g.stage = Stage::Shop();
+        g.shop.consumables = vec![Consumable::Planet(Planets::Mercury)];
+        g.handle_action(Action::BuyConsumable(Consumable::Planet(Planets::Mercury)))
+            .unwrap();
+        assert_eq!(g.consumables.len(), 1);
+        assert_eq!(g.money, 97);
+        assert!(g.shop.consumables.is_empty());
+    }
+
+    #[test]
+    fn test_use_consumable_planet() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.consumables = vec![Consumable::Planet(Planets::Mercury)];
+        let before = g.planetarium.level(HandRank::OnePair);
+        g.handle_action(Action::UseConsumable(Consumable::Planet(Planets::Mercury)))
+            .unwrap();
+        assert!(g.consumables.is_empty());
+        let after = g.planetarium.level(HandRank::OnePair);
+        assert_eq!(after.chips, before.chips + 15);
+        assert_eq!(after.mult, before.mult + 1);
+    }
+
+    #[test]
+    fn test_use_consumable_in_postblind() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::PostBlind();
+        g.consumables = vec![Consumable::Planet(Planets::Jupiter)];
+        let before = g.planetarium.level(HandRank::Flush);
+        g.handle_action(Action::UseConsumable(Consumable::Planet(Planets::Jupiter)))
+            .unwrap();
+        assert!(g.consumables.is_empty());
+        let after = g.planetarium.level(HandRank::Flush);
+        assert_eq!(after.chips, before.chips + 15);
+        assert_eq!(after.mult, before.mult + 2);
+    }
+
+    #[test]
+    fn test_buy_consumable_slots_full() {
+        let mut g = Game::default();
+        g.start();
+        g.money = 100;
+        g.stage = Stage::Shop();
+        g.consumables = vec![
+            Consumable::Planet(Planets::Pluto),
+            Consumable::Planet(Planets::Mercury),
+        ];
+        g.shop.consumables = vec![Consumable::Planet(Planets::Venus)];
+        let res = g.handle_action(Action::BuyConsumable(Consumable::Planet(Planets::Venus)));
+        assert!(matches!(res, Err(GameError::NoAvailableSlot)));
+    }
+
+    #[test]
+    fn test_buy_consumable_insufficient_funds() {
+        let mut g = Game::default();
+        g.start();
+        g.money = 0;
+        g.stage = Stage::Shop();
+        g.shop.consumables = vec![Consumable::Planet(Planets::Mercury)];
+        let res = g.handle_action(Action::BuyConsumable(Consumable::Planet(Planets::Mercury)));
+        assert!(matches!(res, Err(GameError::InvalidBalance)));
+    }
+
+    #[test]
+    fn test_use_consumable_invalid_in_blind() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(crate::stage::Blind::Small);
+        g.consumables = vec![Consumable::Planet(Planets::Mercury)];
+        let res = g.handle_action(Action::UseConsumable(Consumable::Planet(Planets::Mercury)));
+        assert!(matches!(res, Err(GameError::InvalidAction)));
+    }
+
+    #[test]
+    fn test_gen_actions_buy_consumable_in_shop() {
+        let mut g = Game::default();
+        g.start();
+        g.money = 100;
+        g.stage = Stage::Shop();
+        g.shop.consumables = vec![Consumable::Planet(Planets::Mercury)];
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(actions.contains(&Action::BuyConsumable(Consumable::Planet(Planets::Mercury))));
+    }
+
+    #[test]
+    fn test_gen_actions_use_consumable_in_shop() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.consumables = vec![Consumable::Planet(Planets::Earth)];
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(actions.contains(&Action::UseConsumable(Consumable::Planet(Planets::Earth))));
+    }
+
+    #[test]
+    fn test_gen_actions_no_consumable_in_blind() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(crate::stage::Blind::Small);
+        g.consumables = vec![Consumable::Planet(Planets::Mercury)];
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(!actions
+            .iter()
+            .any(|a| matches!(a, Action::UseConsumable(_))));
+        assert!(!actions
+            .iter()
+            .any(|a| matches!(a, Action::BuyConsumable(_))));
+    }
 
     #[test]
     // Test executing a full game using the gen_actions api
