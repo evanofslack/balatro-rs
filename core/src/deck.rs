@@ -33,6 +33,10 @@ impl Deck {
         self.cards.extend(other);
     }
 
+    pub(crate) fn remove_by_id(&mut self, id: usize) {
+        self.cards.retain(|c| c.id != id);
+    }
+
     pub fn cards(&self) -> Vec<Card> {
         self.cards.clone()
     }

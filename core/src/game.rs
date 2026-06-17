@@ -188,6 +188,11 @@ impl Game {
         return Ok(());
     }
 
+    pub(crate) fn destroy_card(&mut self, id: usize) {
+        self.available.remove_by_id(id);
+        self.deck.remove_by_id(id);
+    }
+
     pub fn calc_score(&mut self, mut hand: MadeHand) -> usize {
         // compute chips and mult from hand level
         let level = self.planetarium.play(hand.rank);
