@@ -53,6 +53,7 @@ pub struct Game {
     pub chips: usize,
     pub mult: usize,
     pub score: usize,
+    pub prob_mult: u32,
 }
 
 impl Game {
@@ -82,6 +83,7 @@ impl Game {
             chips: config.base_chips,
             mult: config.base_mult,
             score: config.base_score,
+            prob_mult: 1,
             config,
         }
     }
@@ -153,11 +155,17 @@ impl Game {
         self.plays -= 1;
         let selected = SelectHand::new(self.available.selected());
         let best = selected.best_hand()?;
+        let scored = best.clone();
         let score = self.calc_score(best);
         let clear_blind = self.handle_score(score)?;
         self.discarded.extend(self.available.selected());
         let removed = self.available.remove_selected();
         self.draw(removed);
+        for card in scored.hand.cards() {
+            if card.enhancement == Some(Enhancement::Glass) && self.prob_roll(1, 4) {
+                self.destroy_card(card.id);
+            }
+        }
         if clear_blind {
             self.clear_blind();
         }
@@ -192,6 +200,12 @@ impl Game {
     pub(crate) fn destroy_card(&mut self, id: usize) {
         self.available.remove_by_id(id);
         self.deck.remove_by_id(id);
+        self.discarded.retain(|c| c.id != id);
+    }
+
+    // RNG roll where we can manually influence the odds
+    pub fn prob_roll(&self, numerator: u32, denominator: u32) -> bool {
+        thread_rng().gen_ratio((numerator * self.prob_mult).min(denominator), denominator)
     }
 
     pub fn calc_score(&mut self, mut hand: MadeHand) -> usize {
@@ -200,25 +214,21 @@ impl Game {
         self.chips += level.chips;
         self.mult += level.mult;
 
-        // Per-scored-card: rank chips, enhancements, editions
-        let mut glass_cards: Vec<Card> = Vec::new();
+        // per-scored-card, rank chips, enhancements, editions
         for card in hand.hand.cards() {
-            // Stone has no rank, skip normal chip value
+            // stone has no rank, skip normal chip value
             if card.enhancement != Some(Enhancement::Stone) {
                 self.chips += card.chips();
             }
             match card.enhancement {
                 Some(Enhancement::Bonus) => self.chips += 30,
                 Some(Enhancement::Mult) => self.mult += 4,
-                Some(Enhancement::Glass) => {
-                    self.mult *= 2;
-                    glass_cards.push(card);
-                }
+                Some(Enhancement::Glass) => self.mult *= 2,
                 Some(Enhancement::Lucky) => {
-                    if thread_rng().gen_ratio(1, 5) {
+                    if self.prob_roll(1, 5) {
                         self.mult += 20;
                     }
-                    if thread_rng().gen_ratio(1, 15) {
+                    if self.prob_roll(1, 15) {
                         self.money += 20;
                     }
                 }
@@ -227,28 +237,28 @@ impl Game {
             match card.edition {
                 Edition::Foil => self.chips += 50,
                 Edition::Holographic => self.mult += 10,
-                Edition::Polychrome => self.mult = (self.mult as f32 * 1.5) as usize,
+                Edition::Polychrome => self.mult += self.mult / 2,
                 _ => {}
             }
         }
 
-        // Stone cards always score +50 chips, even as kickers
+        // stone cards always score +50 chips, even as kickers
         for card in &hand.all {
             if card.enhancement == Some(Enhancement::Stone) {
                 self.chips += 50;
             }
         }
 
-        // Held-in-hand effects (cards not played this hand)
+        // held in hand effects (cards not played this hand)
         for card in self.available.not_selected() {
             match card.enhancement {
-                Some(Enhancement::Steel) => self.mult = (self.mult as f32 * 1.5) as usize,
+                Some(Enhancement::Steel) => self.mult += self.mult / 2,
                 Some(Enhancement::Gold) => self.money += 3,
                 _ => {}
             }
         }
 
-        // Run hand modifiers (e.g. Pareidolia) before joker scoring effects
+        // uun hand modifiers (e.g. Pareidolia) before joker scoring effects
         for e in self.effect_registry.on_modify_hand.clone() {
             match e {
                 Effects::OnModifyHand(f) => f.lock().unwrap()(self, &mut hand),
@@ -256,7 +266,7 @@ impl Game {
             }
         }
 
-        // Apply joker effects
+        // apply joker effects
         for e in self.effect_registry.on_score.clone() {
             match e {
                 Effects::OnScore(f) => f.lock().unwrap()(self, hand.clone()),
@@ -270,13 +280,6 @@ impl Game {
         // reset chips and mult
         self.mult = self.config.base_mult;
         self.chips = self.config.base_chips;
-
-        // Glass shatter: 1/4 chance to permanently destroy each scored glass card
-        for card in glass_cards {
-            if thread_rng().gen_ratio(1, 4) {
-                self.destroy_card(card.id);
-            }
-        }
 
         score
     }
@@ -983,5 +986,52 @@ mod tests {
     fn test_from_json_invalid() {
         let result = Game::from_json("not valid json");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_glass_shatter_preserves_hand_size() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+
+        // Replace available with controlled cards so we have exactly one glass card.
+        // Use mixed values/suits to ensure the hand scores below the blind threshold
+        // so clear_blind() / deal() is not triggered mid-test.
+        g.available.empty();
+        // Glass card is ace (highest) so it's selected as the high card and scores.
+        // high card ace scores (5+11)*2 = 32, below 300 small blind threshold.
+        let mut glass = Card::new(Value::Ace, Suit::Heart);
+        glass.enhancement = Some(Enhancement::Glass);
+        let glass_id = glass.id;
+        let others = vec![
+            Card::new(Value::Two, Suit::Club),
+            Card::new(Value::Four, Suit::Diamond),
+            Card::new(Value::Six, Suit::Spade),
+            Card::new(Value::Eight, Suit::Club),
+            Card::new(Value::Ten, Suit::Diamond),
+            Card::new(Value::Queen, Suit::Spade),
+        ];
+        let mut hand_cards = vec![glass];
+        hand_cards.extend(others);
+        g.available.extend(hand_cards);
+
+        let hand_size_before = g.available.cards().len();
+
+        // Force 100% shatter probability (only needs to be 4 but overkill is ok)
+        g.prob_mult = 100;
+
+        // Select glass + 4 others (5-card hand)
+        let to_select: Vec<Card> = g.available.cards().into_iter().take(5).collect();
+        for card in to_select {
+            g.available.select_card(card).expect("select card");
+        }
+
+        g.play_selected().expect("play selected");
+
+        // Hand size must be unchanged
+        assert_eq!(g.available.cards().len(), hand_size_before);
+        // Glass card must be permanently gone (not hiding in discarded to return next deal)
+        assert!(g.discarded.iter().all(|c| c.id != glass_id));
     }
 }
