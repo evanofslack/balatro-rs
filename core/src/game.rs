@@ -1,7 +1,7 @@
 use crate::action::{Action, MoveDirection};
 use crate::ante::Ante;
 use crate::available::Available;
-use crate::card::Card;
+use crate::card::{Card, Edition, Enhancement};
 use crate::config::Config;
 use crate::consumable::Consumable;
 use crate::deck::Deck;
@@ -14,6 +14,7 @@ use crate::rank::HandRank;
 use crate::shop::Shop;
 use crate::stage::{Blind, End, Stage};
 
+use rand::prelude::*;
 use std::fmt;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -52,6 +53,7 @@ pub struct Game {
     pub chips: usize,
     pub mult: usize,
     pub score: usize,
+    pub prob_mult: u32,
 }
 
 impl Game {
@@ -81,6 +83,7 @@ impl Game {
             chips: config.base_chips,
             mult: config.base_mult,
             score: config.base_score,
+            prob_mult: 1,
             config,
         }
     }
@@ -152,11 +155,17 @@ impl Game {
         self.plays -= 1;
         let selected = SelectHand::new(self.available.selected());
         let best = selected.best_hand()?;
+        let scored = best.clone();
         let score = self.calc_score(best);
         let clear_blind = self.handle_score(score)?;
         self.discarded.extend(self.available.selected());
         let removed = self.available.remove_selected();
         self.draw(removed);
+        for card in scored.hand.cards() {
+            if card.enhancement == Some(Enhancement::Glass) && self.prob_roll(1, 4) {
+                self.destroy_card(card.id);
+            }
+        }
         if clear_blind {
             self.clear_blind();
         }
@@ -188,17 +197,68 @@ impl Game {
         return Ok(());
     }
 
+    pub(crate) fn destroy_card(&mut self, id: usize) {
+        self.available.remove_by_id(id);
+        self.deck.remove_by_id(id);
+        self.discarded.retain(|c| c.id != id);
+    }
+
+    // RNG roll where we can manually influence the odds
+    pub fn prob_roll(&self, numerator: u32, denominator: u32) -> bool {
+        thread_rng().gen_ratio((numerator * self.prob_mult).min(denominator), denominator)
+    }
+
     pub fn calc_score(&mut self, mut hand: MadeHand) -> usize {
         // compute chips and mult from hand level
         let level = self.planetarium.play(hand.rank);
         self.chips += level.chips;
         self.mult += level.mult;
 
-        // add chips for each played card
-        let card_chips: usize = hand.hand.cards().iter().map(|c| c.chips()).sum();
-        self.chips += card_chips;
+        // per-scored-card, rank chips, enhancements, editions
+        for card in hand.hand.cards() {
+            // stone has no rank, skip normal chip value
+            if card.enhancement != Some(Enhancement::Stone) {
+                self.chips += card.chips();
+            }
+            match card.enhancement {
+                Some(Enhancement::Bonus) => self.chips += 30,
+                Some(Enhancement::Mult) => self.mult += 4,
+                Some(Enhancement::Glass) => self.mult *= 2,
+                Some(Enhancement::Lucky) => {
+                    if self.prob_roll(1, 5) {
+                        self.mult += 20;
+                    }
+                    if self.prob_roll(1, 15) {
+                        self.money += 20;
+                    }
+                }
+                _ => {}
+            }
+            match card.edition {
+                Edition::Foil => self.chips += 50,
+                Edition::Holographic => self.mult += 10,
+                Edition::Polychrome => self.mult += self.mult / 2,
+                _ => {}
+            }
+        }
 
-        // Run hand modifiers (e.g. Pareidolia) before scoring effects
+        // stone cards always score +50 chips, even as kickers
+        for card in &hand.all {
+            if card.enhancement == Some(Enhancement::Stone) {
+                self.chips += 50;
+            }
+        }
+
+        // held in hand effects (cards not played this hand)
+        for card in self.available.not_selected() {
+            match card.enhancement {
+                Some(Enhancement::Steel) => self.mult += self.mult / 2,
+                Some(Enhancement::Gold) => self.money += 3,
+                _ => {}
+            }
+        }
+
+        // uun hand modifiers (e.g. Pareidolia) before joker scoring effects
         for e in self.effect_registry.on_modify_hand.clone() {
             match e {
                 Effects::OnModifyHand(f) => f.lock().unwrap()(self, &mut hand),
@@ -206,7 +266,7 @@ impl Game {
             }
         }
 
-        // Apply effects that modify game.chips and game.mult
+        // apply joker effects
         for e in self.effect_registry.on_score.clone() {
             match e {
                 Effects::OnScore(f) => f.lock().unwrap()(self, hand.clone()),
@@ -220,7 +280,8 @@ impl Game {
         // reset chips and mult
         self.mult = self.config.base_mult;
         self.chips = self.config.base_chips;
-        return score;
+
+        score
     }
 
     pub fn required_score(&self) -> usize {
@@ -434,9 +495,17 @@ impl Game {
 
 impl fmt::Display for Game {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let hand_str: String = self.available.cards_and_selected()
+        let hand_str: String = self
+            .available
+            .cards_and_selected()
             .iter()
-            .map(|(c, sel)| if *sel { format!("[{}]", c) } else { format!("{}", c) })
+            .map(|(c, sel)| {
+                if *sel {
+                    format!("[{}]", c)
+                } else {
+                    format!("{}", c)
+                }
+            })
             .collect::<Vec<_>>()
             .join(" ");
         writeln!(f, "hand: {}", hand_str)?;
@@ -453,7 +522,9 @@ impl fmt::Display for Game {
         if self.consumables.is_empty() {
             writeln!(f, "consumables: (none)")?;
         } else {
-            let parts: Vec<String> = self.consumables.iter()
+            let parts: Vec<String> = self
+                .consumables
+                .iter()
                 .map(|c| format!("[{}] {}", c.type_label(), c.name()))
                 .collect();
             writeln!(f, "consumables: {}", parts.join(", "))?;
@@ -467,7 +538,12 @@ impl fmt::Display for Game {
         writeln!(f, "discards remaining: {}", self.discards)?;
         writeln!(f, "money: {}", self.money)?;
         if matches!(self.stage, Stage::Blind(_)) {
-            writeln!(f, "score: {}  target: {}", self.score, self.required_score())
+            writeln!(
+                f,
+                "score: {}  target: {}",
+                self.score,
+                self.required_score()
+            )
         } else {
             writeln!(f, "score: {}", self.score)
         }
@@ -712,7 +788,8 @@ mod tests {
         g.start();
         g.stage = Stage::Shop();
         g.money = 10;
-        g.shop.refresh(&g.planetarium.clone(), &g.consumables.clone(), false);
+        g.shop
+            .refresh(&g.planetarium.clone(), &g.consumables.clone(), false);
 
         let j1 = g.shop.joker_from_index(0).expect("is joker");
         g.buy_joker(j1.clone()).expect("buy joker");
@@ -755,6 +832,121 @@ mod tests {
         // For now this is a limitation; skip this assertion
     }
 
+    #[test]
+    fn test_enhancement_bonus() {
+        // High card Ace with Bonus: (5 + 11 + 30) * 1 = 46
+        let mut g = Game::default();
+        let mut ace = Card::new(Value::Ace, Suit::Heart);
+        ace.enhancement = Some(Enhancement::Bonus);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 46);
+    }
+
+    #[test]
+    fn test_enhancement_mult() {
+        // High card Ace with Mult: (5 + 11) * (1 + 4) = 80
+        let mut g = Game::default();
+        let mut ace = Card::new(Value::Ace, Suit::Heart);
+        ace.enhancement = Some(Enhancement::Mult);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 80);
+    }
+
+    #[test]
+    fn test_enhancement_glass() {
+        // High card Ace with Glass: (5 + 11) * (1 * 2) = 32
+        let mut g = Game::default();
+        let mut ace = Card::new(Value::Ace, Suit::Heart);
+        ace.enhancement = Some(Enhancement::Glass);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 32);
+    }
+
+    #[test]
+    fn test_enhancement_stone_as_kicker() {
+        // [Ace, Stone] -> High Card Ace; Stone kicker always scores +50
+        // (5 + 11 + 50) * 1 = 66
+        let mut g = Game::default();
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let mut stone = Card::new(Value::Two, Suit::Diamond);
+        stone.enhancement = Some(Enhancement::Stone);
+        let hand = SelectHand::new(vec![ace, stone]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 66);
+    }
+
+    #[test]
+    fn test_enhancement_steel_held() {
+        // Pair of Kings scored; Steel King held (not played)
+        // Pair level 1: chips=10, mult=2; both Kings score: chips=10+10+10=30
+        // Steel held: mult = floor(2 * 1.5) = 3 -> score = 30 * 3 = 90
+        let mut g = Game::default();
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Diamond);
+        let mut steel_king = Card::new(Value::King, Suit::Spade);
+        steel_king.enhancement = Some(Enhancement::Steel);
+        g.available.extend(vec![steel_king]);
+        let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 90);
+    }
+
+    #[test]
+    fn test_enhancement_gold_held() {
+        // Gold card held in unplayed hand gives $3 per hand scored
+        let mut g = Game::default();
+        let mut gold_card = Card::new(Value::Two, Suit::Heart);
+        gold_card.enhancement = Some(Enhancement::Gold);
+        g.available.extend(vec![gold_card]);
+        let ace = Card::new(Value::Ace, Suit::Spade);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.money, 3);
+    }
+
+    #[test]
+    fn test_edition_foil() {
+        // High card Ace with Foil: (5 + 11 + 50) * 1 = 66
+        let mut g = Game::default();
+        let mut ace = Card::new(Value::Ace, Suit::Heart);
+        ace.edition = Edition::Foil;
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 66);
+    }
+
+    #[test]
+    fn test_edition_holographic() {
+        // High card Ace with Holographic: (5 + 11) * (1 + 10) = 176
+        let mut g = Game::default();
+        let mut ace = Card::new(Value::Ace, Suit::Heart);
+        ace.edition = Edition::Holographic;
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 176);
+    }
+
+    #[test]
+    fn test_edition_polychrome() {
+        // Pair of Kings, second King has Polychrome
+        // Pair level 1: chips=10, mult=2
+        // king1: chips += 10; king2 (poly): chips += 10, mult = floor(2*1.5) = 3
+        // score = (10+10+10) * 3 = 90
+        let mut g = Game::default();
+        let king = Card::new(Value::King, Suit::Heart);
+        let mut poly_king = Card::new(Value::King, Suit::Diamond);
+        poly_king.edition = Edition::Polychrome;
+        let hand = SelectHand::new(vec![king, poly_king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 90);
+    }
+
+    #[test]
+    fn test_destroy_card() {
+        let mut g = Game::default();
+        g.deal();
+        let card = g.available.cards()[0];
+        let available_before = g.available.cards().len();
+        g.destroy_card(card.id);
+        assert_eq!(g.available.cards().len(), available_before - 1);
+        assert!(g.available.cards().iter().all(|c| c.id != card.id));
+    }
+
     #[cfg(feature = "serde")]
     #[test]
     fn test_to_from_json_roundtrip() {
@@ -794,5 +986,52 @@ mod tests {
     fn test_from_json_invalid() {
         let result = Game::from_json("not valid json");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_glass_shatter_preserves_hand_size() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+
+        // Replace available with controlled cards so we have exactly one glass card.
+        // Use mixed values/suits to ensure the hand scores below the blind threshold
+        // so clear_blind() / deal() is not triggered mid-test.
+        g.available.empty();
+        // Glass card is ace (highest) so it's selected as the high card and scores.
+        // high card ace scores (5+11)*2 = 32, below 300 small blind threshold.
+        let mut glass = Card::new(Value::Ace, Suit::Heart);
+        glass.enhancement = Some(Enhancement::Glass);
+        let glass_id = glass.id;
+        let others = vec![
+            Card::new(Value::Two, Suit::Club),
+            Card::new(Value::Four, Suit::Diamond),
+            Card::new(Value::Six, Suit::Spade),
+            Card::new(Value::Eight, Suit::Club),
+            Card::new(Value::Ten, Suit::Diamond),
+            Card::new(Value::Queen, Suit::Spade),
+        ];
+        let mut hand_cards = vec![glass];
+        hand_cards.extend(others);
+        g.available.extend(hand_cards);
+
+        let hand_size_before = g.available.cards().len();
+
+        // Force 100% shatter probability (only needs to be 4 but overkill is ok)
+        g.prob_mult = 100;
+
+        // Select glass + 4 others (5-card hand)
+        let to_select: Vec<Card> = g.available.cards().into_iter().take(5).collect();
+        for card in to_select {
+            g.available.select_card(card).expect("select card");
+        }
+
+        g.play_selected().expect("play selected");
+
+        // Hand size must be unchanged
+        assert_eq!(g.available.cards().len(), hand_size_before);
+        // Glass card must be permanently gone (not hiding in discarded to return next deal)
+        assert!(g.discarded.iter().all(|c| c.id != glass_id));
     }
 }

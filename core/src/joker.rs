@@ -4,7 +4,6 @@ use crate::game::Game;
 use crate::hand::{MadeHand, SelectHand};
 #[cfg(feature = "python")]
 use pyo3::pyclass;
-use rand::Rng;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 use strum::{EnumIter, IntoEnumIterator};
@@ -1141,9 +1140,8 @@ impl Joker for BusinessCard {
     }
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
-            let mut rng = rand::thread_rng();
             for card in _hand.hand.cards() {
-                if card.is_face_card && rng.gen_bool(0.5) {
+                if card.is_face_card && g.prob_roll(1, 2) {
                     g.money += 2;
                 }
             }
@@ -1311,9 +1309,8 @@ impl Joker for ReservedParking {
     }
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
-            let mut rng = rand::thread_rng();
-            for card in &g.held {
-                if card.is_face_card && rng.gen_bool(0.5) {
+            for card in &g.held.clone() {
+                if card.is_face_card && g.prob_roll(1, 2) {
                     g.money += 1;
                 }
             }
@@ -1567,8 +1564,8 @@ impl Joker for Bloodstone {
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
             for card in _hand.hand.cards() {
-                if card.suit == Suit::Heart && rand::thread_rng().gen_bool(0.5) {
-                    g.mult = (g.mult as f64 * 1.5) as usize;
+                if card.suit == Suit::Heart && g.prob_roll(1, 2) {
+                    g.mult += g.mult / 2;
                 }
             }
         }

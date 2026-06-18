@@ -80,6 +80,10 @@ impl Available {
         }
     }
 
+    pub(crate) fn remove_by_id(&mut self, id: usize) {
+        self.cards.retain(|(c, _)| c.id != id);
+    }
+
     pub(crate) fn empty(&mut self) {
         self.cards = Vec::new();
     }

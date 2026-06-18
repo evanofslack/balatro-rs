@@ -5,6 +5,7 @@ use pyo3::pyclass;
 use std::fmt;
 
 use crate::card::Card;
+use crate::card::Enhancement;
 use crate::card::Suit;
 use crate::card::Value;
 use crate::error::PlayHandError;
@@ -334,15 +335,35 @@ impl SelectHand {
         if self.len() < 5 {
             return None;
         }
-        if let Some((_value, cards)) = self
-            .suits_freq()
-            .into_iter()
-            .find(|(_key, val)| val.len() == 5)
-        {
-            return Some(SelectHand::new(cards));
-        } else {
-            return None;
+        // Each wild card in hand reduces the number of a suit needed to make a flush
+        // since a wild can be any suit.
+        let wilds: Vec<Card> = self
+            .0
+            .iter()
+            .filter(|c| c.enhancement == Some(Enhancement::Wild))
+            .cloned()
+            .collect();
+        let wild_count = wilds.len();
+        let needed = 5usize.saturating_sub(wild_count);
+
+        if needed == 0 {
+            return Some(self.clone());
         }
+
+        let mut suit_groups: IndexMap<Suit, Vec<Card>> = IndexMap::new();
+        for card in self
+            .0
+            .iter()
+            .filter(|c| c.enhancement != Some(Enhancement::Wild))
+        {
+            suit_groups.entry(card.suit).or_default().push(*card);
+        }
+
+        if let Some((_, mut cards)) = suit_groups.into_iter().find(|(_, v)| v.len() >= needed) {
+            cards.extend(wilds);
+            return Some(SelectHand::new(cards));
+        }
+        None
     }
 
     pub(crate) fn is_fullhouse(&self) -> Option<SelectHand> {
@@ -1043,6 +1064,50 @@ mod tests {
         let hand = SelectHand::new(vec![c1, c2, c3, c4]);
         let fh = hand.is_flush_house();
         assert_eq!(fh, None);
+    }
+
+    #[test]
+    fn test_flush_with_wild() {
+        // 4 hearts + 1 Wild = flush
+        let c1 = Card::new(Value::King, Suit::Heart);
+        let c2 = Card::new(Value::Queen, Suit::Heart);
+        let c3 = Card::new(Value::Jack, Suit::Heart);
+        let c4 = Card::new(Value::Seven, Suit::Heart);
+        let mut wild = Card::new(Value::Two, Suit::Diamond);
+        wild.enhancement = Some(Enhancement::Wild);
+
+        let hand = SelectHand::new(vec![c1, c2, c3, c4, wild]);
+        assert!(hand.is_flush().is_some());
+        assert_eq!(hand.is_flush().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn test_flush_wild_insufficient() {
+        // 3 hearts + 1 diamond + 1 Wild = not a flush
+        let c1 = Card::new(Value::King, Suit::Heart);
+        let c2 = Card::new(Value::Queen, Suit::Heart);
+        let c3 = Card::new(Value::Jack, Suit::Heart);
+        let c4 = Card::new(Value::Ace, Suit::Diamond);
+        let mut wild = Card::new(Value::Two, Suit::Club);
+        wild.enhancement = Some(Enhancement::Wild);
+
+        let hand = SelectHand::new(vec![c1, c2, c3, c4, wild]);
+        assert!(hand.is_flush().is_none());
+    }
+
+    #[test]
+    fn test_flush_two_wilds() {
+        // 3 hearts + 2 Wilds = flush
+        let c1 = Card::new(Value::King, Suit::Heart);
+        let c2 = Card::new(Value::Queen, Suit::Heart);
+        let c3 = Card::new(Value::Jack, Suit::Heart);
+        let mut wild1 = Card::new(Value::Two, Suit::Diamond);
+        wild1.enhancement = Some(Enhancement::Wild);
+        let mut wild2 = Card::new(Value::Three, Suit::Spade);
+        wild2.enhancement = Some(Enhancement::Wild);
+
+        let hand = SelectHand::new(vec![c1, c2, c3, wild1, wild2]);
+        assert!(hand.is_flush().is_some());
     }
 
     #[test]
