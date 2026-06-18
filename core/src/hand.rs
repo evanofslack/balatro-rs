@@ -49,7 +49,7 @@ impl SelectHand {
         self.0.iter().map(|x| x.value).sorted().collect()
     }
     pub(crate) fn cards(&self) -> Vec<Card> {
-        return self.0.clone();
+        self.0.clone()
     }
 
     // Get map of each value with corresponding cards.
@@ -66,10 +66,10 @@ impl SelectHand {
             }
         }
         // Return sorted by value
-        return counts
+        counts
             .into_iter()
             .sorted_by(|a, b| Ord::cmp(&b.0, &a.0))
-            .collect();
+            .collect()
     }
 
     // Get all suits in a hand
@@ -79,6 +79,7 @@ impl SelectHand {
 
     // Get map of each suit with corresponding cards.
     // For example, Ks, Ah, Jh, Jc, Jd -> {h: [Jh, Ah], s: [Ks], c: [Jc], d: [Jd]}
+    #[allow(dead_code)]
     pub(crate) fn suits_freq(&self) -> IndexMap<Suit, Vec<Card>> {
         let mut counts: IndexMap<Suit, Vec<Card>> = IndexMap::new();
         for card in self.0.clone() {
@@ -91,10 +92,10 @@ impl SelectHand {
             }
         }
         // Return sorted by suit
-        return counts
+        counts
             .into_iter()
             .sorted_by(|a, b| Ord::cmp(&b.0, &a.0))
-            .collect();
+            .collect()
     }
 
     /// Can play any number of cards, it is our responsibility
@@ -118,7 +119,7 @@ impl SelectHand {
     // OnePair
     // HighCard
     pub fn best_hand(&self) -> Result<MadeHand, PlayHandError> {
-        if self.len() == 0 {
+        if self.0.is_empty() {
             return Err(PlayHandError::NoCards);
         }
         if self.len() > 5 {
@@ -127,129 +128,62 @@ impl SelectHand {
 
         // We start trying to evaluate best hands first, so we
         // can return best hand right when we find it.
-        if let Some(hand) = self.is_flush_five() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::FlushFive,
-                all: self.cards(),
-            });
-        }
-        if let Some(hand) = self.is_flush_house() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::FlushHouse,
-                all: self.cards(),
-            });
-        }
-        if let Some(hand) = self.is_five_of_kind() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::FiveOfAKind,
-                all: self.cards(),
-            });
-        }
-        if let Some(hand) = self.is_royal_flush() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::RoyalFlush,
-                all: self.cards(),
-            });
-        }
-        if let Some(hand) = self.is_straight_flush() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::StraightFlush,
-                all: self.cards(),
-            });
-        }
-        if let Some(hand) = self.is_four_of_kind() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::FourOfAKind,
-                all: self.cards(),
-            });
-        }
-        if let Some(hand) = self.is_fullhouse() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::FullHouse,
-                all: self.cards(),
-            });
-        }
-        if let Some(hand) = self.is_flush() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::Flush,
-                all: self.cards(),
-            });
-        }
-        if let Some(hand) = self.is_straight() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::Straight,
-                all: self.cards(),
-            });
-        }
-        if let Some(hand) = self.is_three_of_kind() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::ThreeOfAKind,
-                all: self.cards(),
-            });
-        }
-        if let Some(hand) = self.is_two_pair() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::TwoPair,
-                all: self.cards(),
-            });
-        }
-        if let Some(hand) = self.is_pair() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::OnePair,
-                all: self.cards(),
-            });
-        }
-        if let Some(hand) = self.is_highcard() {
-            return Ok(MadeHand {
-                hand,
-                rank: HandRank::HighCard,
-                all: self.cards(),
-            });
-        }
-        // We didn't match any known hand, oops...
-        return Err(PlayHandError::UnknownHand);
+        let (hand, rank) = if let Some(hand) = self.is_flush_five() {
+            (hand, HandRank::FlushFive)
+        } else if let Some(hand) = self.is_flush_house() {
+            (hand, HandRank::FlushHouse)
+        } else if let Some(hand) = self.is_five_of_kind() {
+            (hand, HandRank::FiveOfAKind)
+        } else if let Some(hand) = self.is_royal_flush() {
+            (hand, HandRank::RoyalFlush)
+        } else if let Some(hand) = self.is_straight_flush() {
+            (hand, HandRank::StraightFlush)
+        } else if let Some(hand) = self.is_four_of_kind() {
+            (hand, HandRank::FourOfAKind)
+        } else if let Some(hand) = self.is_fullhouse() {
+            (hand, HandRank::FullHouse)
+        } else if let Some(hand) = self.is_flush() {
+            (hand, HandRank::Flush)
+        } else if let Some(hand) = self.is_straight() {
+            (hand, HandRank::Straight)
+        } else if let Some(hand) = self.is_three_of_kind() {
+            (hand, HandRank::ThreeOfAKind)
+        } else if let Some(hand) = self.is_two_pair() {
+            (hand, HandRank::TwoPair)
+        } else if let Some(hand) = self.is_pair() {
+            (hand, HandRank::OnePair)
+        } else if let Some(hand) = self.is_highcard() {
+            (hand, HandRank::HighCard)
+        } else {
+            return Err(PlayHandError::UnknownHand);
+        };
+        Ok(MadeHand {
+            hand,
+            rank,
+            all: self.cards(),
+        })
     }
 
     pub(crate) fn is_highcard(&self) -> Option<SelectHand> {
         if self.len() < 1 {
             return None;
         }
-        if let Some((_value, cards)) = self
+        let (_value, cards) = self
             .values_freq()
             .into_iter()
-            .find(|(_key, val)| val.len() >= 1)
-        {
-            return Some(SelectHand::new(cards));
-        } else {
-            return None;
-        }
+            .find(|(_key, val)| !val.is_empty())?;
+        Some(SelectHand::new(cards))
     }
 
     pub(crate) fn is_pair(&self) -> Option<SelectHand> {
         if self.len() < 2 {
             return None;
         }
-        if let Some((_value, cards)) = self
+        let (_value, cards) = self
             .values_freq()
             .into_iter()
-            .find(|(_key, val)| val.len() >= 2)
-        {
-            return Some(SelectHand::new(cards));
-        } else {
-            return None;
-        }
+            .find(|(_key, val)| val.len() >= 2)?;
+        Some(SelectHand::new(cards))
     }
 
     pub(crate) fn is_two_pair(&self) -> Option<SelectHand> {
@@ -261,47 +195,31 @@ impl SelectHand {
         let first = self
             .values_freq()
             .into_iter()
-            .find(|(_key, val)| val.len() >= 2);
-        if first.is_none() {
-            return None;
-        }
-        let first_val = first
-            .as_ref()
-            .unwrap()
-            .1
-            .first()
-            .expect("values freq has empty Vec<card>")
-            .value;
+            .find(|(_key, val)| val.len() >= 2)?;
+        let first_val = first.1.first().expect("values freq has empty Vec<card>").value;
 
         // Next find second pair that isn't same value as first pair
         let second = self
             .values_freq()
             .into_iter()
-            .find(|(key, val)| *key != first_val && val.len() >= 2);
-        if second.is_none() {
-            return None;
-        }
+            .find(|(key, val)| *key != first_val && val.len() >= 2)?;
 
         // Combine first and second pair
         let mut cards: Vec<Card> = Vec::new();
-        cards.extend(first.unwrap().1);
-        cards.extend(second.unwrap().1);
-        return Some(SelectHand::new(cards));
+        cards.extend(first.1);
+        cards.extend(second.1);
+        Some(SelectHand::new(cards))
     }
 
     pub(crate) fn is_three_of_kind(&self) -> Option<SelectHand> {
         if self.len() < 3 {
             return None;
         }
-        if let Some((_value, cards)) = self
+        let (_value, cards) = self
             .values_freq()
             .into_iter()
-            .find(|(_key, val)| val.len() >= 3)
-        {
-            return Some(SelectHand::new(cards));
-        } else {
-            return None;
-        }
+            .find(|(_key, val)| val.len() >= 3)?;
+        Some(SelectHand::new(cards))
     }
 
     pub(crate) fn is_straight(&self) -> Option<SelectHand> {
@@ -328,7 +246,7 @@ impl SelectHand {
                 return Some(self.clone());
             }
         }
-        return None;
+        None
     }
 
     pub(crate) fn is_flush(&self) -> Option<SelectHand> {
@@ -375,54 +293,38 @@ impl SelectHand {
         let three = self
             .values_freq()
             .into_iter()
-            .find(|(_key, val)| val.len() >= 3);
-        if three.is_none() {
-            return None;
-        }
-        let three_val = three
-            .as_ref()
-            .unwrap()
-            .1
-            .first()
-            .expect("values freq has empty Vec<card>")
-            .value;
+            .find(|(_key, val)| val.len() >= 3)?;
+        let three_val = three.1.first().expect("values freq has empty Vec<card>").value;
 
         // Next find 2ok that isn't same value as 3ok
         let two = self
             .values_freq()
             .into_iter()
-            .find(|(key, val)| *key != three_val && val.len() >= 2);
-        if two.is_none() {
-            return None;
-        }
+            .find(|(key, val)| *key != three_val && val.len() >= 2)?;
 
         // Combine 3ok and 2ok
         let mut cards: Vec<Card> = Vec::new();
-        cards.extend(three.unwrap().1);
-        cards.extend(two.unwrap().1);
-        return Some(SelectHand::new(cards));
+        cards.extend(three.1);
+        cards.extend(two.1);
+        Some(SelectHand::new(cards))
     }
 
     pub(crate) fn is_four_of_kind(&self) -> Option<SelectHand> {
         if self.len() < 4 {
             return None;
         }
-        if let Some((_value, cards)) = self
+        let (_value, cards) = self
             .values_freq()
             .into_iter()
-            .find(|(_key, val)| val.len() >= 4)
-        {
-            return Some(SelectHand::new(cards));
-        } else {
-            return None;
-        }
+            .find(|(_key, val)| val.len() >= 4)?;
+        Some(SelectHand::new(cards))
     }
 
     pub(crate) fn is_straight_flush(&self) -> Option<SelectHand> {
         if self.is_flush().is_some() && self.is_straight().is_some() {
             return Some(self.clone());
         }
-        return None;
+        None
     }
 
     pub(crate) fn is_royal_flush(&self) -> Option<SelectHand> {
@@ -437,36 +339,32 @@ impl SelectHand {
         {
             return Some(self.clone());
         }
-        return None;
+        None
     }
 
     pub(crate) fn is_five_of_kind(&self) -> Option<SelectHand> {
         if self.len() < 5 {
             return None;
         }
-        if let Some((_value, cards)) = self
+        let (_value, cards) = self
             .values_freq()
             .into_iter()
-            .find(|(_key, val)| val.len() >= 5)
-        {
-            return Some(SelectHand::new(cards));
-        } else {
-            return None;
-        }
+            .find(|(_key, val)| val.len() >= 5)?;
+        Some(SelectHand::new(cards))
     }
 
     pub(crate) fn is_flush_house(&self) -> Option<SelectHand> {
         if self.is_flush().is_some() && self.is_fullhouse().is_some() {
             return Some(self.clone());
         }
-        return None;
+        None
     }
 
     pub(crate) fn is_flush_five(&self) -> Option<SelectHand> {
         if self.is_flush().is_some() && self.is_five_of_kind().is_some() {
             return Some(self.clone());
         }
-        return None;
+        None
     }
 }
 
@@ -483,8 +381,7 @@ impl fmt::Display for SelectHand {
         for card in &self.0 {
             write!(f, "{}", card)?;
         }
-        write!(f, "]")?;
-        return Ok(());
+        write!(f, "]")
     }
 }
 
@@ -546,7 +443,7 @@ mod tests {
         assert_eq!(freq.get(&Value::Four).unwrap()[0].value, Value::Four);
 
         // Check ordered by value
-        assert_eq!(freq.into_iter().nth(0).unwrap().0, Value::King)
+        assert_eq!(freq.into_iter().next().unwrap().0, Value::King)
     }
 
     #[test]

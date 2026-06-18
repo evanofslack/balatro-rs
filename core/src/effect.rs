@@ -3,6 +3,10 @@ use crate::hand::MadeHand;
 use crate::joker::{Joker, Jokers};
 use std::sync::{Arc, Mutex};
 
+type GameHandFn = Arc<Mutex<dyn Fn(&mut Game, MadeHand) + Send + 'static>>;
+type GameFn = Arc<Mutex<dyn Fn(&mut Game) + Send + 'static>>;
+type GameModifyFn = Arc<Mutex<dyn Fn(&mut Game, &mut MadeHand) + Send + 'static>>;
+
 #[derive(Debug, Clone)]
 pub struct EffectRegistry {
     pub on_play: Vec<Effects>,
@@ -14,13 +18,13 @@ pub struct EffectRegistry {
 
 impl EffectRegistry {
     pub fn new() -> Self {
-        return Self {
+        Self {
             on_play: Vec::new(),
             on_discard: Vec::new(),
             on_score: Vec::new(),
             on_handrank: Vec::new(),
             on_modify_hand: Vec::new(),
-        };
+        }
     }
 }
 
@@ -55,11 +59,11 @@ impl EffectRegistry {
 // signature of these callbacks are more complicated so they
 // can be used by pyo3 as part of python class.
 pub enum Effects {
-    OnPlay(Arc<Mutex<dyn Fn(&mut Game, MadeHand) + Send + 'static>>),
-    OnDiscard(Arc<Mutex<dyn Fn(&mut Game, MadeHand) + Send + 'static>>),
-    OnScore(Arc<Mutex<dyn Fn(&mut Game, MadeHand) + Send + 'static>>),
-    OnHandRank(Arc<Mutex<dyn Fn(&mut Game) + Send + 'static>>),
-    OnModifyHand(Arc<Mutex<dyn Fn(&mut Game, &mut MadeHand) + Send + 'static>>),
+    OnPlay(GameHandFn),
+    OnDiscard(GameHandFn),
+    OnScore(GameHandFn),
+    OnHandRank(GameFn),
+    OnModifyHand(GameModifyFn),
 }
 
 impl std::fmt::Debug for Effects {

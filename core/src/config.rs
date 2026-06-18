@@ -56,7 +56,7 @@ pub struct Config {
 
 impl Config {
     pub fn new() -> Self {
-        return Config {
+        Config {
             round_start: DEFAULT_ROUND_START,
             plays: DEFAULT_PLAYS,
             discards: DEFAULT_DISCARDS,
@@ -80,13 +80,13 @@ impl Config {
             consumable_slots: DEFAULT_CONSUMABLE_SLOTS,
             deck_max: DEFAULT_DECK_MAX,
             discarded_max: DEFAULT_DISCARDED_MAX,
-        };
+        }
     }
 }
 
 impl Default for Config {
     fn default() -> Self {
-        return Self::new();
+        Self::new()
     }
 }
 
@@ -100,7 +100,7 @@ impl Config {
 
     #[getter]
     fn get_ante_end(&mut self) -> usize {
-        return self.ante_end;
+        self.ante_end
     }
 
     #[setter]
@@ -110,7 +110,7 @@ impl Config {
 
     #[getter]
     fn get_plays(&mut self) -> usize {
-        return self.plays;
+        self.plays
     }
 
     #[setter]
@@ -120,7 +120,7 @@ impl Config {
 
     #[getter]
     fn get_discards(&mut self) -> usize {
-        return self.discards;
+        self.discards
     }
 
     #[setter]
@@ -130,7 +130,7 @@ impl Config {
 
     #[getter]
     fn get_selected_max(&mut self) -> usize {
-        return self.selected_max;
+        self.selected_max
     }
 
     #[setter]
@@ -140,7 +140,7 @@ impl Config {
 
     #[getter]
     fn get_deck_max(&mut self) -> usize {
-        return self.deck_max;
+        self.deck_max
     }
 
     #[setter]
@@ -150,7 +150,7 @@ impl Config {
 
     #[getter]
     fn get_discarded_max(&mut self) -> usize {
-        return self.discarded_max;
+        self.discarded_max
     }
 
     #[setter]
@@ -160,7 +160,7 @@ impl Config {
 
     #[getter]
     fn get_available_max(&mut self) -> usize {
-        return self.available_max;
+        self.available_max
     }
 
     #[setter]
@@ -170,7 +170,7 @@ impl Config {
 
     #[getter]
     fn get_joker_slots(&mut self) -> usize {
-        return self.joker_slots;
+        self.joker_slots
     }
 
     #[setter]
@@ -180,7 +180,7 @@ impl Config {
 
     #[getter]
     fn get_joker_slots_max(&mut self) -> usize {
-        return self.joker_slots_max;
+        self.joker_slots_max
     }
 
     #[setter]
@@ -190,7 +190,7 @@ impl Config {
 
     #[getter]
     fn get_money_max(&mut self) -> usize {
-        return self.money_max;
+        self.money_max
     }
 
     #[setter]
@@ -199,7 +199,7 @@ impl Config {
     }
     #[getter]
     fn get_consumable_slots(&mut self) -> usize {
-        return self.consumable_slots;
+        self.consumable_slots
     }
 
     #[setter]
@@ -209,6 +209,6 @@ impl Config {
 
     #[getter]
     fn get_stage_max(&self) -> usize {
-        return 8;
+        8
     }
 }

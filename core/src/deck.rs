@@ -15,7 +15,7 @@ impl Deck {
         if self.cards.len() < n {
             return None;
         }
-        return Some(self.cards.drain(0..n).collect());
+        Some(self.cards.drain(0..n).collect())
     }
     pub(crate) fn len(&self) -> usize {
         self.cards.len()

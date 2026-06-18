@@ -1,7 +1,7 @@
 use crate::rank::{HandRank, Level};
-use std::fmt;
 #[cfg(feature = "python")]
 use pyo3::pyclass;
+use std::fmt;
 use strum::EnumIter;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -109,22 +109,95 @@ pub struct Planetarium {
 impl Planetarium {
     pub fn new() -> Self {
         Planetarium {
-            highcard: Level { level: 1, chips: 5, mult: 1, plays: 0 },
-            onepair: Level { level: 1, chips: 10, mult: 2, plays: 0 },
-            twopair: Level { level: 1, chips: 20, mult: 2, plays: 0 },
-            threeofkind: Level { level: 1, chips: 30, mult: 3, plays: 0 },
-            straight: Level { level: 1, chips: 30, mult: 4, plays: 0 },
-            flush: Level { level: 1, chips: 35, mult: 4, plays: 0 },
-            fullhouse: Level { level: 1, chips: 40, mult: 4, plays: 0 },
-            fourofkind: Level { level: 1, chips: 60, mult: 7, plays: 0 },
-            straightflush: Level { level: 1, chips: 100, mult: 8, plays: 0 },
-            royalflush: Level { level: 1, chips: 100, mult: 8, plays: 0 },
-            fiveofkind: Level { level: 1, chips: 120, mult: 12, plays: 0 },
-            flushhouse: Level { level: 1, chips: 140, mult: 14, plays: 0 },
-            flushfive: Level { level: 1, chips: 160, mult: 16, plays: 0 },
+            highcard: Level {
+                level: 1,
+                chips: 5,
+                mult: 1,
+                plays: 0,
+            },
+            onepair: Level {
+                level: 1,
+                chips: 10,
+                mult: 2,
+                plays: 0,
+            },
+            twopair: Level {
+                level: 1,
+                chips: 20,
+                mult: 2,
+                plays: 0,
+            },
+            threeofkind: Level {
+                level: 1,
+                chips: 30,
+                mult: 3,
+                plays: 0,
+            },
+            straight: Level {
+                level: 1,
+                chips: 30,
+                mult: 4,
+                plays: 0,
+            },
+            flush: Level {
+                level: 1,
+                chips: 35,
+                mult: 4,
+                plays: 0,
+            },
+            fullhouse: Level {
+                level: 1,
+                chips: 40,
+                mult: 4,
+                plays: 0,
+            },
+            fourofkind: Level {
+                level: 1,
+                chips: 60,
+                mult: 7,
+                plays: 0,
+            },
+            straightflush: Level {
+                level: 1,
+                chips: 100,
+                mult: 8,
+                plays: 0,
+            },
+            royalflush: Level {
+                level: 1,
+                chips: 100,
+                mult: 8,
+                plays: 0,
+            },
+            fiveofkind: Level {
+                level: 1,
+                chips: 120,
+                mult: 12,
+                plays: 0,
+            },
+            flushhouse: Level {
+                level: 1,
+                chips: 140,
+                mult: 14,
+                plays: 0,
+            },
+            flushfive: Level {
+                level: 1,
+                chips: 160,
+                mult: 16,
+                plays: 0,
+            },
         }
     }
+}
 
+impl Default for Planetarium {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Planetarium {
     /// Increment play count for the rank and return current level data.
     pub fn play(&mut self, rank: HandRank) -> Level {
         match rank {
@@ -252,7 +325,10 @@ impl fmt::Display for Planetarium {
             ("FLH", self.flushhouse),
             ("FF", self.flushfive),
         ];
-        let parts: Vec<String> = ranks.iter().map(|(abbr, lvl)| format!("{}:L{}", abbr, lvl.level)).collect();
+        let parts: Vec<String> = ranks
+            .iter()
+            .map(|(abbr, lvl)| format!("{}:L{}", abbr, lvl.level))
+            .collect();
         write!(f, "{}", parts.join(" | "))
     }
 }

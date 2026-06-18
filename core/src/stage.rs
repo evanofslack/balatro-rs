@@ -71,10 +71,7 @@ pub enum Stage {
 
 impl Stage {
     pub(crate) fn is_blind(&self) -> bool {
-        return match self {
-            Stage::Blind(_) => true,
-            _ => false,
-        };
+        matches!(self, Stage::Blind(_))
     }
 }
 
