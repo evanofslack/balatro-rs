@@ -37,6 +37,12 @@ impl Deck {
         self.cards.retain(|c| c.id != id);
     }
 
+    pub(crate) fn mutate_card<F: Fn(&mut Card)>(&mut self, id: usize, f: F) {
+        if let Some(c) = self.cards.iter_mut().find(|c| c.id == id) {
+            f(c);
+        }
+    }
+
     pub fn cards(&self) -> Vec<Card> {
         self.cards.clone()
     }

@@ -42,6 +42,8 @@ pub enum Action {
     NextRound(),
     SelectBlind(Blind),
     // SkipBlind(Blind),
+    ApplyTarot(),
+    SkipTarotHand(),
 }
 
 impl fmt::Display for Action {
@@ -77,6 +79,8 @@ impl fmt::Display for Action {
             Self::SelectBlind(blind) => {
                 write!(f, "SelectBlind: {}", blind)
             }
+            Self::ApplyTarot() => write!(f, "ApplyTarot"),
+            Self::SkipTarotHand() => write!(f, "SkipTarotHand"),
         }
     }
 }

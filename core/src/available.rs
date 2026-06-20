@@ -82,6 +82,12 @@ impl Available {
         self.cards.retain(|(c, _)| c.id != id);
     }
 
+    pub(crate) fn mutate_card<F: Fn(&mut Card)>(&mut self, id: usize, f: F) {
+        if let Some((c, _)) = self.cards.iter_mut().find(|(c, _)| c.id == id) {
+            f(c);
+        }
+    }
+
     pub(crate) fn empty(&mut self) {
         self.cards = Vec::new();
     }
@@ -100,7 +106,6 @@ impl Available {
         self.cards.clone()
     }
 }
-
 
 #[cfg(test)]
 mod tests {

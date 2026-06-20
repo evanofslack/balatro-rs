@@ -13,6 +13,7 @@ use crate::planet::Planetarium;
 use crate::rank::HandRank;
 use crate::shop::Shop;
 use crate::stage::{Blind, End, Stage};
+use crate::tarot::Tarot;
 
 use rand::prelude::*;
 use std::fmt;
@@ -54,6 +55,10 @@ pub struct Game {
     pub mult: usize,
     pub score: usize,
     pub prob_mult: u32,
+
+    pub last_consumable_used: Option<Consumable>,
+    // track stage so we can come back to it after temp tarot stage
+    pub(crate) tarot_prev_stage: Option<Stage>,
 }
 
 impl Game {
@@ -84,6 +89,8 @@ impl Game {
             mult: config.base_mult,
             score: config.base_score,
             prob_mult: 1,
+            last_consumable_used: None,
+            tarot_prev_stage: None,
             config,
         }
     }
@@ -198,6 +205,11 @@ impl Game {
         self.available.remove_by_id(id);
         self.deck.remove_by_id(id);
         self.discarded.retain(|c| c.id != id);
+    }
+
+    pub(crate) fn mutate_card<F: Fn(&mut Card) + Copy>(&mut self, id: usize, f: F) {
+        self.available.mutate_card(id, f);
+        self.deck.mutate_card(id, f);
     }
 
     // RNG roll where we can manually influence the odds
@@ -357,8 +369,75 @@ impl Game {
         match consumable {
             Consumable::Planet(planet) => {
                 self.planetarium.level_up(planet.hand_rank());
+                self.last_consumable_used = Some(Consumable::Planet(planet));
+            }
+            Consumable::Tarot(t) => {
+                if t.requires_targets() && !self.stage.is_blind() {
+                    let prev = self.stage;
+                    self.tarot_prev_stage = Some(prev);
+                    self.stage = Stage::TarotHand(t);
+                    let n = self.config.available.min(self.deck.len());
+                    self.draw(n);
+                } else {
+                    let selected_count = self.available.selected().len();
+                    if t.requires_targets()
+                        && (selected_count < t.min_targets() || selected_count > t.max_targets())
+                    {
+                        return Err(GameError::InvalidAction);
+                    }
+                    t.apply(self)?;
+                    if t != Tarot::Fool {
+                        self.last_consumable_used = Some(Consumable::Tarot(t));
+                    }
+                }
             }
         }
+        Ok(())
+    }
+
+    pub(crate) fn apply_tarot(&mut self) -> Result<(), GameError> {
+        let Stage::TarotHand(t) = self.stage else {
+            return Err(GameError::InvalidStage);
+        };
+        let prev = self
+            .tarot_prev_stage
+            .take()
+            .ok_or(GameError::InvalidStage)?;
+        let selected_count = self.available.selected().len();
+        if selected_count < t.min_targets() || selected_count > t.max_targets() {
+            self.tarot_prev_stage = Some(prev);
+            return Err(GameError::InvalidAction);
+        }
+        t.apply(self)?;
+        if t != Tarot::Fool {
+            self.last_consumable_used = Some(Consumable::Tarot(t));
+        }
+        if !prev.is_blind() {
+            let cards = self.available.cards();
+            self.available.empty();
+            self.deck.extend(cards);
+            self.deck.shuffle();
+        }
+        self.stage = prev;
+        Ok(())
+    }
+
+    pub(crate) fn skip_tarot_hand(&mut self) -> Result<(), GameError> {
+        let Stage::TarotHand(t) = self.stage else {
+            return Err(GameError::InvalidStage);
+        };
+        let prev = self
+            .tarot_prev_stage
+            .take()
+            .ok_or(GameError::InvalidStage)?;
+        self.consumables.push(Consumable::Tarot(t));
+        if !prev.is_blind() {
+            let cards = self.available.cards();
+            self.available.empty();
+            self.deck.extend(cards);
+            self.deck.shuffle();
+        }
+        self.stage = prev;
         Ok(())
     }
 
@@ -437,10 +516,13 @@ impl Game {
     pub fn handle_action(&mut self, action: Action) -> Result<(), GameError> {
         self.action_history.push(action.clone());
         match action {
-            Action::SelectCard(card) => match self.stage.is_blind() {
-                true => self.select_card(card),
-                false => Err(GameError::InvalidAction),
-            },
+            Action::SelectCard(card) => {
+                if self.stage.is_blind() || matches!(self.stage, Stage::TarotHand(_)) {
+                    self.select_card(card)
+                } else {
+                    Err(GameError::InvalidAction)
+                }
+            }
             Action::Play() => match self.stage.is_blind() {
                 true => self.play_selected(),
                 false => Err(GameError::InvalidAction),
@@ -449,10 +531,13 @@ impl Game {
                 true => self.discard_selected(),
                 false => Err(GameError::InvalidAction),
             },
-            Action::MoveCard(dir, card) => match self.stage.is_blind() {
-                true => self.move_card(dir, card),
-                false => Err(GameError::InvalidAction),
-            },
+            Action::MoveCard(dir, card) => {
+                if self.stage.is_blind() || matches!(self.stage, Stage::TarotHand(_)) {
+                    self.move_card(dir, card)
+                } else {
+                    Err(GameError::InvalidAction)
+                }
+            }
             Action::CashOut(_reward) => match self.stage {
                 Stage::PostBlind() => self.cashout(),
                 _ => Err(GameError::InvalidAction),
@@ -466,7 +551,7 @@ impl Game {
                 _ => Err(GameError::InvalidAction),
             },
             Action::UseConsumable(consumable) => match self.stage {
-                Stage::End(_) => Err(GameError::InvalidAction),
+                Stage::End(_) | Stage::TarotHand(_) => Err(GameError::InvalidAction),
                 _ => self.use_consumable(consumable),
             },
             Action::NextRound() => match self.stage {
@@ -477,6 +562,8 @@ impl Game {
                 Stage::PreBlind() => self.select_blind(blind),
                 _ => Err(GameError::InvalidAction),
             },
+            Action::ApplyTarot() => self.apply_tarot(),
+            Action::SkipTarotHand() => self.skip_tarot_hand(),
         }
     }
 

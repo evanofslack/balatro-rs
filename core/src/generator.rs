@@ -1,4 +1,5 @@
 use crate::action::{Action, MoveDirection};
+use crate::consumable::Consumable;
 use crate::game::Game;
 use crate::joker::Joker;
 use crate::space::ActionSpace;
@@ -145,18 +146,100 @@ impl Game {
 
     // Get use consumable actions
     fn gen_actions_use_consumable(&self) -> Option<impl Iterator<Item = Action>> {
-        if matches!(self.stage, Stage::End(_)) {
+        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_)) {
             return None;
         }
         if self.consumables.is_empty() {
             return None;
         }
-        Some(
-            self.consumables
-                .clone()
+        let selected_count = self.available.selected().len();
+        let actions: Vec<Action> = self
+            .consumables
+            .iter()
+            .filter(|c| match c {
+                Consumable::Planet(_) => true,
+                // eligible to play tarot if any
+                // 1.) tarot doesn't require selected cards
+                // 2.) in blind stage and card(s) are selected
+                // 3.) not in blind stage (will draw hand to apply tarot)
+                Consumable::Tarot(t) => {
+                    if !t.requires_targets() {
+                        true
+                    } else if self.stage.is_blind() {
+                        selected_count >= t.min_targets() && selected_count <= t.max_targets()
+                    } else {
+                        true
+                    }
+                }
+            })
+            .cloned()
+            .map(Action::UseConsumable)
+            .collect();
+        if actions.is_empty() {
+            None
+        } else {
+            Some(actions.into_iter())
+        }
+    }
+
+    // are we in the temp tarot hand stage?
+    // if so, we draw a temp hand and give options for applying the tarot.
+    fn gen_actions_tarot_hand(&self) -> Option<impl Iterator<Item = Action>> {
+        let Stage::TarotHand(t) = self.stage else {
+            return None;
+        };
+        let selected_count = self.available.selected().len();
+
+        let select_cards: Vec<Action> = if selected_count < self.config.selected_max {
+            self.available
+                .not_selected()
                 .into_iter()
-                .map(Action::UseConsumable),
-        )
+                .map(Action::SelectCard)
+                .collect()
+        } else {
+            vec![]
+        };
+
+        let move_left: Vec<Action> = self
+            .available
+            .cards()
+            .into_iter()
+            .skip(1)
+            .map(|c| Action::MoveCard(MoveDirection::Left, c))
+            .collect();
+
+        let move_right: Vec<Action> = {
+            let cards = self.available.cards();
+            let len = cards.len();
+            if len > 1 {
+                cards
+                    .into_iter()
+                    .take(len - 1)
+                    .map(|c| Action::MoveCard(MoveDirection::Right, c))
+                    .collect()
+            } else {
+                vec![]
+            }
+        };
+
+        let apply: Vec<Action> =
+            if selected_count >= t.min_targets() && selected_count <= t.max_targets() {
+                vec![Action::ApplyTarot()]
+            } else {
+                vec![]
+            };
+
+        let skip = vec![Action::SkipTarotHand()];
+
+        let all: Vec<Action> = select_cards
+            .into_iter()
+            .chain(move_left)
+            .chain(move_right)
+            .chain(apply)
+            .chain(skip)
+            .collect();
+
+        Some(all.into_iter())
     }
 
     // Get all legal actions that can be executed given current state
@@ -171,6 +254,7 @@ impl Game {
         let buy_jokers = self.gen_actions_buy_joker();
         let buy_consumables = self.gen_actions_buy_consumable();
         let use_consumables = self.gen_actions_use_consumable();
+        let tarot_hand = self.gen_actions_tarot_hand();
 
         select_cards
             .into_iter()
@@ -184,6 +268,7 @@ impl Game {
             .chain(buy_jokers.into_iter().flatten())
             .chain(buy_consumables.into_iter().flatten())
             .chain(use_consumables.into_iter().flatten())
+            .chain(tarot_hand.into_iter().flatten())
     }
 
     fn unmask_action_space_select_cards(&self, space: &mut ActionSpace) {
@@ -312,14 +397,77 @@ impl Game {
     }
 
     fn unmask_action_space_use_consumable(&self, space: &mut ActionSpace) {
-        if !matches!(self.stage, Stage::Shop() | Stage::PostBlind()) {
+        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_)) {
             return;
         }
-        self.consumables.iter().enumerate().for_each(|(i, _c)| {
-            space
-                .unmask_use_consumable(i)
-                .expect("valid index for use consumable")
+        let selected_count = self.available.selected().len();
+        self.consumables.iter().enumerate().for_each(|(i, c)| {
+            let valid = match c {
+                Consumable::Planet(_) => true,
+                Consumable::Tarot(t) => {
+                    if !t.requires_targets() {
+                        true
+                    } else if self.stage.is_blind() {
+                        selected_count >= t.min_targets() && selected_count <= t.max_targets()
+                    } else {
+                        true
+                    }
+                }
+            };
+            if valid {
+                space
+                    .unmask_use_consumable(i)
+                    .expect("valid index for use consumable");
+            }
         });
+    }
+
+    fn unmask_action_space_tarot_hand(&self, space: &mut ActionSpace) {
+        let Stage::TarotHand(t) = self.stage else {
+            return;
+        };
+        // select cards
+        let selected_count = self.available.selected().len();
+        if selected_count < self.config.selected_max {
+            self.available
+                .cards_and_selected()
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, a))| !*a)
+                .for_each(|(i, _)| {
+                    space
+                        .unmask_select_card(i)
+                        .expect("valid index for selecting");
+                });
+        }
+        // move cards
+        self.available
+            .cards()
+            .iter()
+            .skip(1)
+            .enumerate()
+            .for_each(|(i, _)| {
+                space
+                    .unmask_move_card_left(i)
+                    .expect("valid index for move left");
+            });
+        self.available
+            .cards()
+            .iter()
+            .rev()
+            .skip(1)
+            .rev()
+            .enumerate()
+            .for_each(|(i, _)| {
+                space
+                    .unmask_move_card_right(i)
+                    .expect("valid index for move right");
+            });
+        // apply / skip
+        if selected_count >= t.min_targets() && selected_count <= t.max_targets() {
+            space.unmask_apply_tarot();
+        }
+        space.unmask_skip_tarot_hand();
     }
 
     // Get an action space, masked for legal actions only
@@ -334,6 +482,7 @@ impl Game {
         self.unmask_action_space_buy_joker(&mut space);
         self.unmask_action_space_buy_consumable(&mut space);
         self.unmask_action_space_use_consumable(&mut space);
+        self.unmask_action_space_tarot_hand(&mut space);
         space
     }
 }
@@ -348,7 +497,10 @@ mod tests {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let king = Card::new(Value::King, Suit::Diamond);
 
-        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
 
         // nothing selected, nothing to play
         assert!(g.gen_actions_discard().is_none());
@@ -370,7 +522,10 @@ mod tests {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let king = Card::new(Value::King, Suit::Diamond);
 
-        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
 
         // nothing selected, nothing to discard
         assert!(g.gen_actions_discard().is_none());
@@ -467,7 +622,10 @@ mod tests {
 
     #[test]
     fn test_unmask_action_space_move_cards() {
-        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
         let mut space = ActionSpace::from(g.config.clone());
 
         // Default action space everything should be masked, since no cards available yet

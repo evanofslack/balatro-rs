@@ -51,6 +51,24 @@ impl Value {
     pub const fn values() -> [Self; 13] {
         VALUES
     }
+
+    pub fn next(self) -> Self {
+        match self {
+            Value::Two => Value::Three,
+            Value::Three => Value::Four,
+            Value::Four => Value::Five,
+            Value::Five => Value::Six,
+            Value::Six => Value::Seven,
+            Value::Seven => Value::Eight,
+            Value::Eight => Value::Nine,
+            Value::Nine => Value::Ten,
+            Value::Ten => Value::Jack,
+            Value::Jack => Value::Queen,
+            Value::Queen => Value::King,
+            Value::King => Value::Ace,
+            Value::Ace => Value::Two,
+        }
+    }
 }
 
 impl From<Value> for char {

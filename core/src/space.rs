@@ -23,8 +23,10 @@ use pyo3::pyclass;
 // 78: select blind
 // 79-80: buy consumable
 // 81-82: use consumable
+// 83: apply tarot
+// 84: skip tarot hand
 //
-// We end up with a vector of length 83 where each index
+// We end up with a vector of length 85 where each index
 // represents a potential action.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
@@ -41,6 +43,8 @@ pub struct ActionSpace {
     pub select_blind: Vec<usize>,
     pub buy_consumable: Vec<usize>,
     pub use_consumable: Vec<usize>,
+    pub apply_tarot: Vec<usize>,
+    pub skip_tarot_hand: Vec<usize>,
 }
 
 impl ActionSpace {
@@ -56,6 +60,8 @@ impl ActionSpace {
             + self.select_blind.len()
             + self.buy_consumable.len()
             + self.use_consumable.len()
+            + self.apply_tarot.len()
+            + self.skip_tarot_hand.len()
     }
 
     fn select_card_min(&self) -> usize {
@@ -146,6 +152,22 @@ impl ActionSpace {
         self.use_consumable_min() + self.use_consumable.len() - 1
     }
 
+    fn apply_tarot_min(&self) -> usize {
+        self.use_consumable_max() + 1
+    }
+
+    fn apply_tarot_max(&self) -> usize {
+        self.apply_tarot_min()
+    }
+
+    fn skip_tarot_hand_min(&self) -> usize {
+        self.apply_tarot_max() + 1
+    }
+
+    fn skip_tarot_hand_max(&self) -> usize {
+        self.skip_tarot_hand_min()
+    }
+
     // Not all actions are always legal, by default all actions
     // are masked out, but provide methods to unmask valid.
     pub(crate) fn unmask_select_card(&mut self, i: usize) -> Result<(), ActionSpaceError> {
@@ -216,6 +238,14 @@ impl ActionSpace {
         Ok(())
     }
 
+    pub(crate) fn unmask_apply_tarot(&mut self) {
+        self.apply_tarot[0] = 1;
+    }
+
+    pub(crate) fn unmask_skip_tarot_hand(&mut self) {
+        self.skip_tarot_hand[0] = 1;
+    }
+
     pub fn to_action(&self, index: usize, game: &Game) -> Result<Action, ActionSpaceError> {
         let vec = self.to_vec();
         if let Some(v) = vec.get(index) {
@@ -227,12 +257,11 @@ impl ActionSpace {
         }
         match index {
             // Cannot reference runtime values in patterns, so this is workaround
-            n if (self.select_card_min()..=self.select_card_max()).contains(&n) => {
-                game.available
-                    .card_from_index(index)
-                    .map(Action::SelectCard)
-                    .ok_or(ActionSpaceError::InvalidActionConversion)
-            }
+            n if (self.select_card_min()..=self.select_card_max()).contains(&n) => game
+                .available
+                .card_from_index(index)
+                .map(Action::SelectCard)
+                .ok_or(ActionSpaceError::InvalidActionConversion),
             n if (self.move_card_left_min()..=self.move_card_left_max()).contains(&n) => {
                 // Index shifted to right (+1), since leftmost card cannot move left
                 let n_offset = n - self.move_card_left_min() + 1;
@@ -284,6 +313,12 @@ impl ActionSpace {
                     .map(Action::UseConsumable)
                     .ok_or(ActionSpaceError::InvalidActionConversion)
             }
+            n if (self.apply_tarot_min()..=self.apply_tarot_max()).contains(&n) => {
+                Ok(Action::ApplyTarot())
+            }
+            n if (self.skip_tarot_hand_min()..=self.skip_tarot_hand_max()).contains(&n) => {
+                Ok(Action::SkipTarotHand())
+            }
             _ => Err(ActionSpaceError::InvalidActionConversion),
         }
     }
@@ -301,6 +336,8 @@ impl ActionSpace {
             self.select_blind.clone(),
             self.buy_consumable.clone(),
             self.use_consumable.clone(),
+            self.apply_tarot.clone(),
+            self.skip_tarot_hand.clone(),
         ]
         .concat()
     }
@@ -326,6 +363,8 @@ impl From<Config> for ActionSpace {
             select_blind: vec![0; 1],
             buy_consumable: vec![0; c.consumable_slots],
             use_consumable: vec![0; c.consumable_slots],
+            apply_tarot: vec![0; 1],
+            skip_tarot_hand: vec![0; 1],
         }
     }
 }
@@ -345,6 +384,8 @@ impl From<ActionSpace> for Vec<usize> {
             a.select_blind,
             a.buy_consumable,
             a.use_consumable,
+            a.apply_tarot,
+            a.skip_tarot_hand,
         ]
         .concat()
     }
@@ -391,9 +432,9 @@ mod tests {
         let a = ActionSpace::from(c.clone());
         // 24 select + 23 move_left + 23 move_right + 1 play + 1 discard
         // + 1 cashout + 4 buy_joker + 1 next_round + 1 select_blind
-        // + 2 buy_consumable + 2 use_consumable = 83
-        assert_eq!(a.size(), 83);
-        assert_eq!(a.to_vec().len(), 83);
+        // + 2 buy_consumable + 2 use_consumable + 1 apply_tarot + 1 skip_tarot_hand = 85
+        assert_eq!(a.size(), 85);
+        assert_eq!(a.to_vec().len(), 85);
     }
 
     #[test]

@@ -16,6 +16,7 @@ pub mod rank;
 pub mod shop;
 pub mod space;
 pub mod stage;
+pub mod tarot;
 
 #[cfg(test)]
 mod tests {
