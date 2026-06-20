@@ -190,7 +190,7 @@ impl Game {
         };
         let selected_count = self.available.selected().len();
 
-        let select_cards: Vec<Action> = if selected_count < self.config.selected_max {
+        let select_cards: Vec<Action> = if selected_count < t.max_targets() {
             self.available
                 .not_selected()
                 .into_iter()
@@ -428,7 +428,7 @@ impl Game {
         };
         // select cards
         let selected_count = self.available.selected().len();
-        if selected_count < self.config.selected_max {
+        if selected_count < t.max_targets() {
             self.available
                 .cards_and_selected()
                 .iter()

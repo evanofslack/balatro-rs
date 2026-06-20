@@ -96,9 +96,7 @@ impl Game {
     }
 
     pub fn start(&mut self) {
-        // for now just move state to small blind
         self.stage = Stage::PreBlind();
-        self.deal();
     }
 
     pub fn result(&self) -> Option<End> {
@@ -116,7 +114,10 @@ impl Game {
         self.score = self.config.base_score;
         self.plays = self.config.plays;
         self.discards = self.config.discards;
-        self.deal();
+        self.deck.append(&mut self.discarded);
+        self.deck.extend(self.available.cards());
+        self.available.empty();
+        self.deck.shuffle();
     }
 
     // draw from deck to available
@@ -517,7 +518,12 @@ impl Game {
         self.action_history.push(action.clone());
         match action {
             Action::SelectCard(card) => {
-                if self.stage.is_blind() || matches!(self.stage, Stage::TarotHand(_)) {
+                if self.stage.is_blind() {
+                    self.select_card(card)
+                } else if let Stage::TarotHand(t) = self.stage {
+                    if self.available.selected().len() >= t.max_targets() {
+                        return Err(GameError::InvalidAction);
+                    }
                     self.select_card(card)
                 } else {
                     Err(GameError::InvalidAction)
@@ -827,10 +833,9 @@ mod tests {
         g.start();
         g.deal();
         g.clear_blind();
-        // deck should be 7 cards smaller than we started with
-        assert_eq!(g.deck.len(), 52 - g.config.available);
-        // should be 7 cards now available
-        assert_eq!(g.available.cards().len(), g.config.available);
+        // all cards return to deck, available is empty
+        assert_eq!(g.deck.len(), 52);
+        assert_eq!(g.available.cards().len(), 0);
     }
 
     #[test]
@@ -839,6 +844,7 @@ mod tests {
         g.start();
         g.stage = Stage::Blind(Blind::Small);
         g.blind = Some(Blind::Small);
+        g.deal();
         for card in g.available.cards().iter().take(5) {
             g.available.select_card(*card).expect("can select card");
         }
@@ -855,12 +861,12 @@ mod tests {
         // Plays and discards should reset
         assert_eq!(g.plays, g.config.plays);
         assert_eq!(g.discards, g.config.discards);
-        // Deck should be length 52 - available
-        assert_eq!(g.deck.len(), 52 - g.config.available);
+        // All cards back in deck after clear_blind, available is empty
+        assert_eq!(g.deck.len(), 52);
         // Discarded should be length 0
         assert_eq!(g.discarded.len(), 0);
-        // Available should be length available
-        assert_eq!(g.available.cards().len(), g.config.available);
+        // Available is empty until next blind starts
+        assert_eq!(g.available.cards().len(), 0);
     }
 
     #[test]

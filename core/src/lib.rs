@@ -218,6 +218,42 @@ mod tests {
     }
 
     #[test]
+    fn test_tarot_hand_from_shop_draws_exactly_one_hand() {
+        use crate::tarot::Tarot;
+        let mut g = Game::default();
+        g.start();
+        // at Shop, available is empty (clear_blind returns cards to deck without re-dealing)
+        g.stage = Stage::Shop();
+        assert_eq!(g.available.cards().len(), 0);
+        g.consumables = vec![Consumable::Tarot(Tarot::Magician)];
+        g.handle_action(Action::UseConsumable(Consumable::Tarot(Tarot::Magician)))
+            .unwrap();
+        assert!(matches!(g.stage, Stage::TarotHand(Tarot::Magician)));
+        assert_eq!(g.available.cards().len(), g.config.available);
+    }
+
+    #[test]
+    fn test_tarot_hand_selection_capped_at_max_targets() {
+        use crate::tarot::Tarot;
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.consumables = vec![Consumable::Tarot(Tarot::Magician)];
+        g.handle_action(Action::UseConsumable(Consumable::Tarot(Tarot::Magician)))
+            .unwrap();
+        assert!(matches!(g.stage, Stage::TarotHand(Tarot::Magician)));
+        let cards = g.available.cards();
+        g.handle_action(Action::SelectCard(cards[0])).unwrap();
+        g.handle_action(Action::SelectCard(cards[1])).unwrap();
+        assert_eq!(g.available.selected().len(), 2);
+        let res = g.handle_action(Action::SelectCard(cards[2]));
+        assert!(matches!(res, Err(GameError::InvalidAction)));
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(!actions.iter().any(|a| matches!(a, Action::SelectCard(_))));
+        assert!(actions.contains(&Action::ApplyTarot()));
+    }
+
+    #[test]
     // Test executing a full game using the gen_action_space (vector) api
     fn test_game_action_space() {
         let mut g = Game::default();

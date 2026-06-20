@@ -2357,6 +2357,7 @@ mod tests {
         g.start();
         g.stage = Stage::Blind(Blind::Small);
         g.blind = Some(Blind::Small);
+        g.deal();
 
         g.money += 1000;
         g.stage = Stage::Shop();
@@ -2382,6 +2383,7 @@ mod tests {
         g.start();
         g.stage = Stage::Blind(Blind::Small);
         g.blind = Some(Blind::Small);
+        g.deal();
 
         g.money += 1000;
         g.stage = Stage::Shop();
