@@ -196,7 +196,11 @@ impl SelectHand {
             .values_freq()
             .into_iter()
             .find(|(_key, val)| val.len() >= 2)?;
-        let first_val = first.1.first().expect("values freq has empty Vec<card>").value;
+        let first_val = first
+            .1
+            .first()
+            .expect("values freq has empty Vec<card>")
+            .value;
 
         // Next find second pair that isn't same value as first pair
         let second = self
@@ -294,7 +298,11 @@ impl SelectHand {
             .values_freq()
             .into_iter()
             .find(|(_key, val)| val.len() >= 3)?;
-        let three_val = three.1.first().expect("values freq has empty Vec<card>").value;
+        let three_val = three
+            .1
+            .first()
+            .expect("values freq has empty Vec<card>")
+            .value;
 
         // Next find 2ok that isn't same value as 3ok
         let two = self
