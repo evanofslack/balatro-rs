@@ -24,8 +24,22 @@ impl Shop {
             consumables: Vec::new(),
         }
     }
+}
 
-    pub(crate) fn refresh(&mut self, planetarium: &Planetarium, held: &[Consumable], allow_duplicates: bool) {
+impl Default for Shop {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Shop {
+
+    pub(crate) fn refresh(
+        &mut self,
+        planetarium: &Planetarium,
+        held: &[Consumable],
+        allow_duplicates: bool,
+    ) {
         let j1 = self.joker_gen.gen_joker();
         let j2 = self.joker_gen.gen_joker();
         self.jokers = vec![j1, j2];
@@ -33,25 +47,31 @@ impl Shop {
         let held_planets: Vec<Planets> = if allow_duplicates {
             vec![]
         } else {
-            held.iter().filter_map(|c| match c { Consumable::Planet(p) => Some(p.clone()) }).collect()
+            held.iter()
+                .map(|Consumable::Planet(p)| p.clone())
+                .collect()
         };
 
-        let c1 = self.consumable_gen.gen_consumable_excluding(planetarium, &held_planets);
+        let c1 = self
+            .consumable_gen
+            .gen_consumable_excluding(planetarium, &held_planets);
         let mut exclude_c2 = held_planets.clone();
         if !allow_duplicates {
             let Consumable::Planet(p) = &c1;
             exclude_c2.push(p.clone());
         }
-        let c2 = self.consumable_gen.gen_consumable_excluding(planetarium, &exclude_c2);
+        let c2 = self
+            .consumable_gen
+            .gen_consumable_excluding(planetarium, &exclude_c2);
         self.consumables = vec![c1, c2];
     }
 
     pub(crate) fn joker_from_index(&self, i: usize) -> Option<Jokers> {
-        return Some(self.jokers[i].clone());
+        Some(self.jokers[i].clone())
     }
 
     pub(crate) fn consumable_from_index(&self, i: usize) -> Option<Consumable> {
-        return self.consumables.get(i).cloned();
+        self.consumables.get(i).cloned()
     }
 
     pub(crate) fn buy_joker(&mut self, joker: &Jokers) -> Result<Jokers, GameError> {
@@ -60,11 +80,13 @@ impl Shop {
             .iter()
             .position(|j| j == joker)
             .ok_or(GameError::NoJokerMatch)?;
-        let out = self.jokers.remove(i);
-        return Ok(out);
+        Ok(self.jokers.remove(i))
     }
 
-    pub(crate) fn buy_consumable(&mut self, consumable: &Consumable) -> Result<Consumable, GameError> {
+    pub(crate) fn buy_consumable(
+        &mut self,
+        consumable: &Consumable,
+    ) -> Result<Consumable, GameError> {
         let i = self
             .consumables
             .iter()
@@ -77,7 +99,7 @@ impl Shop {
         &self,
         balance: usize,
     ) -> Option<impl Iterator<Item = Action>> {
-        if self.jokers.len() == 0 {
+        if self.jokers.is_empty() {
             return None;
         }
         let buys = self
@@ -85,8 +107,8 @@ impl Shop {
             .clone()
             .into_iter()
             .filter(move |j| j.cost() <= balance)
-            .map(|j| Action::BuyJoker(j));
-        return Some(buys);
+            .map(Action::BuyJoker);
+        Some(buys)
     }
 
     pub(crate) fn gen_moves_buy_consumable(
@@ -103,7 +125,7 @@ impl Shop {
             .clone()
             .into_iter()
             .filter(move |c| c.cost() <= balance)
-            .map(|c| Action::BuyConsumable(c));
+            .map(Action::BuyConsumable);
         Some(buys)
     }
 }
@@ -118,7 +140,7 @@ impl JokerGenerator {
     // Legendary can only appear from Soul Spectral Card.
     fn gen_rarity(&self) -> Rarity {
         // For now, we only have common jokers...
-        return Rarity::Common;
+        Rarity::Common
         // let choices = [Rarity::Common, Rarity::Uncommon, Rarity::Rare];
         // let weights = [70, 25, 5];
         // let dist = WeightedIndex::new(&weights).unwrap();
@@ -133,7 +155,7 @@ impl JokerGenerator {
         let i = thread_rng().gen_range(0..choices.len());
         // TODO: don't regenerate already generated jokers.
         // track with hashmap.
-        return choices[i].clone();
+        choices[i].clone()
     }
 }
 
@@ -164,7 +186,11 @@ impl ConsumableGenerator {
         available[i].clone()
     }
 
-    pub(crate) fn gen_consumable_excluding(&self, planetarium: &Planetarium, exclude: &[Planets]) -> Consumable {
+    pub(crate) fn gen_consumable_excluding(
+        &self,
+        planetarium: &Planetarium,
+        exclude: &[Planets],
+    ) -> Consumable {
         Consumable::Planet(self.gen_planet(planetarium, exclude))
     }
 }
@@ -213,7 +239,10 @@ mod tests {
         for _ in 0..500 {
             let c = gen.gen_consumable_excluding(&planetarium, &[]);
             let Consumable::Planet(planet) = c;
-            assert!(!planet.is_secret(), "secret planet generated before discovery");
+            assert!(
+                !planet.is_secret(),
+                "secret planet generated before discovery"
+            );
         }
     }
 
@@ -235,6 +264,6 @@ mod tests {
         // 0 money can't afford any planet ($3)
         let moves: Option<Vec<Action>> =
             shop.gen_moves_buy_consumable(0, 2, 0).map(|i| i.collect());
-        assert!(moves.map_or(true, |v| v.is_empty()));
+        assert!(moves.is_none_or(|v| v.is_empty()));
     }
 }

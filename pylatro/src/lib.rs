@@ -18,44 +18,39 @@ impl GameEngine {
     #[pyo3(signature = (config=None))]
     fn new(config: Option<Config>) -> Self {
         GameEngine {
-            game: Game::new(config.unwrap_or(Config::default())),
+            game: Game::new(config.unwrap_or_default()),
         }
     }
 
     fn gen_actions(&self) -> Vec<Action> {
-        return self.game.gen_actions().collect();
+        self.game.gen_actions().collect()
     }
 
     fn gen_action_space(&self) -> Vec<usize> {
-        return self.game.gen_action_space().to_vec();
+        self.game.gen_action_space().to_vec()
     }
 
     fn handle_action(&mut self, action: Action) -> Result<(), GameError> {
-        return self.game.handle_action(action);
+        self.game.handle_action(action)
     }
 
     fn handle_action_index(&mut self, index: usize) -> Result<(), GameError> {
-        return self.game.handle_action_index(index);
+        self.game.handle_action_index(index)
     }
 
     #[getter]
     fn state(&self) -> GameState {
-        return GameState {
+        GameState {
             game: self.game.clone(),
-        };
+        }
     }
     #[getter]
     fn is_over(&self) -> bool {
-        return self.game.is_over();
+        self.game.is_over()
     }
     #[getter]
     fn is_win(&self) -> bool {
-        if let Some(end) = self.game.result() {
-            if end == End::Win {
-                return true;
-            }
-        }
-        return false;
+        self.game.result() == Some(End::Win)
     }
 }
 
@@ -68,56 +63,56 @@ struct GameState {
 impl GameState {
     #[getter]
     fn stage(&self) -> Stage {
-        return self.game.stage;
+        self.game.stage
     }
     #[getter]
     fn round(&self) -> usize {
-        return self.game.round;
+        self.game.round
     }
     #[getter]
     fn action_history(&self) -> Vec<Action> {
-        return self.game.action_history.clone();
+        self.game.action_history.clone()
     }
     #[getter]
     fn deck(&self) -> Vec<Card> {
-        return self.game.deck.cards();
+        self.game.deck.cards()
     }
     #[getter]
     fn selected(&self) -> Vec<Card> {
-        return self.game.available.selected();
+        self.game.available.selected()
     }
     #[getter]
     fn available(&self) -> Vec<Card> {
-        return self.game.available.cards();
+        self.game.available.cards()
     }
     #[getter]
     fn discarded(&self) -> Vec<Card> {
-        return self.game.discarded.clone();
+        self.game.discarded.clone()
     }
     #[getter]
     fn plays(&self) -> usize {
-        return self.game.plays;
+        self.game.plays
     }
     #[getter]
     fn discards(&self) -> usize {
-        return self.game.discards;
+        self.game.discards
     }
 
     #[getter]
     fn score(&self) -> usize {
-        return self.game.score;
+        self.game.score
     }
     #[getter]
     fn required_score(&self) -> usize {
-        return self.game.required_score();
+        self.game.required_score()
     }
     #[getter]
     fn jokers(&self) -> Vec<Jokers> {
-        return self.game.jokers.clone();
+        self.game.jokers.clone()
     }
     #[getter]
     fn money(&self) -> usize {
-        return self.game.money;
+        self.game.money
     }
 
     fn __repr__(&self) -> String {

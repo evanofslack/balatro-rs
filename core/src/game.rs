@@ -96,15 +96,13 @@ impl Game {
 
     pub fn result(&self) -> Option<End> {
         match self.stage {
-            Stage::End(end) => {
-                return Some(end);
-            }
-            _ => return None,
+            Stage::End(end) => Some(end),
+            _ => None,
         }
     }
 
     pub fn is_over(&self) -> bool {
-        return self.result().is_some();
+        self.result().is_some()
     }
 
     fn clear_blind(&mut self) {
@@ -137,7 +135,7 @@ impl Game {
         if self.available.selected().len() > self.config.selected_max {
             return Err(GameError::InvalidSelectCard);
         }
-        return self.available.select_card(card);
+        self.available.select_card(card)
     }
 
     pub(crate) fn move_card(
@@ -145,11 +143,11 @@ impl Game {
         direction: MoveDirection,
         card: Card,
     ) -> Result<(), GameError> {
-        return self.available.move_card(direction, card);
+        self.available.move_card(direction, card)
     }
 
     pub(crate) fn play_selected(&mut self) -> Result<(), GameError> {
-        if self.plays <= 0 {
+        if self.plays == 0 {
             return Err(GameError::NoRemainingPlays);
         }
         self.plays -= 1;
@@ -169,12 +167,12 @@ impl Game {
         if clear_blind {
             self.clear_blind();
         }
-        return Ok(());
+        Ok(())
     }
 
     // discard selected cards from available and draw equal number back to available
     pub(crate) fn discard_selected(&mut self) -> Result<(), GameError> {
-        if self.discards <= 0 {
+        if self.discards == 0 {
             return Err(GameError::NoRemainingDiscards);
         }
         self.discards -= 1;
@@ -189,12 +187,11 @@ impl Game {
             all: discarded,
         };
         for e in self.effect_registry.on_discard.clone() {
-            match e {
-                Effects::OnDiscard(f) => f.lock().unwrap()(self, hand.clone()),
-                _ => (),
+            if let Effects::OnDiscard(f) = e {
+                f.lock().unwrap()(self, hand.clone())
             }
         }
-        return Ok(());
+        Ok(())
     }
 
     pub(crate) fn destroy_card(&mut self, id: usize) {
@@ -260,17 +257,15 @@ impl Game {
 
         // uun hand modifiers (e.g. Pareidolia) before joker scoring effects
         for e in self.effect_registry.on_modify_hand.clone() {
-            match e {
-                Effects::OnModifyHand(f) => f.lock().unwrap()(self, &mut hand),
-                _ => (),
+            if let Effects::OnModifyHand(f) = e {
+                f.lock().unwrap()(self, &mut hand)
             }
         }
 
         // apply joker effects
         for e in self.effect_registry.on_score.clone() {
-            match e {
-                Effects::OnScore(f) => f.lock().unwrap()(self, hand.clone()),
-                _ => (),
+            if let Effects::OnScore(f) = e {
+                f.lock().unwrap()(self, hand.clone())
             }
         }
 
@@ -286,13 +281,12 @@ impl Game {
 
     pub fn required_score(&self) -> usize {
         let base = self.ante_current.base();
-        let required = match self.blind {
+        match self.blind {
             None => base,
             Some(Blind::Small) => base,
             Some(Blind::Big) => (base as f32 * 1.5) as usize,
             Some(Blind::Boss) => base * 2,
-        };
-        return required;
+        }
     }
 
     fn calc_reward(&mut self, blind: Blind) -> Result<usize, GameError> {
@@ -303,7 +297,7 @@ impl Game {
         let base = blind.reward();
         let hand_bonus = self.plays * self.config.money_per_hand;
         let reward = base + interest + hand_bonus;
-        return Ok(reward);
+        Ok(reward)
     }
 
     fn cashout(&mut self) -> Result<(), GameError> {
@@ -313,7 +307,7 @@ impl Game {
         let planetarium = self.planetarium.clone();
         let held = self.consumables.clone();
         self.shop.refresh(&planetarium, &held, false);
-        return Ok(());
+        Ok(())
     }
 
     pub(crate) fn buy_joker(&mut self, joker: Jokers) -> Result<(), GameError> {
@@ -331,7 +325,7 @@ impl Game {
         self.jokers.push(joker);
         self.effect_registry
             .register_jokers(self.jokers.clone(), &self.clone());
-        return Ok(());
+        Ok(())
     }
 
     pub(crate) fn buy_consumable(&mut self, consumable: Consumable) -> Result<(), GameError> {
@@ -388,13 +382,13 @@ impl Game {
         self.blind = Some(blind);
         self.stage = Stage::Blind(blind);
         self.deal();
-        return Ok(());
+        Ok(())
     }
 
     fn next_round(&mut self) -> Result<(), GameError> {
         self.stage = Stage::PreBlind();
         self.round += 1;
-        return Ok(());
+        Ok(())
     }
 
     // Returns true if should clear blind after, false if not.
@@ -437,12 +431,12 @@ impl Game {
 
         // finish blind, proceed to post blind
         self.stage = Stage::PostBlind();
-        return Ok(true);
+        Ok(true)
     }
 
     pub fn handle_action(&mut self, action: Action) -> Result<(), GameError> {
         self.action_history.push(action.clone());
-        return match action {
+        match action {
             Action::SelectCard(card) => match self.stage.is_blind() {
                 true => self.select_card(card),
                 false => Err(GameError::InvalidAction),
@@ -483,7 +477,7 @@ impl Game {
                 Stage::PreBlind() => self.select_blind(blind),
                 _ => Err(GameError::InvalidAction),
             },
-        };
+        }
     }
 
     pub fn handle_action_index(&mut self, index: usize) -> Result<(), GameError> {
@@ -552,7 +546,7 @@ impl fmt::Display for Game {
 
 impl Default for Game {
     fn default() -> Self {
-        return Self::new(Config::default());
+        Self::new(Config::default())
     }
 }
 
@@ -580,12 +574,14 @@ pub fn score_hand(
     mut hand: MadeHand,
 ) -> usize {
     let card_chips: usize = played_cards.iter().map(|c| c.chips()).sum();
-    let mut g = Game::default();
-    g.deck = Deck::new();
-    g.chips = base_chips + card_chips;
-    g.mult = base_mult;
-    g.jokers = jokers.to_vec();
-    g.held = held_cards.to_vec();
+    let mut g = Game {
+        deck: Deck::new(),
+        chips: base_chips + card_chips,
+        mult: base_mult,
+        jokers: jokers.to_vec(),
+        held: held_cards.to_vec(),
+        ..Default::default()
+    };
 
     for j in jokers {
         for e in j.effects(&g) {
@@ -598,16 +594,14 @@ pub fn score_hand(
     }
 
     for e in g.effect_registry.on_modify_hand.clone() {
-        match e {
-            Effects::OnModifyHand(f) => f.lock().unwrap()(&mut g, &mut hand),
-            _ => (),
+        if let Effects::OnModifyHand(f) = e {
+            f.lock().unwrap()(&mut g, &mut hand)
         }
     }
 
     for e in g.effect_registry.on_score.clone() {
-        match e {
-            Effects::OnScore(f) => f.lock().unwrap()(&mut g, hand.clone()),
-            _ => (),
+        if let Effects::OnScore(f) = e {
+            f.lock().unwrap()(&mut g, hand.clone())
         }
     }
 

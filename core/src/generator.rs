@@ -20,8 +20,8 @@ impl Game {
             .not_selected()
             .clone()
             .into_iter()
-            .map(|c| Action::SelectCard(c));
-        return Some(combos);
+            .map(Action::SelectCard);
+        Some(combos)
     }
 
     // Get all legal Play actions that can be executed given current state
@@ -31,15 +31,15 @@ impl Game {
             return None;
         }
         // If no plays remaining, return None
-        if self.plays <= 0 {
+        if self.plays == 0 {
             return None;
         }
         // If no cards selected, return None
-        if self.available.selected().len() == 0 {
+        if self.available.selected().is_empty() {
             return None;
         }
         let combos = vec![Action::Play()].into_iter();
-        return Some(combos);
+        Some(combos)
     }
 
     // Get all legal Play actions that can be executed given current state
@@ -49,15 +49,15 @@ impl Game {
             return None;
         }
         // If no discards remaining, return None
-        if self.discards <= 0 {
+        if self.discards == 0 {
             return None;
         }
         // If no cards selected, return None
-        if self.available.selected().len() == 0 {
+        if self.available.selected().is_empty() {
             return None;
         }
         let combos = vec![Action::Discard()].into_iter();
-        return Some(combos);
+        Some(combos)
     }
 
     // Get all legal move card actions
@@ -84,7 +84,7 @@ impl Game {
             .map(|c| Action::MoveCard(MoveDirection::Right, c));
 
         let combos = left.chain(right);
-        return Some(combos);
+        Some(combos)
     }
 
     // Get cash out action
@@ -93,7 +93,7 @@ impl Game {
         if self.stage != Stage::PostBlind() {
             return None;
         }
-        return Some(vec![Action::CashOut(self.reward)].into_iter());
+        Some(vec![Action::CashOut(self.reward)].into_iter())
     }
 
     // Get next round action
@@ -102,7 +102,7 @@ impl Game {
         if self.stage != Stage::Shop() {
             return None;
         }
-        return Some(vec![Action::NextRound()].into_iter());
+        Some(vec![Action::NextRound()].into_iter())
     }
 
     // Get select blind action
@@ -112,9 +112,9 @@ impl Game {
             return None;
         }
         if let Some(blind) = self.blind {
-            return Some(vec![Action::SelectBlind(blind.next())].into_iter());
+            Some(vec![Action::SelectBlind(blind.next())].into_iter())
         } else {
-            return Some(vec![Action::SelectBlind(Blind::Small)].into_iter());
+            Some(vec![Action::SelectBlind(Blind::Small)].into_iter())
         }
     }
 
@@ -128,7 +128,7 @@ impl Game {
         if self.jokers.len() >= self.config.joker_slots {
             return None;
         }
-        return self.shop.gen_moves_buy_joker(self.money);
+        self.shop.gen_moves_buy_joker(self.money)
     }
 
     // Get buy consumable actions
@@ -155,7 +155,7 @@ impl Game {
             self.consumables
                 .clone()
                 .into_iter()
-                .map(|c| Action::UseConsumable(c)),
+                .map(Action::UseConsumable),
         )
     }
 
@@ -172,7 +172,7 @@ impl Game {
         let buy_consumables = self.gen_actions_buy_consumable();
         let use_consumables = self.gen_actions_use_consumable();
 
-        return select_cards
+        select_cards
             .into_iter()
             .flatten()
             .chain(plays.into_iter().flatten())
@@ -183,7 +183,7 @@ impl Game {
             .chain(select_blinds.into_iter().flatten())
             .chain(buy_jokers.into_iter().flatten())
             .chain(buy_consumables.into_iter().flatten())
-            .chain(use_consumables.into_iter().flatten());
+            .chain(use_consumables.into_iter().flatten())
     }
 
     fn unmask_action_space_select_cards(&self, space: &mut ActionSpace) {
@@ -211,7 +211,7 @@ impl Game {
             return;
         }
         // Cannot play/discard if no cards selected
-        if self.available.selected().len() == 0 {
+        if self.available.selected().is_empty() {
             return;
         }
         // Can only play/discard is have remaining
@@ -334,7 +334,7 @@ impl Game {
         self.unmask_action_space_buy_joker(&mut space);
         self.unmask_action_space_buy_consumable(&mut space);
         self.unmask_action_space_use_consumable(&mut space);
-        return space;
+        space
     }
 }
 
@@ -348,8 +348,7 @@ mod tests {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let king = Card::new(Value::King, Suit::Diamond);
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
 
         // nothing selected, nothing to play
         assert!(g.gen_actions_discard().is_none());
@@ -371,8 +370,7 @@ mod tests {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let king = Card::new(Value::King, Suit::Diamond);
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
 
         // nothing selected, nothing to discard
         assert!(g.gen_actions_discard().is_none());
@@ -469,8 +467,7 @@ mod tests {
 
     #[test]
     fn test_unmask_action_space_move_cards() {
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         let mut space = ActionSpace::from(g.config.clone());
 
         // Default action space everything should be masked, since no cards available yet

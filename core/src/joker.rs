@@ -281,7 +281,7 @@ make_jokers!(
 
 impl Jokers {
     pub(crate) fn by_rarity(rarirty: Rarity) -> Vec<Self> {
-        return Self::iter().filter(|j| j.rarity() == rarirty).collect();
+        Self::iter().filter(|j| j.rarity() == rarirty).collect()
     }
 }
 
@@ -1582,8 +1582,7 @@ mod tests {
     use super::*;
 
     fn score_before_after_joker(joker: Jokers, hand: SelectHand, before: usize, after: usize) {
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
 
         // First score without joker
         let score = g.calc_score(hand.best_hand().unwrap());
@@ -1966,8 +1965,7 @@ mod tests {
         // High card (level 1) -> 5 chips, 1 mult
         // Played cards (1 ace) -> 11 chips
         // (5 + 11) * 1 = 16
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         assert_eq!(g.calc_score(best.clone()), 16);
 
         // Stencil alone in 5 slots = 4 empty -> X4
@@ -2001,8 +1999,7 @@ mod tests {
         // High card (level 1) -> 5 chips, 1 mult
         // Played cards (1 ace) -> 11 chips
         // (5 + 11) * (1) = 16
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         assert_eq!(g.calc_score(best.clone()), 16);
 
         g.money += 1000;
@@ -2031,8 +2028,7 @@ mod tests {
         // High card (level 1): 5 chips, 1 mult
         // Played (1 ace): 11 chips
         // (5 + 11) * 1 = 16
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         assert_eq!(g.calc_score(best.clone()), 16);
 
         g.money += 1000;
@@ -2102,8 +2098,7 @@ mod tests {
         // High card (level 1): 5 chips, 1 mult
         // Played (1 ace): 11 chips
         // (5 + 11) * 1 = 16
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         assert_eq!(g.calc_score(best.clone()), 16);
 
         // Buy Abstract Joker -> 1 joker, +3 mult
@@ -2141,8 +2136,7 @@ mod tests {
         // Straight (level 1): 30 chips, 4 mult
         // Card chips: 11 + 2 + 3 + 4 + 5 = 25
         // (30 + 25) * 4 = 220
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         assert_eq!(g.calc_score(best.clone()), 220);
 
         // Add Scary Face: still no face cards, so still 220
@@ -2287,8 +2281,7 @@ mod tests {
         let hand = SelectHand::new(vec![ace, ace]);
         let j = Jokers::BusinessCard(BusinessCard {});
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         let score = g.calc_score(hand.best_hand().unwrap());
         assert_eq!(score, 64);
 
@@ -2311,8 +2304,7 @@ mod tests {
         let hand = SelectHand::new(vec![king, queen, jack]);
         let j = Jokers::BusinessCard(BusinessCard {});
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         g.calc_score(hand.best_hand().unwrap());
 
         g.money += 1000;
@@ -2389,8 +2381,7 @@ mod tests {
         let hand = SelectHand::new(vec![ace, ace]);
         let j = Jokers::Baron(Baron {});
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         g.held = vec![
             Card::new(Value::King, Suit::Club),
             Card::new(Value::King, Suit::Spade),
@@ -2419,8 +2410,7 @@ mod tests {
         let hand = SelectHand::new(vec![ace, ace]);
         let j = Jokers::Baron(Baron {});
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         g.held = vec![
             Card::new(Value::Queen, Suit::Club),
             Card::new(Value::Jack, Suit::Spade),
@@ -2497,8 +2487,7 @@ mod tests {
         let hand = SelectHand::new(vec![ace]);
         let j = Jokers::ReservedParking(ReservedParking {});
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         g.held = vec![
             Card::new(Value::King, Suit::Club),
             Card::new(Value::Queen, Suit::Spade),
@@ -2531,8 +2520,7 @@ mod tests {
         let hand = SelectHand::new(vec![ace]);
         let j = Jokers::ReservedParking(ReservedParking {});
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         g.held = vec![
             Card::new(Value::Ace, Suit::Club),
             Card::new(Value::Two, Suit::Spade),
@@ -2557,8 +2545,7 @@ mod tests {
         let hand = SelectHand::new(vec![ten, ten]);
         let best = hand.best_hand().unwrap();
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
 
         // Pair (level 1): 10 chips, 2 mult
         // Played (2 tens): 20 chips
@@ -2600,8 +2587,7 @@ mod tests {
         let hand = SelectHand::new(vec![ace]);
         let best = hand.best_hand().unwrap();
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
 
         // Buy BaseballCard with no uncommon jokers
         let bb = Jokers::BaseballCard(BaseballCard {});
@@ -2623,9 +2609,11 @@ mod tests {
         let hand = SelectHand::new(vec![ace]);
         let j = Jokers::Bull(Bull {});
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
-        g.money = 100;
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            money: 100,
+            ..Default::default()
+        };
         let best = hand.best_hand().unwrap();
 
         // High card (level 1): 5 chips, 1 mult
@@ -2650,8 +2638,7 @@ mod tests {
         let hand = SelectHand::new(vec![ace]);
         let j = Jokers::Bull(Bull {});
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         let best = hand.best_hand().unwrap();
 
         // High card (level 1): 5 chips, 1 mult
@@ -2744,8 +2731,7 @@ mod tests {
         let hand = SelectHand::new(vec![ace, ace]);
         let j = Jokers::GoldenTicket(GoldenTicket {});
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         let score = g.calc_score(hand.best_hand().unwrap());
         assert_eq!(score, 64);
 
@@ -2785,8 +2771,7 @@ mod tests {
         let hand = SelectHand::new(vec![ace]);
         let j = Jokers::Acrobat(Acrobat {});
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         g.calc_score(hand.best_hand().unwrap());
 
         g.money += 1000;
@@ -2828,8 +2813,7 @@ mod tests {
         let hand = SelectHand::new(vec![ace, ace]);
         let j = Jokers::RoughGem(RoughGem {});
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         g.calc_score(hand.best_hand().unwrap());
 
         g.money += 1000;
@@ -2868,8 +2852,7 @@ mod tests {
         let hand = SelectHand::new(vec![ace]);
         let j = Jokers::Bloodstone(Bloodstone {});
 
-        let mut g = Game::default();
-        g.stage = Stage::Blind(Blind::Small);
+        let mut g = Game { stage: Stage::Blind(Blind::Small), ..Default::default() };
         g.calc_score(hand.best_hand().unwrap());
 
         g.money += 1000;

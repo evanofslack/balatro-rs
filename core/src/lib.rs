@@ -119,7 +119,10 @@ mod tests {
         let before = g.planetarium.level(HandRank::OnePair);
         let res = g.handle_action(Action::UseConsumable(Consumable::Planet(Planets::Mercury)));
         assert!(res.is_ok());
-        assert_eq!(g.planetarium.level(HandRank::OnePair).chips, before.chips + 15);
+        assert_eq!(
+            g.planetarium.level(HandRank::OnePair).chips,
+            before.chips + 15
+        );
     }
 
     #[test]
@@ -130,7 +133,10 @@ mod tests {
         let before = g.planetarium.level(HandRank::Straight);
         let res = g.handle_action(Action::UseConsumable(Consumable::Planet(Planets::Saturn)));
         assert!(res.is_ok());
-        assert_eq!(g.planetarium.level(HandRank::Straight).chips, before.chips + 30);
+        assert_eq!(
+            g.planetarium.level(HandRank::Straight).chips,
+            before.chips + 30
+        );
     }
 
     #[test]
@@ -189,7 +195,7 @@ mod tests {
         while !g.is_over() {
             // Get all available actions
             let actions: Vec<Action> = g.gen_actions().collect();
-            if actions.len() == 0 {
+            if actions.is_empty() {
                 break;
             }
 

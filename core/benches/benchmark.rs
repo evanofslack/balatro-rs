@@ -4,7 +4,7 @@ use rand::Rng;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("run game gen actions", |b| {
-        b.iter(|| run_game_gen_actions())
+        b.iter(run_game_gen_actions)
     });
 }
 
@@ -15,7 +15,7 @@ fn run_game_gen_actions() {
     while !g.is_over() {
         // Get all available moves
         let actions: Vec<Action> = g.gen_actions().collect();
-        if actions.len() == 0 {
+        if actions.is_empty() {
             break;
         }
 
