@@ -423,25 +423,6 @@ impl Game {
         Ok(())
     }
 
-    pub(crate) fn skip_tarot_hand(&mut self) -> Result<(), GameError> {
-        let Stage::TarotHand(t) = self.stage else {
-            return Err(GameError::InvalidStage);
-        };
-        let prev = self
-            .tarot_prev_stage
-            .take()
-            .ok_or(GameError::InvalidStage)?;
-        self.consumables.push(Consumable::Tarot(t));
-        if !prev.is_blind() {
-            let cards = self.available.cards();
-            self.available.empty();
-            self.deck.extend(cards);
-            self.deck.shuffle();
-        }
-        self.stage = prev;
-        Ok(())
-    }
-
     fn select_blind(&mut self, blind: Blind) -> Result<(), GameError> {
         // can only set blind if stage is pre blind
         if self.stage != Stage::PreBlind() {
@@ -569,7 +550,6 @@ impl Game {
                 _ => Err(GameError::InvalidAction),
             },
             Action::ApplyTarot() => self.apply_tarot(),
-            Action::SkipTarotHand() => self.skip_tarot_hand(),
         }
     }
 

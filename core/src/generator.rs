@@ -229,14 +229,11 @@ impl Game {
                 vec![]
             };
 
-        let skip = vec![Action::SkipTarotHand()];
-
         let all: Vec<Action> = select_cards
             .into_iter()
             .chain(move_left)
             .chain(move_right)
             .chain(apply)
-            .chain(skip)
             .collect();
 
         Some(all.into_iter())
@@ -463,11 +460,9 @@ impl Game {
                     .unmask_move_card_right(i)
                     .expect("valid index for move right");
             });
-        // apply / skip
         if selected_count >= t.min_targets() && selected_count <= t.max_targets() {
             space.unmask_apply_tarot();
         }
-        space.unmask_skip_tarot_hand();
     }
 
     // Get an action space, masked for legal actions only
