@@ -941,7 +941,7 @@ impl Joker for ScaryFace {
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
             for card in _hand.hand.cards() {
-                if card.is_face_card {
+                if card.is_face_card() {
                     g.chips += 30;
                 }
             }
@@ -1004,14 +1004,14 @@ impl Joker for Pareidolia {
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(_g: &mut Game, hand: &mut MadeHand) {
             for card in &mut hand.all {
-                card.is_face_card = true;
+                card.face_card_override = true;
             }
             let cards: Vec<Card> = hand
                 .hand
                 .cards()
                 .into_iter()
                 .map(|mut c| {
-                    c.is_face_card = true;
+                    c.face_card_override = true;
                     c
                 })
                 .collect();
@@ -1141,7 +1141,7 @@ impl Joker for BusinessCard {
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
             for card in _hand.hand.cards() {
-                if card.is_face_card && g.prob_roll(1, 2) {
+                if card.is_face_card() && g.prob_roll(1, 2) {
                     g.money += 2;
                 }
             }
@@ -1277,7 +1277,7 @@ impl Joker for Photograph {
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
             for card in _hand.hand.cards() {
-                if card.is_face_card {
+                if card.is_face_card() {
                     g.mult *= 2;
                     break;
                 }
@@ -1310,7 +1310,7 @@ impl Joker for ReservedParking {
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
             for card in &g.held.clone() {
-                if card.is_face_card && g.prob_roll(1, 2) {
+                if card.is_face_card() && g.prob_roll(1, 2) {
                     g.money += 1;
                 }
             }
@@ -1438,7 +1438,7 @@ impl Joker for SmileyFace {
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
             for card in _hand.hand.cards() {
-                if card.is_face_card {
+                if card.is_face_card() {
                     g.mult += 5;
                 }
             }

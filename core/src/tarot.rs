@@ -217,7 +217,7 @@ impl Tarot {
                     c.enhancement = right.enhancement;
                     c.edition = right.edition;
                     c.seal = right.seal;
-                    c.is_face_card = right.is_face_card;
+                    c.face_card_override = right.face_card_override;
                 });
             }
             Self::Hermit => {
@@ -452,5 +452,43 @@ mod tests {
         let cards = g.available.cards();
         let card = cards.iter().find(|c| c.id == ace_id).unwrap();
         assert_eq!(card.value, Value::Two);
+    }
+
+    #[test]
+    fn test_strength_ten_to_jack_becomes_face() {
+        let ten = Card::new(Value::Ten, Suit::Heart);
+        let ten_id = ten.id;
+        assert!(!ten.is_face_card());
+
+        let mut g = game_in_blind();
+        g.available.extend(vec![ten]);
+        g.available.select_card(ten).unwrap();
+        g.deck.extend(vec![ten]);
+
+        Tarot::Strength.apply(&mut g).unwrap();
+
+        let cards = g.available.cards();
+        let card = cards.iter().find(|c| c.id == ten_id).unwrap();
+        assert_eq!(card.value, Value::Jack);
+        assert!(card.is_face_card());
+    }
+
+    #[test]
+    fn test_strength_king_to_ace_loses_face() {
+        let king = Card::new(Value::King, Suit::Heart);
+        let king_id = king.id;
+        assert!(king.is_face_card());
+
+        let mut g = game_in_blind();
+        g.available.extend(vec![king]);
+        g.available.select_card(king).unwrap();
+        g.deck.extend(vec![king]);
+
+        Tarot::Strength.apply(&mut g).unwrap();
+
+        let cards = g.available.cards();
+        let card = cards.iter().find(|c| c.id == king_id).unwrap();
+        assert_eq!(card.value, Value::Ace);
+        assert!(!card.is_face_card());
     }
 }
