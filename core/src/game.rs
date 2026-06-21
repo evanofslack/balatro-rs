@@ -13,6 +13,7 @@ use crate::planet::Planetarium;
 use crate::rank::HandRank;
 use crate::shop::Shop;
 use crate::stage::{Blind, End, Stage};
+use crate::tarot::Tarot;
 
 use rand::prelude::*;
 use std::fmt;
@@ -54,6 +55,10 @@ pub struct Game {
     pub mult: usize,
     pub score: usize,
     pub prob_mult: u32,
+
+    pub last_consumable_used: Option<Consumable>,
+    // track stage so we can come back to it after temp tarot stage
+    pub(crate) tarot_prev_stage: Option<Stage>,
 }
 
 impl Game {
@@ -84,14 +89,14 @@ impl Game {
             mult: config.base_mult,
             score: config.base_score,
             prob_mult: 1,
+            last_consumable_used: None,
+            tarot_prev_stage: None,
             config,
         }
     }
 
     pub fn start(&mut self) {
-        // for now just move state to small blind
         self.stage = Stage::PreBlind();
-        self.deal();
     }
 
     pub fn result(&self) -> Option<End> {
@@ -109,7 +114,10 @@ impl Game {
         self.score = self.config.base_score;
         self.plays = self.config.plays;
         self.discards = self.config.discards;
-        self.deal();
+        self.deck.append(&mut self.discarded);
+        self.deck.extend(self.available.cards());
+        self.available.empty();
+        self.deck.shuffle();
     }
 
     // draw from deck to available
@@ -198,6 +206,11 @@ impl Game {
         self.available.remove_by_id(id);
         self.deck.remove_by_id(id);
         self.discarded.retain(|c| c.id != id);
+    }
+
+    pub(crate) fn mutate_card<F: Fn(&mut Card) + Copy>(&mut self, id: usize, f: F) {
+        self.available.mutate_card(id, f);
+        self.deck.mutate_card(id, f);
     }
 
     // RNG roll where we can manually influence the odds
@@ -348,6 +361,15 @@ impl Game {
         if matches!(self.stage, Stage::End(_)) {
             return Err(GameError::InvalidStage);
         }
+        // Validate selection before removal so the consumable is not lost on error
+        if let Consumable::Tarot(t) = &consumable {
+            if t.requires_targets() && self.stage.is_blind() {
+                let selected_count = self.available.selected().len();
+                if selected_count < t.min_targets() || selected_count > t.max_targets() {
+                    return Err(GameError::InvalidAction);
+                }
+            }
+        }
         let i = self
             .consumables
             .iter()
@@ -357,8 +379,50 @@ impl Game {
         match consumable {
             Consumable::Planet(planet) => {
                 self.planetarium.level_up(planet.hand_rank());
+                self.last_consumable_used = Some(Consumable::Planet(planet));
+            }
+            Consumable::Tarot(t) => {
+                if t.requires_targets() && !self.stage.is_blind() {
+                    let prev = self.stage;
+                    self.tarot_prev_stage = Some(prev);
+                    self.stage = Stage::TarotHand(t);
+                    let n = self.config.available.min(self.deck.len());
+                    self.draw(n);
+                } else {
+                    t.apply(self)?;
+                    if t != Tarot::Fool {
+                        self.last_consumable_used = Some(Consumable::Tarot(t));
+                    }
+                }
             }
         }
+        Ok(())
+    }
+
+    pub(crate) fn apply_tarot(&mut self) -> Result<(), GameError> {
+        let Stage::TarotHand(t) = self.stage else {
+            return Err(GameError::InvalidStage);
+        };
+        let prev = self
+            .tarot_prev_stage
+            .take()
+            .ok_or(GameError::InvalidStage)?;
+        let selected_count = self.available.selected().len();
+        if selected_count < t.min_targets() || selected_count > t.max_targets() {
+            self.tarot_prev_stage = Some(prev);
+            return Err(GameError::InvalidAction);
+        }
+        t.apply(self)?;
+        if t != Tarot::Fool {
+            self.last_consumable_used = Some(Consumable::Tarot(t));
+        }
+        if !prev.is_blind() {
+            let cards = self.available.cards();
+            self.available.empty();
+            self.deck.extend(cards);
+            self.deck.shuffle();
+        }
+        self.stage = prev;
         Ok(())
     }
 
@@ -437,10 +501,18 @@ impl Game {
     pub fn handle_action(&mut self, action: Action) -> Result<(), GameError> {
         self.action_history.push(action.clone());
         match action {
-            Action::SelectCard(card) => match self.stage.is_blind() {
-                true => self.select_card(card),
-                false => Err(GameError::InvalidAction),
-            },
+            Action::SelectCard(card) => {
+                if self.stage.is_blind() {
+                    self.select_card(card)
+                } else if let Stage::TarotHand(t) = self.stage {
+                    if self.available.selected().len() >= t.max_targets() {
+                        return Err(GameError::InvalidAction);
+                    }
+                    self.select_card(card)
+                } else {
+                    Err(GameError::InvalidAction)
+                }
+            }
             Action::Play() => match self.stage.is_blind() {
                 true => self.play_selected(),
                 false => Err(GameError::InvalidAction),
@@ -449,10 +521,13 @@ impl Game {
                 true => self.discard_selected(),
                 false => Err(GameError::InvalidAction),
             },
-            Action::MoveCard(dir, card) => match self.stage.is_blind() {
-                true => self.move_card(dir, card),
-                false => Err(GameError::InvalidAction),
-            },
+            Action::MoveCard(dir, card) => {
+                if self.stage.is_blind() || matches!(self.stage, Stage::TarotHand(_)) {
+                    self.move_card(dir, card)
+                } else {
+                    Err(GameError::InvalidAction)
+                }
+            }
             Action::CashOut(_reward) => match self.stage {
                 Stage::PostBlind() => self.cashout(),
                 _ => Err(GameError::InvalidAction),
@@ -466,7 +541,7 @@ impl Game {
                 _ => Err(GameError::InvalidAction),
             },
             Action::UseConsumable(consumable) => match self.stage {
-                Stage::End(_) => Err(GameError::InvalidAction),
+                Stage::End(_) | Stage::TarotHand(_) => Err(GameError::InvalidAction),
                 _ => self.use_consumable(consumable),
             },
             Action::NextRound() => match self.stage {
@@ -477,6 +552,7 @@ impl Game {
                 Stage::PreBlind() => self.select_blind(blind),
                 _ => Err(GameError::InvalidAction),
             },
+            Action::ApplyTarot() => self.apply_tarot(),
         }
     }
 
@@ -740,10 +816,9 @@ mod tests {
         g.start();
         g.deal();
         g.clear_blind();
-        // deck should be 7 cards smaller than we started with
-        assert_eq!(g.deck.len(), 52 - g.config.available);
-        // should be 7 cards now available
-        assert_eq!(g.available.cards().len(), g.config.available);
+        // all cards return to deck, available is empty
+        assert_eq!(g.deck.len(), 52);
+        assert_eq!(g.available.cards().len(), 0);
     }
 
     #[test]
@@ -752,6 +827,7 @@ mod tests {
         g.start();
         g.stage = Stage::Blind(Blind::Small);
         g.blind = Some(Blind::Small);
+        g.deal();
         for card in g.available.cards().iter().take(5) {
             g.available.select_card(*card).expect("can select card");
         }
@@ -768,12 +844,12 @@ mod tests {
         // Plays and discards should reset
         assert_eq!(g.plays, g.config.plays);
         assert_eq!(g.discards, g.config.discards);
-        // Deck should be length 52 - available
-        assert_eq!(g.deck.len(), 52 - g.config.available);
+        // All cards back in deck after clear_blind, available is empty
+        assert_eq!(g.deck.len(), 52);
         // Discarded should be length 0
         assert_eq!(g.discarded.len(), 0);
-        // Available should be length available
-        assert_eq!(g.available.cards().len(), g.config.available);
+        // Available is empty until next blind starts
+        assert_eq!(g.available.cards().len(), 0);
     }
 
     #[test]
@@ -1027,5 +1103,37 @@ mod tests {
         assert_eq!(g.available.cards().len(), hand_size_before);
         // Glass card must be permanently gone (not hiding in discarded to return next deal)
         assert!(g.discarded.iter().all(|c| c.id != glass_id));
+    }
+
+    #[test]
+    fn test_targeting_tarot_in_blind_invalid_selection_preserves_consumable() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+        g.deal();
+        // no cards selected — Magician needs at least 1
+        g.consumables = vec![Consumable::Tarot(Tarot::Magician)];
+        let res = g.use_consumable(Consumable::Tarot(Tarot::Magician));
+        assert!(matches!(res, Err(GameError::InvalidAction)));
+        assert_eq!(g.consumables.len(), 1);
+        assert!(g.consumables.contains(&Consumable::Tarot(Tarot::Magician)));
+    }
+
+    #[test]
+    fn test_targeting_tarot_in_blind_too_many_selected_preserves_consumable() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+        g.deal();
+        // Lovers accepts exactly 1 — select 2 to exceed max
+        let cards = g.available.cards();
+        g.available.select_card(cards[0]).unwrap();
+        g.available.select_card(cards[1]).unwrap();
+        g.consumables = vec![Consumable::Tarot(Tarot::Lovers)];
+        let res = g.use_consumable(Consumable::Tarot(Tarot::Lovers));
+        assert!(matches!(res, Err(GameError::InvalidAction)));
+        assert_eq!(g.consumables.len(), 1);
     }
 }

@@ -1,3 +1,4 @@
+use crate::tarot::Tarot;
 #[cfg(feature = "python")]
 use pyo3::{pyclass, pymethods};
 use std::fmt;
@@ -67,6 +68,8 @@ pub enum Stage {
     Shop(),
     // Game ending
     End(End),
+    // (Temp stage) Target a tarot, hand drawn for card selection, pending tarot applied on ApplyTarot
+    TarotHand(Tarot),
 }
 
 impl Stage {
@@ -92,6 +95,7 @@ impl Stage {
                 End::Win => 6,
                 End::Lose => 7,
             },
+            Self::TarotHand(_) => 8,
         }
     }
 }

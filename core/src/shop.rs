@@ -3,6 +3,7 @@ use crate::consumable::Consumable;
 use crate::error::GameError;
 use crate::joker::{Joker, Jokers, Rarity};
 use crate::planet::{Planetarium, Planets};
+use crate::tarot::Tarot;
 use rand::prelude::*;
 use strum::IntoEnumIterator;
 
@@ -33,7 +34,6 @@ impl Default for Shop {
 }
 
 impl Shop {
-
     pub(crate) fn refresh(
         &mut self,
         planetarium: &Planetarium,
@@ -48,21 +48,48 @@ impl Shop {
             vec![]
         } else {
             held.iter()
-                .map(|Consumable::Planet(p)| p.clone())
+                .filter_map(|c| {
+                    if let Consumable::Planet(p) = c {
+                        Some(p.clone())
+                    } else {
+                        None
+                    }
+                })
                 .collect()
         };
 
-        let c1 = self
-            .consumable_gen
-            .gen_consumable_excluding(planetarium, &held_planets);
-        let mut exclude_c2 = held_planets.clone();
-        if !allow_duplicates {
-            let Consumable::Planet(p) = &c1;
-            exclude_c2.push(p.clone());
-        }
-        let c2 = self
-            .consumable_gen
-            .gen_consumable_excluding(planetarium, &exclude_c2);
+        // Randomly pick consumable mix: 0=both planets, 1=mixed, 2=both tarots
+        // TODO: implement packs instead of raw consumable cards
+        let mix = thread_rng().gen_range(0..3usize);
+        let (c1, c2) = match mix {
+            0 => {
+                let p1 = self
+                    .consumable_gen
+                    .gen_planet_consumable(planetarium, &held_planets);
+                let mut exclude2 = held_planets.clone();
+                if !allow_duplicates {
+                    if let Consumable::Planet(p) = &p1 {
+                        exclude2.push(p.clone());
+                    }
+                }
+                let p2 = self
+                    .consumable_gen
+                    .gen_planet_consumable(planetarium, &exclude2);
+                (p1, p2)
+            }
+            1 => {
+                let p = self
+                    .consumable_gen
+                    .gen_planet_consumable(planetarium, &held_planets);
+                let t = self.consumable_gen.gen_tarot_consumable();
+                (p, t)
+            }
+            _ => {
+                let t1 = self.consumable_gen.gen_tarot_consumable();
+                let t2 = self.consumable_gen.gen_tarot_consumable();
+                (t1, t2)
+            }
+        };
         self.consumables = vec![c1, c2];
     }
 
@@ -132,9 +159,13 @@ impl Shop {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
-pub struct JokerGenerator {}
+pub(crate) struct JokerGenerator {}
 
 impl JokerGenerator {
+    pub(crate) fn new() -> Self {
+        JokerGenerator {}
+    }
+
     // Randomly generate rarity of new joker.
     // 70% chance Common, 25% chance Uncommon, 5% chance Rare.
     // Legendary can only appear from Soul Spectral Card.
@@ -164,6 +195,10 @@ impl JokerGenerator {
 pub(crate) struct ConsumableGenerator {}
 
 impl ConsumableGenerator {
+    pub(crate) fn new() -> Self {
+        ConsumableGenerator {}
+    }
+
     /// Generate a random planet, excluding secret planets unless their hand has been played,
     /// and excluding any already-picked planets.
     fn gen_planet(&self, planetarium: &Planetarium, exclude: &[Planets]) -> Planets {
@@ -186,12 +221,20 @@ impl ConsumableGenerator {
         available[i].clone()
     }
 
-    pub(crate) fn gen_consumable_excluding(
+    pub(crate) fn gen_planet_consumable(
         &self,
         planetarium: &Planetarium,
         exclude: &[Planets],
     ) -> Consumable {
         Consumable::Planet(self.gen_planet(planetarium, exclude))
+    }
+
+    fn gen_tarot(&self) -> Tarot {
+        Tarot::random()
+    }
+
+    pub(crate) fn gen_tarot_consumable(&self) -> Consumable {
+        Consumable::Tarot(self.gen_tarot())
     }
 }
 
@@ -235,10 +278,12 @@ mod tests {
     #[test]
     fn test_secret_planet_gating() {
         let planetarium = Planetarium::new();
-        let gen = ConsumableGenerator {};
+        let gen = ConsumableGenerator::new();
         for _ in 0..500 {
-            let c = gen.gen_consumable_excluding(&planetarium, &[]);
-            let Consumable::Planet(planet) = c;
+            let c = gen.gen_planet_consumable(&planetarium, &[]);
+            let Consumable::Planet(planet) = c else {
+                continue;
+            };
             assert!(
                 !planet.is_secret(),
                 "secret planet generated before discovery"

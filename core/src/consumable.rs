@@ -1,4 +1,5 @@
 use crate::planet::Planets;
+use crate::tarot::Tarot;
 #[cfg(feature = "python")]
 use pyo3::pyclass;
 
@@ -7,7 +8,7 @@ use pyo3::pyclass;
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Consumable {
     Planet(Planets),
-    // Tarot(Tarot),         // future
+    Tarot(Tarot),
     // Spectral(Spectral),   // future
 }
 
@@ -15,18 +16,21 @@ impl Consumable {
     pub fn cost(&self) -> usize {
         match self {
             Self::Planet(p) => p.cost(),
+            Self::Tarot(t) => t.cost(),
         }
     }
 
     pub fn name(&self) -> String {
         match self {
             Self::Planet(p) => p.name(),
+            Self::Tarot(t) => t.name().to_string(),
         }
     }
 
     pub fn type_label(&self) -> &str {
         match self {
             Self::Planet(_) => "planet",
+            Self::Tarot(_) => "tarot",
         }
     }
 }

@@ -51,6 +51,24 @@ impl Value {
     pub const fn values() -> [Self; 13] {
         VALUES
     }
+
+    pub fn next(self) -> Self {
+        match self {
+            Value::Two => Value::Three,
+            Value::Three => Value::Four,
+            Value::Four => Value::Five,
+            Value::Five => Value::Six,
+            Value::Six => Value::Seven,
+            Value::Seven => Value::Eight,
+            Value::Eight => Value::Nine,
+            Value::Nine => Value::Ten,
+            Value::Ten => Value::Jack,
+            Value::Jack => Value::Queen,
+            Value::Queen => Value::King,
+            Value::King => Value::Ace,
+            Value::Ace => Value::Two,
+        }
+    }
 }
 
 impl From<Value> for char {
@@ -165,13 +183,13 @@ pub struct Card {
     pub edition: Edition,
     pub enhancement: Option<Enhancement>,
     pub seal: Option<Seal>,
-    pub is_face_card: bool,
+    // set by effects like Pareidolia on scoring copies
+    pub face_card_override: bool,
 }
 
 impl Card {
     pub fn new(value: Value, suit: Suit) -> Self {
         let id = CARD_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let is_face_card = value == Value::Jack || value == Value::Queen || value == Value::King;
         Self {
             value,
             suit,
@@ -179,16 +197,20 @@ impl Card {
             edition: Edition::Base,
             enhancement: None,
             seal: None,
-            is_face_card,
+            face_card_override: false,
         }
     }
 
+    pub fn is_face_card(&self) -> bool {
+        matches!(self.value, Value::Jack | Value::Queen | Value::King) || self.face_card_override
+    }
+
     pub fn is_even(&self) -> bool {
-        self.value != Value::Ace && !self.is_face_card && (self.value as u16).is_multiple_of(2)
+        self.value != Value::Ace && !self.is_face_card() && (self.value as u16).is_multiple_of(2)
     }
 
     pub fn is_odd(&self) -> bool {
-        self.value == Value::Ace || !self.is_face_card && !(self.value as u16).is_multiple_of(2)
+        self.value == Value::Ace || !self.is_face_card() && !(self.value as u16).is_multiple_of(2)
     }
 
     pub fn chips(&self) -> usize {
@@ -254,9 +276,26 @@ mod tests {
     #[test]
     fn test_face() {
         let king = Card::new(Value::King, Suit::Heart);
-        assert!(king.is_face_card);
+        assert!(king.is_face_card());
+        let jack = Card::new(Value::Jack, Suit::Spade);
+        assert!(jack.is_face_card());
+        let queen = Card::new(Value::Queen, Suit::Club);
+        assert!(queen.is_face_card());
+        let ten = Card::new(Value::Ten, Suit::Heart);
+        assert!(!ten.is_face_card());
         let two = Card::new(Value::Two, Suit::Diamond);
-        assert!(!two.is_face_card);
+        assert!(!two.is_face_card());
+    }
+
+    #[test]
+    fn test_face_card_override() {
+        let mut two = Card::new(Value::Two, Suit::Diamond);
+        assert!(!two.is_face_card());
+        two.face_card_override = true;
+        assert!(two.is_face_card());
+        // override does not affect even/odd — is_face_card() gates those too
+        assert!(!two.is_even());
+        assert!(!two.is_odd());
     }
 
     #[test]
