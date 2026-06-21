@@ -159,7 +159,7 @@ impl Shop {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
-pub struct JokerGenerator {}
+pub(crate) struct JokerGenerator {}
 
 impl JokerGenerator {
     pub(crate) fn new() -> Self {
@@ -192,7 +192,7 @@ impl JokerGenerator {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
-pub struct ConsumableGenerator {}
+pub(crate) struct ConsumableGenerator {}
 
 impl ConsumableGenerator {
     pub(crate) fn new() -> Self {
