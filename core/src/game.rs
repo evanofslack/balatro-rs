@@ -361,6 +361,15 @@ impl Game {
         if matches!(self.stage, Stage::End(_)) {
             return Err(GameError::InvalidStage);
         }
+        // Validate selection before removal so the consumable is not lost on error
+        if let Consumable::Tarot(t) = &consumable {
+            if t.requires_targets() && self.stage.is_blind() {
+                let selected_count = self.available.selected().len();
+                if selected_count < t.min_targets() || selected_count > t.max_targets() {
+                    return Err(GameError::InvalidAction);
+                }
+            }
+        }
         let i = self
             .consumables
             .iter()
@@ -380,12 +389,6 @@ impl Game {
                     let n = self.config.available.min(self.deck.len());
                     self.draw(n);
                 } else {
-                    let selected_count = self.available.selected().len();
-                    if t.requires_targets()
-                        && (selected_count < t.min_targets() || selected_count > t.max_targets())
-                    {
-                        return Err(GameError::InvalidAction);
-                    }
                     t.apply(self)?;
                     if t != Tarot::Fool {
                         self.last_consumable_used = Some(Consumable::Tarot(t));
@@ -1100,5 +1103,37 @@ mod tests {
         assert_eq!(g.available.cards().len(), hand_size_before);
         // Glass card must be permanently gone (not hiding in discarded to return next deal)
         assert!(g.discarded.iter().all(|c| c.id != glass_id));
+    }
+
+    #[test]
+    fn test_targeting_tarot_in_blind_invalid_selection_preserves_consumable() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+        g.deal();
+        // no cards selected — Magician needs at least 1
+        g.consumables = vec![Consumable::Tarot(Tarot::Magician)];
+        let res = g.use_consumable(Consumable::Tarot(Tarot::Magician));
+        assert!(matches!(res, Err(GameError::InvalidAction)));
+        assert_eq!(g.consumables.len(), 1);
+        assert!(g.consumables.contains(&Consumable::Tarot(Tarot::Magician)));
+    }
+
+    #[test]
+    fn test_targeting_tarot_in_blind_too_many_selected_preserves_consumable() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+        g.deal();
+        // Lovers accepts exactly 1 — select 2 to exceed max
+        let cards = g.available.cards();
+        g.available.select_card(cards[0]).unwrap();
+        g.available.select_card(cards[1]).unwrap();
+        g.consumables = vec![Consumable::Tarot(Tarot::Lovers)];
+        let res = g.use_consumable(Consumable::Tarot(Tarot::Lovers));
+        assert!(matches!(res, Err(GameError::InvalidAction)));
+        assert_eq!(g.consumables.len(), 1);
     }
 }
