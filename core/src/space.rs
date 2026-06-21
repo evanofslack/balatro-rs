@@ -24,9 +24,8 @@ use pyo3::pyclass;
 // 79-80: buy consumable
 // 81-82: use consumable
 // 83: apply tarot
-// 84: skip tarot hand
 //
-// We end up with a vector of length 85 where each index
+// We end up with a vector of length 84 where each index
 // represents a potential action.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
