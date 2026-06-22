@@ -2,6 +2,7 @@ pub mod consumable;
 pub mod controls;
 pub mod deck;
 pub mod inspect;
+pub mod joker;
 pub mod poker_hands;
 pub mod run_info;
 pub mod save;
@@ -16,6 +17,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, overlay: &Overlay) 
         Overlay::Controls => controls::render(f, app, area),
         Overlay::Save => save::render(f, app, area),
         Overlay::Consumable(idx) => consumable::render(f, app, area, *idx),
+        Overlay::Joker(idx) => joker::render(f, app, area, *idx),
     }
 }
 
