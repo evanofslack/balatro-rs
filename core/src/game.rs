@@ -140,7 +140,7 @@ impl Game {
     }
 
     pub(crate) fn select_card(&mut self, card: Card) -> Result<(), GameError> {
-        if self.available.selected().len() > self.config.selected_max {
+        if self.available.selected().len() >= self.config.selected_max {
             return Err(GameError::InvalidSelectCard);
         }
         self.available.select_card(card)
@@ -509,6 +509,13 @@ impl Game {
                         return Err(GameError::InvalidAction);
                     }
                     self.select_card(card)
+                } else {
+                    Err(GameError::InvalidAction)
+                }
+            }
+            Action::DeselectCard(card) => {
+                if self.stage.is_blind() || matches!(self.stage, Stage::TarotHand(_)) {
+                    self.available.deselect_card(card)
                 } else {
                     Err(GameError::InvalidAction)
                 }
