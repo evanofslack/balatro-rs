@@ -4,20 +4,22 @@ use balatro_rs::stage::Stage;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 
 pub fn handle_key(app: &mut AppState, key: KeyEvent) {
-    if let Some(ref overlay) = app.overlay.clone() {
-        handle_key_overlay(app, key, overlay.clone());
+    if key.code == KeyCode::Char('c')
+        && key
+            .modifiers
+            .contains(crossterm::event::KeyModifiers::CONTROL)
+    {
+        app.should_quit = true;
+        return;
+    }
+
+    if let Some(overlay) = app.overlay.clone() {
+        handle_key_overlay(app, key, overlay);
         return;
     }
 
     match key.code {
         KeyCode::Char('q') => app.should_quit = true,
-        KeyCode::Char('c')
-            if key
-                .modifiers
-                .contains(crossterm::event::KeyModifiers::CONTROL) =>
-        {
-            app.should_quit = true;
-        }
         KeyCode::Char('s') => app.open_save(),
         KeyCode::Char('r') => app.overlay = Some(Overlay::RunInfo),
         KeyCode::Char('?') => app.overlay = Some(Overlay::Controls),
@@ -124,7 +126,7 @@ fn handle_key_stage(app: &mut AppState, key: KeyEvent) {
         _ => key,
     };
 
-    match &app.game.stage.clone() {
+    match &app.game.stage {
         Stage::PreBlind() => handle_key_preblind(app, key),
         Stage::Blind(_) => handle_key_blind(app, key),
         Stage::PostBlind() => handle_key_postblind(app, key),
@@ -303,7 +305,7 @@ pub fn compute_cashout(app: &AppState) -> usize {
 }
 
 fn handle_key_shop(app: &mut AppState, key: KeyEvent) {
-    match &app.focus.clone() {
+    match &app.focus {
         FocusZone::ShopJokers => handle_key_shop_jokers(app, key),
         FocusZone::ShopConsumables => handle_key_shop_consumables(app, key),
         FocusZone::ShopNextRound => {
@@ -368,7 +370,7 @@ fn handle_key_shop_consumables(app: &mut AppState, key: KeyEvent) {
 }
 
 fn handle_key_tarot(app: &mut AppState, key: KeyEvent) {
-    match &app.focus.clone() {
+    match &app.focus {
         FocusZone::TarotCards => handle_key_tarot_cards(app, key),
         FocusZone::TarotButtons => handle_key_tarot_buttons(app, key),
         _ => {
@@ -452,10 +454,13 @@ fn open_inspect(app: &mut AppState) {
 }
 
 fn do_save(app: &mut AppState) {
-    if let Ok(json) = app.game.to_json() {
-        let _ = std::fs::write(&app.save_input, json);
+    match app.game.to_json() {
+        Ok(json) => match std::fs::write(&app.save_input, json) {
+            Ok(()) => app.close_overlay(),
+            Err(e) => app.save_input = format!("ERROR: {}", e),
+        },
+        Err(e) => app.save_input = format!("ERROR: {}", e),
     }
-    app.close_overlay();
 }
 
 pub fn handle_mouse(app: &mut AppState, event: MouseEvent) {
@@ -555,6 +560,7 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
                 app.close_overlay();
             }
         }
+        OverlayButton(1) => app.close_overlay(),
         OverlayButton(_) => {}
         DeckTab(idx) => {
             use crate::app::DeckTab as DT;

@@ -1,6 +1,7 @@
 use crate::app::{AppState, InspectTarget, WidgetId};
 use crate::ui::cards::{rank_str, suit_char, suit_color};
 use crate::ui::overlay::centered_rect;
+use crate::ui::wrap;
 use balatro_rs::joker::Joker;
 use ratatui::{
     layout::Rect,
@@ -158,22 +159,3 @@ fn close_line() -> Line<'static> {
     ))
 }
 
-fn wrap(s: &str, width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    for word in s.split_whitespace() {
-        if current.is_empty() {
-            current.push_str(word);
-        } else if current.len() + 1 + word.len() <= width {
-            current.push(' ');
-            current.push_str(word);
-        } else {
-            lines.push(current.clone());
-            current = word.to_string();
-        }
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    lines
-}

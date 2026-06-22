@@ -1,5 +1,5 @@
 use crate::app::{AppState, FocusZone, WidgetId};
-use crate::ui::{joker_strip, sidebar};
+use crate::ui::{joker_strip, sidebar, wrap};
 use balatro_rs::joker::Joker;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -264,22 +264,3 @@ fn render_hints(f: &mut Frame, area: Rect) {
     f.render_widget(para, area);
 }
 
-fn wrap(s: &str, width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    for word in s.split_whitespace() {
-        if current.is_empty() {
-            current.push_str(word);
-        } else if current.len() + 1 + word.len() <= width {
-            current.push(' ');
-            current.push_str(word);
-        } else {
-            lines.push(current.clone());
-            current = word.to_string();
-        }
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    lines
-}

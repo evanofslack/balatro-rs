@@ -91,7 +91,7 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
             Span::raw(format!(
                 "{:>width$}",
                 format!("${}", blind_base),
-                width = panel_w as usize - blind_label.len() - 2
+                width = (panel_w as usize).saturating_sub(blind_label.len() + 2)
             )),
         ]),
         Line::from(vec![
@@ -100,7 +100,7 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
                 format!(
                     "{:>width$}",
                     format!("${}", hands_bonus),
-                    width = panel_w as usize - hands_label.len() - 2
+                    width = (panel_w as usize).saturating_sub(hands_label.len() + 2)
                 ),
                 Style::default().fg(Color::Yellow),
             ),
@@ -111,7 +111,7 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
                 format!(
                     "{:>width$}",
                     format!("${}", interest),
-                    width = panel_w as usize - interest_label.len() - 2
+                    width = (panel_w as usize).saturating_sub(interest_label.len() + 2)
                 ),
                 Style::default().fg(Color::Yellow),
             ),

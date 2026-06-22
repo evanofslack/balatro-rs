@@ -48,7 +48,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
         lines.push(Line::from(""));
     }
 
-    let use_color = match tarot_selection_info(app, &c) {
+    let use_color = match selection_info {
         Some((_, _, false)) => Color::DarkGray,
         _ => Color::Green,
     };

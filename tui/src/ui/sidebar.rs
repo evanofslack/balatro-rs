@@ -1,5 +1,5 @@
+use super::{hand_rank_name, level_color, wrap};
 use crate::app::AppState;
-use balatro_rs::rank::HandRank;
 use balatro_rs::stage::Stage;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -19,32 +19,6 @@ fn value(s: String, color: Color) -> Span<'static> {
     Span::styled(s, Style::default().fg(color).add_modifier(Modifier::BOLD))
 }
 
-fn hand_rank_name(rank: HandRank) -> &'static str {
-    match rank {
-        HandRank::HighCard => "High Card",
-        HandRank::OnePair => "One Pair",
-        HandRank::TwoPair => "Two Pair",
-        HandRank::ThreeOfAKind => "Three of a Kind",
-        HandRank::Straight => "Straight",
-        HandRank::Flush => "Flush",
-        HandRank::FullHouse => "Full House",
-        HandRank::FourOfAKind => "Four of a Kind",
-        HandRank::StraightFlush => "Straight Flush",
-        HandRank::RoyalFlush => "Royal Flush",
-        HandRank::FiveOfAKind => "Five of a Kind",
-        HandRank::FlushHouse => "Flush House",
-        HandRank::FlushFive => "Flush Five",
-    }
-}
-
-fn level_color(level: usize) -> Color {
-    match level {
-        1 => Color::Gray,
-        2..=4 => Color::Cyan,
-        5..=9 => Color::Yellow,
-        _ => Color::Magenta,
-    }
-}
 
 pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     let block = Block::default()
@@ -121,7 +95,7 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     // TarotHand description
     if let Stage::TarotHand(t) = &game.stage {
         let desc = t.description();
-        for word_line in wrap_text(&desc, (inner.width as usize).saturating_sub(1)) {
+        for word_line in wrap(&desc, (inner.width as usize).saturating_sub(1)) {
             lines.push(Line::from(Span::raw(word_line)));
         }
         lines.push(Line::from(""));
@@ -239,26 +213,6 @@ fn ante_num(ante: balatro_rs::ante::Ante) -> usize {
         Ante::Seven => 7,
         Ante::Eight => 8,
     }
-}
-
-fn wrap_text(s: &str, width: usize) -> Vec<String> {
-    let mut lines = Vec::new();
-    let mut current = String::new();
-    for word in s.split_whitespace() {
-        if current.is_empty() {
-            current.push_str(word);
-        } else if current.len() + 1 + word.len() <= width {
-            current.push(' ');
-            current.push_str(word);
-        } else {
-            lines.push(current.clone());
-            current = word.to_string();
-        }
-    }
-    if !current.is_empty() {
-        lines.push(current);
-    }
-    lines
 }
 
 pub fn split_sidebar_main(area: Rect) -> (Rect, Rect) {

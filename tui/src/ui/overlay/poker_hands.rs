@@ -1,4 +1,5 @@
 use crate::app::AppState;
+use crate::ui::{hand_rank_name, level_color};
 use balatro_rs::rank::HandRank;
 use ratatui::{
     layout::{Alignment, Rect},
@@ -26,33 +27,6 @@ const SECRET_RANKS: &[HandRank] = &[
     HandRank::FiveOfAKind,
     HandRank::RoyalFlush,
 ];
-
-fn rank_name(rank: HandRank) -> &'static str {
-    match rank {
-        HandRank::HighCard => "High Card",
-        HandRank::OnePair => "One Pair",
-        HandRank::TwoPair => "Two Pair",
-        HandRank::ThreeOfAKind => "Three of a Kind",
-        HandRank::Straight => "Straight",
-        HandRank::Flush => "Flush",
-        HandRank::FullHouse => "Full House",
-        HandRank::FourOfAKind => "Four of a Kind",
-        HandRank::StraightFlush => "Straight Flush",
-        HandRank::RoyalFlush => "Royal Flush",
-        HandRank::FiveOfAKind => "Five of a Kind",
-        HandRank::FlushHouse => "Flush House",
-        HandRank::FlushFive => "Flush Five",
-    }
-}
-
-fn level_color(level: usize) -> Color {
-    match level {
-        1 => Color::Gray,
-        2..=4 => Color::Cyan,
-        5..=9 => Color::Yellow,
-        _ => Color::Magenta,
-    }
-}
 
 pub fn render_body(f: &mut Frame, app: &AppState, area: Rect) {
     let secret_visible: Vec<HandRank> = SECRET_RANKS
@@ -89,7 +63,7 @@ fn rank_row(app: &AppState, rank: HandRank, inner_w: usize) -> Line<'static> {
     let lc = level_color(lvl.level);
 
     let badge = format!(" lvl.{:<2} ", lvl.level);
-    let name = format!("  {:<18}", rank_name(rank));
+    let name = format!("  {:<18}", hand_rank_name(rank));
     let chips = format!("{:>4}", lvl.chips);
     let mult = format!("{:>2}", lvl.mult);
     let plays = format!("{:>3}", lvl.plays);
