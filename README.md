@@ -59,9 +59,10 @@ The following features are missing and may or may not be added
 - [ ] alternative stakes
 
 
-## CLI
+## TUI
 
-An interactive terminal client is available in [/cli](https://github.com/evanofslack/balatro-rs/tree/main/cli). Run `cargo run -p balatro-cli` to start a game, or load a saved state with `--load <file>`.
+An interactive terminal client is available in [/tui](https://github.com/evanofslack/balatro-rs/tree/main/tui). Run `cargo run -p balatro-tui` to start a game, or load a saved state with `--load <file>`.
+
 
 ## Python bindings
 
