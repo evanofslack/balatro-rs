@@ -332,7 +332,8 @@ impl Game {
         self.stage = Stage::Shop();
         let planetarium = self.planetarium.clone();
         let held = self.consumables.clone();
-        self.shop.refresh(&planetarium, &held, false, self.prob_mult);
+        self.shop
+            .refresh(&planetarium, &held, false, self.prob_mult);
         Ok(())
     }
 
@@ -370,7 +371,8 @@ impl Game {
             return Err(GameError::InvalidStage);
         }
         if joker.edition() == Edition::Negative {
-            self.config.joker_slots = (self.config.joker_slots + 1).min(self.config.joker_slots_max);
+            self.config.joker_slots =
+                (self.config.joker_slots + 1).min(self.config.joker_slots_max);
         }
         if self.jokers.len() >= self.config.joker_slots {
             return Err(GameError::NoAvailableSlot);
@@ -915,8 +917,12 @@ mod tests {
         g.start();
         g.stage = Stage::Shop();
         g.money = 10;
-        g.shop
-            .refresh(&g.planetarium.clone(), &g.consumables.clone(), false, g.prob_mult);
+        g.shop.refresh(
+            &g.planetarium.clone(),
+            &g.consumables.clone(),
+            false,
+            g.prob_mult,
+        );
 
         let j1 = g.shop.joker_from_index(0).expect("is joker");
         g.buy_joker(j1.clone()).expect("buy joker");
@@ -1413,7 +1419,8 @@ mod tests {
         let sell_value = c.sell_value();
         g.consumables.push(c);
 
-        g.sell_consumable(0).expect("sell consumable during tarot hand");
+        g.sell_consumable(0)
+            .expect("sell consumable during tarot hand");
         assert_eq!(g.consumables.len(), 0);
         assert_eq!(g.money, sell_value);
     }

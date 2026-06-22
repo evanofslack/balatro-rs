@@ -321,8 +321,12 @@ pub struct TheJoker {
 }
 
 impl Joker for TheJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Joker".to_string()
     }
@@ -353,8 +357,12 @@ pub struct GreedyJoker {
 }
 
 impl Joker for GreedyJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Greedy Joker".to_string()
     }
@@ -391,8 +399,12 @@ pub struct LustyJoker {
 }
 
 impl Joker for LustyJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Lusty Joker".to_string()
     }
@@ -429,8 +441,12 @@ pub struct WrathfulJoker {
 }
 
 impl Joker for WrathfulJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Wrathful Joker".to_string()
     }
@@ -467,8 +483,12 @@ pub struct GluttonousJoker {
 }
 
 impl Joker for GluttonousJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Gluttonous Joker".to_string()
     }
@@ -505,8 +525,12 @@ pub struct JollyJoker {
 }
 
 impl Joker for JollyJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Jolly Joker".to_string()
     }
@@ -539,8 +563,12 @@ pub struct ZanyJoker {
 }
 
 impl Joker for ZanyJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Zany Joker".to_string()
     }
@@ -573,8 +601,12 @@ pub struct MadJoker {
 }
 
 impl Joker for MadJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Mad Joker".to_string()
     }
@@ -607,8 +639,12 @@ pub struct CrazyJoker {
 }
 
 impl Joker for CrazyJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Crazy Joker".to_string()
     }
@@ -641,8 +677,12 @@ pub struct DrollJoker {
 }
 
 impl Joker for DrollJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Droll Joker".to_string()
     }
@@ -675,8 +715,12 @@ pub struct SlyJoker {
 }
 
 impl Joker for SlyJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Sly Joker".to_string()
     }
@@ -709,8 +753,12 @@ pub struct WilyJoker {
 }
 
 impl Joker for WilyJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Wily Joker".to_string()
     }
@@ -743,8 +791,12 @@ pub struct CleverJoker {
 }
 
 impl Joker for CleverJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Clever Joker".to_string()
     }
@@ -777,8 +829,12 @@ pub struct DeviousJoker {
 }
 
 impl Joker for DeviousJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Devious Joker".to_string()
     }
@@ -811,8 +867,12 @@ pub struct CraftyJoker {
 }
 
 impl Joker for CraftyJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Crafty Joker".to_string()
     }
@@ -845,8 +905,12 @@ pub struct HalfJoker {
 }
 
 impl Joker for HalfJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Half Joker".to_string()
     }
@@ -879,8 +943,12 @@ pub struct JokerStencil {
 }
 
 impl Joker for JokerStencil {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Joker Stencil".to_string()
     }
@@ -914,8 +982,12 @@ pub struct Banner {
 }
 
 impl Joker for Banner {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Banner".to_string()
     }
@@ -946,8 +1018,12 @@ pub struct MysticSummit {
 }
 
 impl Joker for MysticSummit {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Mystic Summit".to_string()
     }
@@ -980,8 +1056,12 @@ pub struct Fibonacci {
 }
 
 impl Joker for Fibonacci {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Fibonacci".to_string()
     }
@@ -1021,8 +1101,12 @@ pub struct ScaryFace {
 }
 
 impl Joker for ScaryFace {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Scary Face".to_string()
     }
@@ -1057,8 +1141,12 @@ pub struct AbstractJoker {
 }
 
 impl Joker for AbstractJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Abstract Joker".to_string()
     }
@@ -1089,8 +1177,12 @@ pub struct Pareidolia {
 }
 
 impl Joker for Pareidolia {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Pareidolia".to_string()
     }
@@ -1136,8 +1228,12 @@ pub struct EvenSteven {
 }
 
 impl Joker for EvenSteven {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Even Steven".to_string()
     }
@@ -1172,8 +1268,12 @@ pub struct OddTodd {
 }
 
 impl Joker for OddTodd {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Odd Todd".to_string()
     }
@@ -1208,8 +1308,12 @@ pub struct Scholar {
 }
 
 impl Joker for Scholar {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Scholar".to_string()
     }
@@ -1245,8 +1349,12 @@ pub struct BusinessCard {
 }
 
 impl Joker for BusinessCard {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Business Card".to_string()
     }
@@ -1281,8 +1389,12 @@ pub struct FacelessJoker {
 }
 
 impl Joker for FacelessJoker {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Faceless Joker".to_string()
     }
@@ -1315,8 +1427,12 @@ pub struct Baron {
 }
 
 impl Joker for Baron {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Baron".to_string()
     }
@@ -1350,8 +1466,12 @@ pub struct MidasMask {
 }
 
 impl Joker for MidasMask {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Midas Mask".to_string()
     }
@@ -1397,8 +1517,12 @@ pub struct Photograph {
 }
 
 impl Joker for Photograph {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Photograph".to_string()
     }
@@ -1434,8 +1558,12 @@ pub struct ReservedParking {
 }
 
 impl Joker for ReservedParking {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Reserved Parking".to_string()
     }
@@ -1470,8 +1598,12 @@ pub struct BaseballCard {
 }
 
 impl Joker for BaseballCard {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Baseball Card".to_string()
     }
@@ -1509,8 +1641,12 @@ pub struct Bull {
 }
 
 impl Joker for Bull {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Bull".to_string()
     }
@@ -1541,8 +1677,12 @@ pub struct WalkieTalkie {
 }
 
 impl Joker for WalkieTalkie {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Walkie Talkie".to_string()
     }
@@ -1578,8 +1718,12 @@ pub struct SmileyFace {
 }
 
 impl Joker for SmileyFace {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Smiley Face".to_string()
     }
@@ -1614,8 +1758,12 @@ pub struct GoldenTicket {
 }
 
 impl Joker for GoldenTicket {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Golden Ticket".to_string()
     }
@@ -1650,8 +1798,12 @@ pub struct Acrobat {
 }
 
 impl Joker for Acrobat {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Acrobat".to_string()
     }
@@ -1684,8 +1836,12 @@ pub struct RoughGem {
 }
 
 impl Joker for RoughGem {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Rough Gem".to_string()
     }
@@ -1720,8 +1876,12 @@ pub struct Bloodstone {
 }
 
 impl Joker for Bloodstone {
-    fn edition(&self) -> Edition { self.edition }
-    fn set_edition(&mut self, e: Edition) { self.edition = e; }
+    fn edition(&self) -> Edition {
+        self.edition
+    }
+    fn set_edition(&mut self, e: Edition) {
+        self.edition = e;
+    }
     fn name(&self) -> String {
         "Bloodstone".to_string()
     }
@@ -3135,7 +3295,7 @@ mod tests {
 
     #[test]
     fn test_wild_counts_for_suit_jokers() {
-        // Two Aces so they form a Pair — one is Wild (Spade but counts as all suits)
+        // Two Aces so they form a Pair, one is Wild (Spade but counts as all suits)
         let mut wild = Card::new(Value::Ace, Suit::Spade);
         wild.enhancement = Some(Enhancement::Wild);
         let heart = Card::new(Value::Ace, Suit::Heart);
@@ -3172,6 +3332,10 @@ mod tests {
 
         let money_before = g.money;
         g.calc_score(hand.best_hand().unwrap());
-        assert_eq!(g.money, money_before + 1, "Wild should count as Diamond for RoughGem");
+        assert_eq!(
+            g.money,
+            money_before + 1,
+            "Wild should count as Diamond for RoughGem"
+        );
     }
 }
