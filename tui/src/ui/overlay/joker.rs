@@ -62,10 +62,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled(
-                format!("  [ Sell (${}) ]", sell_value),
-                sell_style,
-            ),
+            Span::styled(format!("  [ Sell (${}) ]", sell_value), sell_style),
             Span::raw("   "),
             Span::styled("[ Close ]", close_style),
         ]),

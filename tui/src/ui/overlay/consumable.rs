@@ -60,9 +60,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
         Color::DarkGray
     };
     let use_style = if use_selected && !use_unavailable {
-        Style::default()
-            .fg(use_color)
-            .add_modifier(Modifier::BOLD)
+        Style::default().fg(use_color).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(use_color)
     };
@@ -73,9 +71,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
         Color::DarkGray
     };
     let sell_style = if sell_selected {
-        Style::default()
-            .fg(sell_color)
-            .add_modifier(Modifier::BOLD)
+        Style::default().fg(sell_color).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(sell_color)
     };
