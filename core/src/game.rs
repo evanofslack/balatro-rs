@@ -57,6 +57,7 @@ pub struct Game {
     pub prob_mult: u32,
 
     pub last_consumable_used: Option<Consumable>,
+    pub last_score: usize,
     // track stage so we can come back to it after temp tarot stage
     pub(crate) tarot_prev_stage: Option<Stage>,
 }
@@ -90,6 +91,7 @@ impl Game {
             score: config.base_score,
             prob_mult: 1,
             last_consumable_used: None,
+            last_score: 0,
             tarot_prev_stage: None,
             config,
         }
@@ -478,6 +480,8 @@ impl Game {
         }
 
         let blind = self.blind.expect("stage is blind");
+        self.last_score = self.score;
+
         // score exceeds blind (blind passed).
         // handle reward then progress to next stage.
         let reward = self.calc_reward(blind)?;
@@ -487,6 +491,7 @@ impl Game {
         if blind == Blind::Boss {
             if let Some(ante_next) = self.ante_current.next(self.ante_end) {
                 self.ante_current = ante_next;
+                self.blind = None;
             } else {
                 self.stage = Stage::End(End::Win);
                 return Ok(false);
