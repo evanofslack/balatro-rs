@@ -33,6 +33,13 @@ impl Consumable {
             Self::Tarot(_) => "tarot",
         }
     }
+
+    pub fn description(&self) -> String {
+        match self {
+            Self::Planet(p) => p.desc(),
+            Self::Tarot(t) => t.description().to_string(),
+        }
+    }
 }
 
 #[cfg(test)]
