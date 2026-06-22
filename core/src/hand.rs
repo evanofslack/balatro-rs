@@ -72,11 +72,6 @@ impl SelectHand {
             .collect()
     }
 
-    // Get all suits in a hand
-    pub(crate) fn suits(&self) -> Vec<Suit> {
-        self.0.iter().map(|x| x.suit).sorted().collect()
-    }
-
     // Get map of each suit with corresponding cards.
     // For example, Ks, Ah, Jh, Jc, Jd -> {h: [Jh, Ah], s: [Ks], c: [Jc], d: [Jd]}
     #[allow(dead_code)]

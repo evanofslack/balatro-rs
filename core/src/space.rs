@@ -474,9 +474,7 @@ mod tests {
 
     #[test]
     fn test_action_space_zero_joker_slots_no_panic() {
-        let mut c = Config::default();
-        c.joker_slots = 0;
-        c.consumable_slots = 0;
+        let c = Config { joker_slots: 0, consumable_slots: 0, ..Default::default() };
         let a = ActionSpace::from(c);
         // size() and to_vec() must not panic with empty sell vecs
         assert_eq!(a.to_vec().len(), a.size());

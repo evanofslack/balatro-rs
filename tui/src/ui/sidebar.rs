@@ -19,7 +19,6 @@ fn value(s: String, color: Color) -> Span<'static> {
     Span::styled(s, Style::default().fg(color).add_modifier(Modifier::BOLD))
 }
 
-
 pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)

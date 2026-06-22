@@ -1,4 +1,5 @@
 use crate::action::Action;
+use crate::card::Edition;
 use crate::consumable::Consumable;
 use crate::error::GameError;
 use crate::joker::{Joker, Jokers, Rarity};
@@ -39,9 +40,10 @@ impl Shop {
         planetarium: &Planetarium,
         held: &[Consumable],
         allow_duplicates: bool,
+        prob_mult: u32,
     ) {
-        let j1 = self.joker_gen.gen_joker();
-        let j2 = self.joker_gen.gen_joker();
+        let j1 = self.joker_gen.gen_joker(prob_mult);
+        let j2 = self.joker_gen.gen_joker(prob_mult);
         self.jokers = vec![j1, j2];
 
         let held_planets: Vec<Planets> = if allow_duplicates {
@@ -157,6 +159,23 @@ impl Shop {
     }
 }
 
+fn gen_edition(prob_mult: u32) -> Edition {
+    let mut rng = thread_rng();
+    if rng.gen_ratio(3u32.saturating_mul(prob_mult).min(1000), 1000) {
+        return Edition::Negative;
+    }
+    if rng.gen_ratio(3u32.saturating_mul(prob_mult).min(1000), 1000) {
+        return Edition::Polychrome;
+    }
+    if rng.gen_ratio(14u32.saturating_mul(prob_mult).min(1000), 1000) {
+        return Edition::Holographic;
+    }
+    if rng.gen_ratio(20u32.saturating_mul(prob_mult).min(1000), 1000) {
+        return Edition::Foil;
+    }
+    Edition::Base
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub(crate) struct JokerGenerator {}
@@ -180,13 +199,15 @@ impl JokerGenerator {
     }
 
     // Generate a random new joker
-    pub(crate) fn gen_joker(&self) -> Jokers {
+    pub(crate) fn gen_joker(&self, prob_mult: u32) -> Jokers {
         let rarity = self.gen_rarity();
         let choices = Jokers::by_rarity(rarity);
         let i = thread_rng().gen_range(0..choices.len());
         // TODO: don't regenerate already generated jokers.
         // track with hashmap.
-        choices[i].clone()
+        let mut joker = choices[i].clone();
+        joker.set_edition(gen_edition(prob_mult));
+        joker
     }
 }
 
@@ -248,7 +269,7 @@ mod tests {
         let planetarium = Planetarium::new();
         assert_eq!(shop.jokers.len(), 0);
         assert_eq!(shop.consumables.len(), 0);
-        shop.refresh(&planetarium, &[], false);
+        shop.refresh(&planetarium, &[], false, 1);
         assert_eq!(shop.jokers.len(), 2);
         assert_eq!(shop.consumables.len(), 2);
     }
@@ -257,7 +278,7 @@ mod tests {
     fn test_shop_buy_joker() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false);
+        shop.refresh(&planetarium, &[], false, 1);
         assert_eq!(shop.jokers.len(), 2);
         let j1 = shop.jokers[0].clone();
         assert_eq!(shop.joker_from_index(0).expect("first joker"), j1.clone());
@@ -268,7 +289,7 @@ mod tests {
     fn test_shop_buy_consumable() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false);
+        shop.refresh(&planetarium, &[], false, 1);
         assert_eq!(shop.consumables.len(), 2);
         let c1 = shop.consumables[0].clone();
         shop.buy_consumable(&c1).expect("buy consumable");
@@ -295,7 +316,7 @@ mod tests {
     fn test_gen_moves_buy_consumable_slots_full() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false);
+        shop.refresh(&planetarium, &[], false, 1);
         // slots full (held == consumable_slots)
         let moves = shop.gen_moves_buy_consumable(100, 2, 2);
         assert!(moves.is_none());
@@ -305,7 +326,7 @@ mod tests {
     fn test_gen_moves_buy_consumable_no_funds() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false);
+        shop.refresh(&planetarium, &[], false, 1);
         // 0 money can't afford any planet ($3)
         let moves: Option<Vec<Action>> =
             shop.gen_moves_buy_consumable(0, 2, 0).map(|i| i.collect());

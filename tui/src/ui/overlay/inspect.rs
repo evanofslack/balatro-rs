@@ -158,4 +158,3 @@ fn close_line() -> Line<'static> {
             .add_modifier(Modifier::BOLD),
     ))
 }
-

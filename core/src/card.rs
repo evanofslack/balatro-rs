@@ -148,8 +148,9 @@ pub enum Enhancement {
 /// Enum for card  editions
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Copy, Hash)]
+#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Copy, Hash, Default)]
 pub enum Edition {
+    #[default]
     Base,
     Foil,
     Holographic,
@@ -213,6 +214,10 @@ impl Card {
         self.value == Value::Ace || !self.is_face_card() && !(self.value as u16).is_multiple_of(2)
     }
 
+    pub fn matches_suit(&self, suit: Suit) -> bool {
+        self.enhancement == Some(Enhancement::Wild) || self.suit == suit
+    }
+
     pub fn chips(&self) -> usize {
         match self.value {
             Value::Two => 2,
@@ -265,6 +270,20 @@ impl fmt::Display for Card {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_matches_suit() {
+        let diamond = Card::new(Value::Ace, Suit::Diamond);
+        assert!(diamond.matches_suit(Suit::Diamond));
+        assert!(!diamond.matches_suit(Suit::Heart));
+
+        let mut wild = Card::new(Value::Two, Suit::Club);
+        wild.enhancement = Some(Enhancement::Wild);
+        assert!(wild.matches_suit(Suit::Club));
+        assert!(wild.matches_suit(Suit::Spade));
+        assert!(wild.matches_suit(Suit::Heart));
+        assert!(wild.matches_suit(Suit::Diamond));
+    }
 
     #[test]
     fn test_constructor() {

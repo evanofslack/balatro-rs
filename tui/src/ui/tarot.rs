@@ -175,7 +175,10 @@ fn render_tarot_info(f: &mut Frame, tarot: &balatro_rs::tarot::Tarot, app: &AppS
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            format!("  Select {} card(s) ({} selected)", target_str, selected_count),
+            format!(
+                "  Select {} card(s) ({} selected)",
+                target_str, selected_count
+            ),
             Style::default().fg(hint_color),
         )),
     ];

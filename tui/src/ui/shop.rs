@@ -263,4 +263,3 @@ fn render_hints(f: &mut Frame, area: Rect) {
         .alignment(Alignment::Center);
     f.render_widget(para, area);
 }
-
