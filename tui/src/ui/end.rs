@@ -1,11 +1,11 @@
 use crate::app::{AppState, WidgetId};
 use balatro_rs::stage::{End, Stage};
 use ratatui::{
-    Frame,
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
+    Frame,
 };
 
 pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
@@ -42,12 +42,13 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
         Line::from(""),
         Line::from(Span::styled(
             "[ Quit ]",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         )),
     ];
 
-    let para = Paragraph::new(Text::from(lines))
-        .alignment(Alignment::Center);
+    let para = Paragraph::new(Text::from(lines)).alignment(Alignment::Center);
     f.render_widget(para, inner);
 
     // Register quit button rect (approximate center)

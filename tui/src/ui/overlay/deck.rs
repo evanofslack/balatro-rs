@@ -2,11 +2,11 @@ use crate::app::{AppState, DeckTab, WidgetId};
 use crate::ui::cards::{rank_str, suit_char, suit_color};
 use balatro_rs::card::{Suit, Value};
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::Paragraph,
+    Frame,
 };
 
 const SUITS: [Suit; 4] = [Suit::Spade, Suit::Heart, Suit::Diamond, Suit::Club];
@@ -40,7 +40,10 @@ pub fn render_body(f: &mut Frame, app: &mut AppState, area: Rect) {
     let tabs = [
         (DeckTab::InDeck, format!("In Deck: {}", in_deck.len())),
         (DeckTab::InHand, format!("In Hand: {}", in_hand.len())),
-        (DeckTab::Discarded, format!("Discarded: {}", discarded.len())),
+        (
+            DeckTab::Discarded,
+            format!("Discarded: {}", discarded.len()),
+        ),
     ];
 
     let mut lines: Vec<Line> = Vec::new();
@@ -51,7 +54,9 @@ pub fn render_body(f: &mut Frame, app: &mut AppState, area: Rect) {
         .flat_map(|(i, (tab, label))| {
             let active = &app.deck_tab == tab;
             let style = if active {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
             } else {
                 Style::default().fg(Color::DarkGray)
             };
@@ -69,13 +74,17 @@ pub fn render_body(f: &mut Frame, app: &mut AppState, area: Rect) {
     )));
 
     for suit in &SUITS {
-        let suit_style = Style::default().fg(suit_color(*suit)).add_modifier(Modifier::BOLD);
+        let suit_style = Style::default()
+            .fg(suit_color(*suit))
+            .add_modifier(Modifier::BOLD);
         let mut row_spans = vec![
             Span::styled(suit_char(*suit).to_string(), suit_style),
             Span::raw("  "),
         ];
         for value in &VALUES {
-            let present = active_pool.iter().any(|c| c.suit == *suit && c.value == *value);
+            let present = active_pool
+                .iter()
+                .any(|c| c.suit == *suit && c.value == *value);
             if present {
                 row_spans.push(Span::styled(
                     format!("{:<3}", rank_str(*value)),
@@ -100,7 +109,12 @@ pub fn render_body(f: &mut Frame, app: &mut AppState, area: Rect) {
         let tab_w = label.len() as u16 + 4;
         app.widget_rects.insert(
             WidgetId::DeckTab(i),
-            Rect { x, y: area.y, width: tab_w, height: 1 },
+            Rect {
+                x,
+                y: area.y,
+                width: tab_w,
+                height: 1,
+            },
         );
         x += tab_w + 2;
     }

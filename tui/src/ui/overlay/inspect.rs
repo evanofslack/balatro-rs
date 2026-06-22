@@ -3,11 +3,11 @@ use crate::ui::cards::{rank_str, suit_char, suit_color};
 use crate::ui::overlay::centered_rect;
 use balatro_rs::joker::Joker;
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
 };
 
 pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarget) {
@@ -19,17 +19,20 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
 
     let (title, lines) = match target {
         InspectTarget::Card(card) => {
-            let suit_style = Style::default().fg(suit_color(card.suit)).add_modifier(Modifier::BOLD);
-            let title = format!(
-                " {} of {}s ",
-                rank_str(card.value),
-                suit_char(card.suit)
-            );
+            let suit_style = Style::default()
+                .fg(suit_color(card.suit))
+                .add_modifier(Modifier::BOLD);
+            let title = format!(" {} of {}s ", rank_str(card.value), suit_char(card.suit));
             let lines = vec![
                 Line::from(""),
                 Line::from(vec![
                     Span::raw("  Rank:        "),
-                    Span::styled(rank_str(card.value), Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        rank_str(card.value),
+                        Style::default()
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::raw("  Suit:        "),
@@ -38,7 +41,8 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
                 Line::from(vec![
                     Span::raw("  Enhancement: "),
                     Span::styled(
-                        card.enhancement.map_or_else(|| "none".to_string(), |e| format!("{:?}", e)),
+                        card.enhancement
+                            .map_or_else(|| "none".to_string(), |e| format!("{:?}", e)),
                         Style::default().fg(Color::Cyan),
                     ),
                 ]),
@@ -52,7 +56,8 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
                 Line::from(vec![
                     Span::raw("  Seal:        "),
                     Span::styled(
-                        card.seal.map_or_else(|| "none".to_string(), |e| format!("{:?}", e)),
+                        card.seal
+                            .map_or_else(|| "none".to_string(), |e| format!("{:?}", e)),
                         Style::default().fg(Color::Cyan),
                     ),
                 ]),
@@ -68,11 +73,17 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
                 Line::from(""),
                 Line::from(vec![
                     Span::raw("  Rarity: "),
-                    Span::styled(joker.rarity().to_string(), Style::default().fg(Color::Magenta)),
+                    Span::styled(
+                        joker.rarity().to_string(),
+                        Style::default().fg(Color::Magenta),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::raw("  Cost:   "),
-                    Span::styled(format!("${}", joker.cost()), Style::default().fg(Color::Yellow)),
+                    Span::styled(
+                        format!("${}", joker.cost()),
+                        Style::default().fg(Color::Yellow),
+                    ),
                 ]),
                 Line::from(""),
             ];
@@ -114,7 +125,12 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
     };
 
     let block = Block::default()
-        .title(Span::styled(title, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            title,
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::White));
 
@@ -122,18 +138,23 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
     f.render_widget(para, rect);
 
     // Close button rect
-    app.widget_rects.insert(WidgetId::OverlayButton(0), Rect {
-        x: rect.x + w / 2 - 5,
-        y: rect.y + h - 2,
-        width: 10,
-        height: 1,
-    });
+    app.widget_rects.insert(
+        WidgetId::OverlayButton(0),
+        Rect {
+            x: rect.x + w / 2 - 5,
+            y: rect.y + h - 2,
+            width: 10,
+            height: 1,
+        },
+    );
 }
 
 fn close_line() -> Line<'static> {
     Line::from(Span::styled(
         "       [ Close ]",
-        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
     ))
 }
 

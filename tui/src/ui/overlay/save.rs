@@ -1,11 +1,11 @@
 use crate::app::{AppState, WidgetId};
 use crate::ui::overlay::centered_rect;
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
 };
 
 pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
@@ -18,7 +18,10 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
 
     let lines = vec![
         Line::from(""),
-        Line::from(Span::styled("  Filename:", Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled(
+            "  Filename:",
+            Style::default().fg(Color::DarkGray),
+        )),
         Line::from(vec![
             Span::raw("  ┌"),
             Span::raw("─".repeat(w as usize - 6)),
@@ -46,7 +49,9 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
         Line::from(vec![
             Span::styled(
                 "         [ Save ]",
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw("   "),
             Span::styled("[ Cancel ]", Style::default().fg(Color::DarkGray)),
@@ -54,7 +59,12 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     ];
 
     let block = Block::default()
-        .title(Span::styled(" Save Game ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " Save Game ",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::White));
 
@@ -64,10 +74,20 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     // Button rects
     app.widget_rects.insert(
         WidgetId::OverlayButton(0),
-        Rect { x: rect.x + 9, y: rect.y + h - 3, width: 8, height: 1 },
+        Rect {
+            x: rect.x + 9,
+            y: rect.y + h - 3,
+            width: 8,
+            height: 1,
+        },
     );
     app.widget_rects.insert(
         WidgetId::OverlayButton(1),
-        Rect { x: rect.x + 20, y: rect.y + h - 3, width: 10, height: 1 },
+        Rect {
+            x: rect.x + 20,
+            y: rect.y + h - 3,
+            width: 10,
+            height: 1,
+        },
     );
 }

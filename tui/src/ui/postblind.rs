@@ -1,11 +1,11 @@
 use crate::app::{AppState, WidgetId};
 use crate::ui::{joker_strip, sidebar};
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
+    Frame,
 };
 
 pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
@@ -70,14 +70,21 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
 
     let score_label = format!("  Round score: ◆ {}", app.game.last_score);
     let blind_label = format!("  Beat the blind");
-    let hands_label = format!("  {} hand(s) remaining x ${}", app.game.plays, app.game.config.money_per_hand);
-    let interest_label = format!("  Interest ($1 per $5, max {})", app.game.config.interest_max);
+    let hands_label = format!(
+        "  {} hand(s) remaining x ${}",
+        app.game.plays, app.game.config.money_per_hand
+    );
+    let interest_label = format!(
+        "  Interest ($1 per $5, max {})",
+        app.game.config.interest_max
+    );
 
     let lines = vec![
         Line::from(""),
-        Line::from(vec![
-            Span::styled(score_label.clone(), Style::default().fg(Color::LightBlue)),
-        ]),
+        Line::from(vec![Span::styled(
+            score_label.clone(),
+            Style::default().fg(Color::LightBlue),
+        )]),
         Line::from(""),
         Line::from(vec![
             Span::styled(blind_label.clone(), Style::default().fg(Color::White)),
@@ -118,16 +125,29 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
         ]),
         Line::from(Span::styled(sep, Style::default().fg(Color::DarkGray))),
         Line::from(vec![
-            Span::styled("  Total", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
             Span::styled(
-                format!("{:>width$}", format!("${}", total), width = panel_w as usize - 9),
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                "  Total",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(
+                    "{:>width$}",
+                    format!("${}", total),
+                    width = panel_w as usize - 9
+                ),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]),
         Line::from(""),
         Line::from(Span::styled(
             "         [ Cash Out ]",
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         )),
     ];
 

@@ -1,10 +1,10 @@
 use crate::ui::overlay::centered_rect;
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
 };
 
 pub fn render(f: &mut Frame, _app: &mut crate::app::AppState, area: Rect) {
@@ -16,7 +16,9 @@ pub fn render(f: &mut Frame, _app: &mut crate::app::AppState, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " Controls ",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::White));
@@ -46,10 +48,7 @@ pub fn render(f: &mut Frame, _app: &mut crate::app::AppState, area: Rect) {
 
 fn bind(key: &'static str, action: &'static str) -> Line<'static> {
     Line::from(vec![
-        Span::styled(
-            format!("  {:<18}", key),
-            Style::default().fg(Color::Green),
-        ),
+        Span::styled(format!("  {:<18}", key), Style::default().fg(Color::Green)),
         Span::styled(action, Style::default().fg(Color::White)),
     ])
 }

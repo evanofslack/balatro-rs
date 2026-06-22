@@ -1,11 +1,11 @@
 use crate::app::{AppState, FocusZone, WidgetId};
 use crate::ui::{cards, joker_strip, sidebar};
 use ratatui::{
-    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
 };
 
 pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
@@ -41,13 +41,8 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
 
 fn render_cards(f: &mut Frame, app: &mut AppState, area: Rect) {
     let all_cards = app.game.available.cards();
-    let selected_ids: std::collections::HashSet<usize> = app
-        .game
-        .available
-        .selected()
-        .iter()
-        .map(|c| c.id)
-        .collect();
+    let selected_ids: std::collections::HashSet<usize> =
+        app.game.available.selected().iter().map(|c| c.id).collect();
     let cards_and_selected: Vec<(balatro_rs::card::Card, bool)> = all_cards
         .iter()
         .map(|c| (*c, selected_ids.contains(&c.id)))
@@ -70,7 +65,14 @@ fn render_cards(f: &mut Frame, app: &mut AppState, area: Rect) {
         height: area.height,
     };
 
-    cards::render_hand(f, app, card_area, &cards_and_selected, cursor, WidgetId::Card);
+    cards::render_hand(
+        f,
+        app,
+        card_area,
+        &cards_and_selected,
+        cursor,
+        WidgetId::Card,
+    );
 }
 
 fn render_buttons(f: &mut Frame, app: &mut AppState, area: Rect) {
@@ -102,12 +104,18 @@ fn render_buttons(f: &mut Frame, app: &mut AppState, area: Rect) {
         let style = if is_sort {
             Style::default().fg(Color::DarkGray)
         } else if is_focused {
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };
 
-        let border_type = if is_focused { BorderType::Double } else { BorderType::Plain };
+        let border_type = if is_focused {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        };
         let border_style = if is_focused {
             Style::default().fg(Color::Yellow)
         } else {
@@ -124,7 +132,8 @@ fn render_buttons(f: &mut Frame, app: &mut AppState, area: Rect) {
             .alignment(Alignment::Center);
 
         f.render_widget(para, btn_rect);
-        app.widget_rects.insert(WidgetId::ActionButton(*btn_idx), btn_rect);
+        app.widget_rects
+            .insert(WidgetId::ActionButton(*btn_idx), btn_rect);
     }
 }
 

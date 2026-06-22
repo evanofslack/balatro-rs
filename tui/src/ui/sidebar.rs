@@ -2,11 +2,11 @@ use crate::app::AppState;
 use balatro_rs::rank::HandRank;
 use balatro_rs::stage::Stage;
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
+    Frame,
 };
 
 pub const SIDEBAR_W: u16 = 24;
@@ -62,7 +62,9 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     let stage_line = match &game.stage {
         Stage::PreBlind() => Line::from(Span::styled(
             "Select Blind",
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         )),
         Stage::Blind(b) => Line::from(Span::styled(
             b.to_string(),
@@ -76,15 +78,21 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
         )),
         Stage::PostBlind() => Line::from(Span::styled(
             "Cash Out",
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         )),
         Stage::Shop() => Line::from(Span::styled(
             "SHOP",
-            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
         )),
         Stage::TarotHand(t) => Line::from(Span::styled(
             t.name(),
-            Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
         )),
         Stage::End(_) => Line::from(Span::styled(
             "Game Over",
@@ -133,7 +141,9 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     let eval = if let Stage::Blind(_) = &game.stage {
         let selected = game.available.selected();
         if !selected.is_empty() {
-            balatro_rs::hand::SelectHand::new(selected.clone()).best_hand().ok()
+            balatro_rs::hand::SelectHand::new(selected.clone())
+                .best_hand()
+                .ok()
         } else {
             None
         }
@@ -147,7 +157,9 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
             let line = Line::from(vec![
                 Span::styled(
                     hand_rank_name(made.rank),
-                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
                     format!(" lvl.{}", lvl.level),
@@ -162,12 +174,18 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     lines.push(Line::from(vec![
         Span::styled(
             format!(" {} ", disp_chips),
-            Style::default().fg(Color::White).bg(Color::Blue).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" × "),
         Span::styled(
             format!(" {} ", disp_mult),
-            Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
         ),
     ]));
     lines.push(Line::from(""));
@@ -191,7 +209,11 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     lines.push(Line::from(vec![
         label("Ante  "),
         value(
-            format!("{}/{}", ante_num(game.ante_current), ante_num(game.ante_end)),
+            format!(
+                "{}/{}",
+                ante_num(game.ante_current),
+                ante_num(game.ante_end)
+            ),
             Color::White,
         ),
     ]));

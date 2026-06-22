@@ -1,11 +1,11 @@
 use crate::app::{AppState, RunInfoTab};
 use crate::ui::overlay::{centered_rect, deck, poker_hands};
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
 };
 
 pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
@@ -17,7 +17,9 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " Run Info ",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::White));
@@ -36,7 +38,9 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
         .flat_map(|(i, (tab, label))| {
             let active = &app.run_info_tab == tab;
             let style = if active {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
             } else {
                 Style::default().fg(Color::DarkGray)
             };

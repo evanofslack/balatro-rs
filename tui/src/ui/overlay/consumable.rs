@@ -3,11 +3,11 @@ use crate::ui::overlay::centered_rect;
 use balatro_rs::consumable::Consumable;
 use balatro_rs::stage::Stage;
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Paragraph},
+    Frame,
 };
 
 pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
@@ -35,12 +35,10 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
 
     if let Some((needed, selected, valid)) = selection_info {
         let sel_color = if valid { Color::Green } else { Color::Yellow };
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!("  Select {} card(s)  ({} selected)", needed, selected),
-                Style::default().fg(sel_color),
-            ),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            format!("  Select {} card(s)  ({} selected)", needed, selected),
+            Style::default().fg(sel_color),
+        )]));
         lines.push(Line::from(""));
     } else {
         lines.push(Line::from(Span::styled(
@@ -65,12 +63,17 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
         Span::styled(" (not yet)", Style::default().fg(Color::DarkGray)),
     ]));
     lines.push(Line::from(""));
-    lines.push(Line::from(Span::styled("  Esc to cancel", Style::default().fg(Color::DarkGray))));
+    lines.push(Line::from(Span::styled(
+        "  Esc to cancel",
+        Style::default().fg(Color::DarkGray),
+    )));
 
     let block = Block::default()
         .title(Span::styled(
             format!(" {} ", c.name()),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
@@ -80,7 +83,12 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
 
     app.widget_rects.insert(
         WidgetId::OverlayButton(0),
-        Rect { x: rect.x + 2, y: rect.y + 7, width: 7, height: 1 },
+        Rect {
+            x: rect.x + 2,
+            y: rect.y + 7,
+            width: 7,
+            height: 1,
+        },
     );
 }
 

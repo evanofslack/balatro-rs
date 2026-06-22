@@ -1,11 +1,11 @@
 use crate::app::{AppState, WidgetId};
 use balatro_rs::card::{Card, Edition, Enhancement, Seal, Suit, Value};
 use ratatui::{
-    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
 };
 
 pub fn suit_color(suit: Suit) -> Color {
@@ -72,7 +72,7 @@ fn enhancement_indicator(enh: Enhancement) -> (&'static str, Color) {
 pub const CARD_W: u16 = 10;
 pub const CARD_H: u16 = 7;
 pub const SLOT_W: u16 = 11; // CARD_W + 1 gap
-pub const SLOT_H: u16 = 8;  // CARD_H + 1 shift row
+pub const SLOT_H: u16 = 8; // CARD_H + 1 shift row
 
 fn card_inner_text(card: Card) -> Text<'static> {
     let is_wild = card.enhancement == Some(Enhancement::Wild);
@@ -81,11 +81,17 @@ fn card_inner_text(card: Card) -> Text<'static> {
     let (rank_color, suit_display_color, suit_display_char) = if is_wild {
         (Color::Magenta, Color::Magenta, '?')
     } else {
-        (suit_color(card.suit), suit_color(card.suit), suit_char(card.suit))
+        (
+            suit_color(card.suit),
+            suit_color(card.suit),
+            suit_char(card.suit),
+        )
     };
 
     let rank_style = Style::default().fg(rank_color).add_modifier(Modifier::BOLD);
-    let suit_style = Style::default().fg(suit_display_color).add_modifier(Modifier::BOLD);
+    let suit_style = Style::default()
+        .fg(suit_display_color)
+        .add_modifier(Modifier::BOLD);
 
     // Interior: 8 wide, 5 tall.
     // Row 0: seal indicator (top-right) or blank
@@ -109,7 +115,12 @@ fn card_inner_text(card: Card) -> Text<'static> {
     let row1 = if is_stone {
         Line::from(vec![
             Span::raw("   "),
-            Span::styled("●●●", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "●●●",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ])
     } else {
         Line::from(vec![
@@ -124,7 +135,10 @@ fn card_inner_text(card: Card) -> Text<'static> {
             let (label, color) = enhancement_indicator(enh);
             Line::from(vec![
                 Span::raw(" "),
-                Span::styled(label, Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    label,
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
+                ),
             ])
         }
         _ => Line::from(""),

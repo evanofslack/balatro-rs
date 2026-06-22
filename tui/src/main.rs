@@ -9,9 +9,9 @@ use clap::Parser;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{Terminal, backend::CrosstermBackend};
+use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{fs, io, time::Duration};
 
 #[derive(Parser)]
@@ -59,10 +59,7 @@ fn main() -> Result<()> {
     result
 }
 
-fn run<B: ratatui::backend::Backend>(
-    terminal: &mut Terminal<B>,
-    app: &mut AppState,
-) -> Result<()> {
+fn run<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut AppState) -> Result<()> {
     loop {
         terminal.draw(|f| ui::render(f, app))?;
 

@@ -4,7 +4,9 @@ use balatro_rs::action::Action;
 use balatro_rs::stage::Blind;
 
 fn blind_state(game: &balatro_rs::game::Game, blind: &Blind) -> BlindState {
-    let valid = game.gen_actions().any(|a| matches!(a, Action::SelectBlind(b) if &b == blind));
+    let valid = game
+        .gen_actions()
+        .any(|a| matches!(a, Action::SelectBlind(b) if &b == blind));
     if valid {
         return BlindState::Available;
     }
@@ -12,17 +14,25 @@ fn blind_state(game: &balatro_rs::game::Game, blind: &Blind) -> BlindState {
         Some(ref last) => blind <= last,
         None => false,
     };
-    if cleared { BlindState::Cleared } else { BlindState::NotYet }
+    if cleared {
+        BlindState::Cleared
+    } else {
+        BlindState::NotYet
+    }
 }
 
 #[derive(PartialEq)]
-enum BlindState { Available, Cleared, NotYet }
+enum BlindState {
+    Available,
+    Cleared,
+    NotYet,
+}
 use ratatui::{
-    Frame,
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
 };
 
 pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
@@ -47,7 +57,9 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     };
     let header = Paragraph::new(Line::from(Span::styled(
         "Select your blind",
-        Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
     )))
     .alignment(Alignment::Center);
     f.render_widget(header, header_area);
@@ -99,7 +111,9 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
         let block = Block::default()
             .title(Span::styled(
                 blind.to_string(),
-                Style::default().fg(title_color).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(title_color)
+                    .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_type(border_type)
@@ -113,21 +127,27 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
                     Span::styled("  Reward: ", Style::default().fg(Color::DarkGray)),
                     Span::styled(
                         format!("${}", blind.reward()),
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
                     ),
                 ]));
                 if is_cursor {
                     lines.push(Line::from(""));
                     lines.push(Line::from(Span::styled(
                         "  [ SELECT ]",
-                        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
                     )));
                 }
             }
             BlindState::Cleared => {
                 lines.push(Line::from(Span::styled(
                     "  Cleared",
-                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
                 )));
             }
             BlindState::NotYet => {
@@ -149,7 +169,8 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
         let para = Paragraph::new(Text::from(lines)).block(block);
         f.render_widget(para, blind_rect);
 
-        app.widget_rects.insert(WidgetId::BlindOption(i), blind_rect);
+        app.widget_rects
+            .insert(WidgetId::BlindOption(i), blind_rect);
     }
 
     // Key hint
@@ -166,4 +187,3 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     .alignment(Alignment::Center);
     f.render_widget(hints, hint_area);
 }
-

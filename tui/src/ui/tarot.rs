@@ -2,11 +2,11 @@ use crate::app::{AppState, FocusZone, WidgetId};
 use crate::ui::{cards, joker_strip, sidebar};
 use balatro_rs::stage::Stage;
 use ratatui::{
-    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
 };
 
 pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
@@ -62,13 +62,8 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
 
 fn render_cards(f: &mut Frame, app: &mut AppState, area: Rect) {
     let all_cards = app.game.available.cards();
-    let selected_ids: std::collections::HashSet<usize> = app
-        .game
-        .available
-        .selected()
-        .iter()
-        .map(|c| c.id)
-        .collect();
+    let selected_ids: std::collections::HashSet<usize> =
+        app.game.available.selected().iter().map(|c| c.id).collect();
     let cards_and_selected: Vec<(balatro_rs::card::Card, bool)> = all_cards
         .iter()
         .map(|c| (*c, selected_ids.contains(&c.id)))
@@ -91,7 +86,14 @@ fn render_cards(f: &mut Frame, app: &mut AppState, area: Rect) {
         height: area.height,
     };
 
-    cards::render_hand(f, app, card_area, &cards_and_selected, cursor, WidgetId::Card);
+    cards::render_hand(
+        f,
+        app,
+        card_area,
+        &cards_and_selected,
+        cursor,
+        WidgetId::Card,
+    );
 }
 
 fn render_apply_button(f: &mut Frame, app: &mut AppState, area: Rect) {
@@ -112,11 +114,17 @@ fn render_apply_button(f: &mut Frame, app: &mut AppState, area: Rect) {
         width: btn_w,
         height: 3,
     };
-    let border_type = if focused { BorderType::Double } else { BorderType::Plain };
+    let border_type = if focused {
+        BorderType::Double
+    } else {
+        BorderType::Plain
+    };
     let color = if ready { Color::Green } else { Color::DarkGray };
     let border_color = if focused { Color::Yellow } else { color };
     let text_style = if focused {
-        Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(color)
     };
@@ -138,7 +146,12 @@ fn render_tarot_info(f: &mut Frame, tarot: &balatro_rs::tarot::Tarot, app: &AppS
     let lines = vec![
         Line::from(vec![
             Span::styled("  Tarot: ", Style::default().fg(Color::DarkGray)),
-            Span::styled(tarot.name(), Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                tarot.name(),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(vec![
             Span::styled("  ", Style::default()),
@@ -146,11 +159,12 @@ fn render_tarot_info(f: &mut Frame, tarot: &balatro_rs::tarot::Tarot, app: &AppS
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            format!(
-                "  Select {} card(s) ({} selected)",
-                needed, selected_count
-            ),
-            Style::default().fg(if selected_count >= needed { Color::Green } else { Color::Yellow }),
+            format!("  Select {} card(s) ({} selected)", needed, selected_count),
+            Style::default().fg(if selected_count >= needed {
+                Color::Green
+            } else {
+                Color::Yellow
+            }),
         )),
     ];
 

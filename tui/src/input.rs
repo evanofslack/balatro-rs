@@ -11,7 +11,11 @@ pub fn handle_key(app: &mut AppState, key: KeyEvent) {
 
     match key.code {
         KeyCode::Char('q') => app.should_quit = true,
-        KeyCode::Char('c') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+        KeyCode::Char('c')
+            if key
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL) =>
+        {
             app.should_quit = true;
         }
         KeyCode::Char('s') => app.open_save(),
@@ -109,8 +113,14 @@ fn handle_key_stage(app: &mut AppState, key: KeyEvent) {
 
     // Normalize vim motion keys to arrow keys for all zone handlers
     let key = match key.code {
-        KeyCode::Char('h') => KeyEvent { code: KeyCode::Left, ..key },
-        KeyCode::Char('l') => KeyEvent { code: KeyCode::Right, ..key },
+        KeyCode::Char('h') => KeyEvent {
+            code: KeyCode::Left,
+            ..key
+        },
+        KeyCode::Char('l') => KeyEvent {
+            code: KeyCode::Right,
+            ..key
+        },
         _ => key,
     };
 
@@ -143,7 +153,11 @@ fn handle_key_preblind(app: &mut AppState, key: KeyEvent) {
             while c > 0 {
                 c -= 1;
                 let b = blinds[c];
-                if app.game.gen_actions().any(|a| matches!(a, Action::SelectBlind(x) if x == b)) {
+                if app
+                    .game
+                    .gen_actions()
+                    .any(|a| matches!(a, Action::SelectBlind(x) if x == b))
+                {
                     app.cursor = c;
                     break;
                 }
@@ -154,7 +168,11 @@ fn handle_key_preblind(app: &mut AppState, key: KeyEvent) {
             while c + 1 < blinds.len() {
                 c += 1;
                 let b = blinds[c];
-                if app.game.gen_actions().any(|a| matches!(a, Action::SelectBlind(x) if x == b)) {
+                if app
+                    .game
+                    .gen_actions()
+                    .any(|a| matches!(a, Action::SelectBlind(x) if x == b))
+                {
                     app.cursor = c;
                     break;
                 }
@@ -389,13 +407,8 @@ fn handle_key_tarot_buttons(app: &mut AppState, key: KeyEvent) {
 
 fn toggle_card(app: &mut AppState) {
     let cards = app.game.available.cards();
-    let selected_ids: std::collections::HashSet<usize> = app
-        .game
-        .available
-        .selected()
-        .iter()
-        .map(|c| c.id)
-        .collect();
+    let selected_ids: std::collections::HashSet<usize> =
+        app.game.available.selected().iter().map(|c| c.id).collect();
     if let Some(&card) = cards.get(app.cursor) {
         if selected_ids.contains(&card.id) {
             let _ = app.game.handle_action(Action::DeselectCard(card));

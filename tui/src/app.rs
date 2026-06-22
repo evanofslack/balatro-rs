@@ -1,9 +1,4 @@
-use balatro_rs::{
-    card::Card,
-    consumable::Consumable,
-    game::Game,
-    joker::Jokers,
-};
+use balatro_rs::{card::Card, consumable::Consumable, game::Game, joker::Jokers};
 use ratatui::layout::Rect;
 use std::collections::HashMap;
 

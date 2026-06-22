@@ -7,7 +7,7 @@ pub mod run_info;
 pub mod save;
 
 use crate::app::{AppState, Overlay};
-use ratatui::{Frame, layout::Rect};
+use ratatui::{layout::Rect, Frame};
 
 pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, overlay: &Overlay) {
     match overlay {

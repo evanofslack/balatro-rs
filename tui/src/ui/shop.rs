@@ -2,11 +2,11 @@ use crate::app::{AppState, FocusZone, WidgetId};
 use crate::ui::{joker_strip, sidebar};
 use balatro_rs::joker::Joker;
 use ratatui::{
-    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
 };
 
 const ITEM_W: u16 = 24;
@@ -22,7 +22,9 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     let block = Block::default()
         .title(Span::styled(
             " SHOP — Improve your run! ",
-            Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
@@ -60,7 +62,12 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         "Jokers for Sale",
         Style::default().fg(Color::DarkGray),
     ));
-    let label_area = Rect { x: area.x + 1, y: area.y, width: 20, height: 1 };
+    let label_area = Rect {
+        x: area.x + 1,
+        y: area.y,
+        width: 20,
+        height: 1,
+    };
     f.render_widget(label, label_area);
 
     let jokers = app.game.shop.jokers.clone();
@@ -81,7 +88,11 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         let is_cursor = focused && app.cursor == i;
         let can_afford = app.game.money >= joker.cost();
 
-        let border_type = if is_cursor { BorderType::Double } else { BorderType::Plain };
+        let border_type = if is_cursor {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        };
         let border_color = if is_cursor {
             Color::Yellow
         } else if can_afford {
@@ -93,7 +104,9 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         let block = Block::default()
             .title(Span::styled(
                 format!(" {} ", joker.name()),
-                Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_type(border_type)
@@ -102,18 +115,28 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         let desc = joker.desc();
         let mut lines = vec![Line::from("")];
         for word_line in wrap(&desc, ITEM_W as usize - 2) {
-            lines.push(Line::from(Span::styled(word_line, Style::default().fg(Color::White))));
+            lines.push(Line::from(Span::styled(
+                word_line,
+                Style::default().fg(Color::White),
+            )));
         }
         while lines.len() < ITEM_H as usize - 3 {
             lines.push(Line::from(""));
         }
         lines.push(Line::from(vec![
-            Span::styled(joker.rarity().to_string(), Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                joker.rarity().to_string(),
+                Style::default().fg(Color::DarkGray),
+            ),
             Span::raw("  "),
             Span::styled(
                 format!("${}", joker.cost()),
                 Style::default()
-                    .fg(if can_afford { Color::Yellow } else { Color::DarkGray })
+                    .fg(if can_afford {
+                        Color::Yellow
+                    } else {
+                        Color::DarkGray
+                    })
                     .add_modifier(Modifier::BOLD),
             ),
         ]));
@@ -129,7 +152,12 @@ fn render_consumables_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         "Consumables",
         Style::default().fg(Color::DarkGray),
     ));
-    let label_area = Rect { x: area.x + 1, y: area.y, width: 15, height: 1 };
+    let label_area = Rect {
+        x: area.x + 1,
+        y: area.y,
+        width: 15,
+        height: 1,
+    };
     f.render_widget(label, label_area);
 
     let consumables = app.game.shop.consumables.clone();
@@ -151,7 +179,11 @@ fn render_consumables_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         let is_cursor = focused && app.cursor == i;
         let can_afford = app.game.money >= c.cost();
 
-        let border_type = if is_cursor { BorderType::Double } else { BorderType::Plain };
+        let border_type = if is_cursor {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        };
         let border_color = if is_cursor {
             Color::Yellow
         } else if can_afford {
@@ -163,25 +195,35 @@ fn render_consumables_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         let block = Block::default()
             .title(Span::styled(
                 format!(" {} ", c.name()),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_type(border_type)
             .border_style(Style::default().fg(border_color));
 
         let lines = vec![Line::from(vec![
-            Span::styled(c.type_label().to_string(), Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                c.type_label().to_string(),
+                Style::default().fg(Color::DarkGray),
+            ),
             Span::raw("  "),
             Span::styled(
                 format!("${}", c.cost()),
                 Style::default()
-                    .fg(if can_afford { Color::Yellow } else { Color::DarkGray })
+                    .fg(if can_afford {
+                        Color::Yellow
+                    } else {
+                        Color::DarkGray
+                    })
                     .add_modifier(Modifier::BOLD),
             ),
         ])];
         let para = Paragraph::new(Text::from(lines)).block(block);
         f.render_widget(para, item_rect);
-        app.widget_rects.insert(WidgetId::ShopConsumable(i), item_rect);
+        app.widget_rects
+            .insert(WidgetId::ShopConsumable(i), item_rect);
     }
 }
 
@@ -194,7 +236,11 @@ fn render_next_round(f: &mut Frame, app: &mut AppState, area: Rect) {
         height: 3,
     };
     let focused = app.focus == FocusZone::ShopNextRound;
-    let border_type = if focused { BorderType::Double } else { BorderType::Plain };
+    let border_type = if focused {
+        BorderType::Double
+    } else {
+        BorderType::Plain
+    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(border_type)
