@@ -52,3 +52,8 @@ tui/src/
     sidebar.rs     score/stats sidebar
     overlay/       modal overlays (inspect, run info, save, controls)
 ```
+
+## Screenshot
+
+<img width="1504" height="862" alt="balatro-rs tui" src="https://github.com/user-attachments/assets/3a281099-9f49-43d0-8ae0-cbb53b2190f8" />
+
