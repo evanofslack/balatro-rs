@@ -94,6 +94,10 @@ impl Tarot {
         3
     }
 
+    pub fn sell_value(&self) -> usize {
+        1
+    }
+
     pub fn min_targets(&self) -> usize {
         match self {
             Self::Fool

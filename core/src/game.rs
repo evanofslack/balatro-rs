@@ -326,6 +326,32 @@ impl Game {
         Ok(())
     }
 
+    pub(crate) fn sell_joker(&mut self, idx: usize) -> Result<(), GameError> {
+        if matches!(self.stage, Stage::End(_)) {
+            return Err(GameError::InvalidStage);
+        }
+        if idx >= self.jokers.len() {
+            return Err(GameError::InvalidAction);
+        }
+        self.money += self.jokers[idx].sell_value();
+        self.jokers.remove(idx);
+        self.effect_registry
+            .register_jokers(self.jokers.clone(), &self.clone());
+        Ok(())
+    }
+
+    pub(crate) fn sell_consumable(&mut self, idx: usize) -> Result<(), GameError> {
+        if matches!(self.stage, Stage::End(_)) {
+            return Err(GameError::InvalidStage);
+        }
+        if idx >= self.consumables.len() {
+            return Err(GameError::InvalidAction);
+        }
+        self.money += self.consumables[idx].sell_value();
+        self.consumables.remove(idx);
+        Ok(())
+    }
+
     pub(crate) fn buy_joker(&mut self, joker: Jokers) -> Result<(), GameError> {
         if self.stage != Stage::Shop() {
             return Err(GameError::InvalidStage);
@@ -566,6 +592,8 @@ impl Game {
                 _ => Err(GameError::InvalidAction),
             },
             Action::ApplyTarot() => self.apply_tarot(),
+            Action::SellJoker(idx) => self.sell_joker(idx),
+            Action::SellConsumable(idx) => self.sell_consumable(idx),
         }
     }
 
@@ -1148,5 +1176,144 @@ mod tests {
         let res = g.use_consumable(Consumable::Tarot(Tarot::Lovers));
         assert!(matches!(res, Err(GameError::InvalidAction)));
         assert_eq!(g.consumables.len(), 1);
+    }
+
+    #[test]
+    fn test_sell_joker() {
+        use crate::joker::{Jokers, TheJoker};
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.money = 0;
+        let joker = Jokers::TheJoker(TheJoker {});
+        let sell_value = joker.sell_value();
+        g.jokers.push(joker);
+        assert_eq!(g.jokers.len(), 1);
+
+        g.sell_joker(0).expect("sell joker");
+        assert_eq!(g.jokers.len(), 0);
+        assert_eq!(g.money, sell_value);
+    }
+
+    #[test]
+    fn test_sell_joker_invalid_index() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        let res = g.sell_joker(0);
+        assert!(matches!(res, Err(GameError::InvalidAction)));
+    }
+
+    #[test]
+    fn test_sell_joker_invalid_stage() {
+        use crate::joker::{Jokers, TheJoker};
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::End(crate::stage::End::Win);
+        g.jokers.push(Jokers::TheJoker(TheJoker {}));
+        let res = g.sell_joker(0);
+        assert!(matches!(res, Err(GameError::InvalidStage)));
+    }
+
+    #[test]
+    fn test_sell_joker_during_blind() {
+        use crate::joker::{Jokers, TheJoker};
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+        g.money = 0;
+        let joker = Jokers::TheJoker(TheJoker {});
+        let sell_value = joker.sell_value();
+        g.jokers.push(joker);
+
+        g.sell_joker(0).expect("sell joker during blind");
+        assert_eq!(g.jokers.len(), 0);
+        assert_eq!(g.money, sell_value);
+    }
+
+    #[test]
+    fn test_sell_consumable() {
+        use crate::planet::Planets;
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.money = 0;
+        let c = Consumable::Planet(Planets::Mercury);
+        let sell_value = c.sell_value();
+        g.consumables.push(c);
+        assert_eq!(g.consumables.len(), 1);
+
+        g.sell_consumable(0).expect("sell consumable");
+        assert_eq!(g.consumables.len(), 0);
+        assert_eq!(g.money, sell_value);
+    }
+
+    #[test]
+    fn test_sell_consumable_invalid_index() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        let res = g.sell_consumable(0);
+        assert!(matches!(res, Err(GameError::InvalidAction)));
+    }
+
+    #[test]
+    fn test_sell_consumable_invalid_stage() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::End(crate::stage::End::Win);
+        g.consumables
+            .push(Consumable::Tarot(crate::tarot::Tarot::Fool));
+        let res = g.sell_consumable(0);
+        assert!(matches!(res, Err(GameError::InvalidStage)));
+    }
+
+    #[test]
+    fn test_sell_joker_during_tarot_hand() {
+        use crate::joker::{Jokers, TheJoker};
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::TarotHand(Tarot::Magician);
+        g.money = 0;
+        let joker = Jokers::TheJoker(TheJoker {});
+        let sell_value = joker.sell_value();
+        g.jokers.push(joker);
+
+        g.sell_joker(0).expect("sell joker during tarot hand");
+        assert_eq!(g.jokers.len(), 0);
+        assert_eq!(g.money, sell_value);
+    }
+
+    #[test]
+    fn test_sell_consumable_during_tarot_hand() {
+        use crate::planet::Planets;
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::TarotHand(Tarot::Magician);
+        g.money = 0;
+        let c = Consumable::Planet(Planets::Mercury);
+        let sell_value = c.sell_value();
+        g.consumables.push(c);
+
+        g.sell_consumable(0).expect("sell consumable during tarot hand");
+        assert_eq!(g.consumables.len(), 0);
+        assert_eq!(g.money, sell_value);
+    }
+
+    #[test]
+    fn test_sell_joker_removes_effects() {
+        use crate::joker::{Jokers, TheJoker};
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        let joker = Jokers::TheJoker(TheJoker {});
+        g.jokers.push(joker);
+        let jokers = g.jokers.clone();
+        g.effect_registry.register_jokers(jokers, &g.clone());
+        assert!(!g.effect_registry.on_score.is_empty());
+
+        g.sell_joker(0).expect("sell joker");
+        assert!(g.effect_registry.on_score.is_empty());
     }
 }

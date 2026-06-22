@@ -45,16 +45,71 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
             }
         }
         Overlay::Consumable(idx) => match key.code {
-            KeyCode::Enter | KeyCode::Char('u') => {
+            KeyCode::Left | KeyCode::Char('h') => {
+                if app.overlay_cursor > 0 {
+                    app.overlay_cursor -= 1;
+                }
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                if app.overlay_cursor < 1 {
+                    app.overlay_cursor += 1;
+                }
+            }
+            KeyCode::Char('u') => {
                 if let Some(c) = app.game.consumables.get(idx).cloned() {
                     let prev = app.game.stage;
-                    app.close_overlay();
-                    let _ = app.game.handle_action(Action::UseConsumable(c));
-                    if app.game.stage != prev {
-                        app.sync_focus_to_stage();
+                    if app.game.handle_action(Action::UseConsumable(c)).is_ok() {
+                        app.close_overlay();
+                        if app.game.stage != prev {
+                            app.sync_focus_to_stage();
+                        }
                     }
                 }
             }
+            KeyCode::Enter => match app.overlay_cursor {
+                0 => {
+                    if let Some(c) = app.game.consumables.get(idx).cloned() {
+                        let prev = app.game.stage;
+                        if app.game.handle_action(Action::UseConsumable(c)).is_ok() {
+                            app.close_overlay();
+                            if app.game.stage != prev {
+                                app.sync_focus_to_stage();
+                            }
+                        }
+                    }
+                }
+                1 => {
+                    if app.game.handle_action(Action::SellConsumable(idx)).is_ok() {
+                        app.close_overlay();
+                    }
+                }
+                _ => {}
+            },
+            KeyCode::Esc => app.close_overlay(),
+            _ => {}
+        },
+        Overlay::Joker(idx) => match key.code {
+            KeyCode::Left | KeyCode::Char('h') => {
+                if app.overlay_cursor > 0 {
+                    app.overlay_cursor -= 1;
+                }
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                if app.overlay_cursor < 1 {
+                    app.overlay_cursor += 1;
+                }
+            }
+            KeyCode::Enter => match app.overlay_cursor {
+                0 => {
+                    if app.game.handle_action(Action::SellJoker(idx)).is_ok() {
+                        app.close_overlay();
+                        if app.cursor >= app.game.jokers.len() && app.cursor > 0 {
+                            app.cursor -= 1;
+                        }
+                    }
+                }
+                _ => app.close_overlay(),
+            },
             KeyCode::Esc => app.close_overlay(),
             _ => {}
         },
@@ -267,6 +322,12 @@ fn handle_key_joker_strip(app: &mut AppState, key: KeyEvent) {
                 app.cursor += 1;
             }
         }
+        KeyCode::Enter => {
+            if app.cursor < joker_count {
+                app.overlay = Some(Overlay::Joker(app.cursor));
+                app.overlay_cursor = 1;
+            }
+        }
         _ => {}
     }
 }
@@ -287,6 +348,7 @@ fn handle_key_consumable_strip(app: &mut AppState, key: KeyEvent) {
         KeyCode::Enter => {
             if app.cursor < count {
                 app.overlay = Some(Overlay::Consumable(app.cursor));
+                app.overlay_cursor = 0;
             }
         }
         _ => {}
@@ -294,9 +356,16 @@ fn handle_key_consumable_strip(app: &mut AppState, key: KeyEvent) {
 }
 
 fn handle_key_postblind(app: &mut AppState, key: KeyEvent) {
-    if key.code == KeyCode::Enter {
-        let reward = compute_cashout(app);
-        let _ = app.game.handle_action(Action::CashOut(reward));
+    match &app.focus {
+        FocusZone::CashOutButton => {
+            if key.code == KeyCode::Enter {
+                let reward = compute_cashout(app);
+                let _ = app.game.handle_action(Action::CashOut(reward));
+            }
+        }
+        FocusZone::JokerStrip => handle_key_joker_strip(app, key),
+        FocusZone::ConsumableStrip => handle_key_consumable_strip(app, key),
+        _ => {}
     }
 }
 
@@ -506,11 +575,16 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
         JokerSlot(idx) => {
             app.focus = FocusZone::JokerStrip;
             app.cursor = idx;
+            if idx < app.game.jokers.len() {
+                app.overlay = Some(Overlay::Joker(idx));
+                app.overlay_cursor = 1;
+            }
         }
         ConsumableSlot(idx) => {
             app.focus = FocusZone::ConsumableStrip;
             app.cursor = idx;
             app.overlay = Some(Overlay::Consumable(idx));
+            app.overlay_cursor = 0;
         }
         ShopJoker(idx) => {
             app.focus = FocusZone::ShopJokers;
@@ -555,17 +629,33 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             Some(crate::app::Overlay::Consumable(idx)) => {
                 if let Some(c) = app.game.consumables.get(idx).cloned() {
                     let prev = app.game.stage;
+                    if app.game.handle_action(Action::UseConsumable(c)).is_ok() {
+                        app.close_overlay();
+                        if app.game.stage != prev {
+                            app.sync_focus_to_stage();
+                        }
+                    }
+                }
+            }
+            Some(crate::app::Overlay::Joker(idx)) => {
+                if app.game.handle_action(Action::SellJoker(idx)).is_ok() {
                     app.close_overlay();
-                    let _ = app.game.handle_action(Action::UseConsumable(c));
-                    if app.game.stage != prev {
-                        app.sync_focus_to_stage();
+                    if app.cursor >= app.game.jokers.len() && app.cursor > 0 {
+                        app.cursor -= 1;
                     }
                 }
             }
             Some(crate::app::Overlay::Save) => do_save(app),
             _ => app.close_overlay(),
         },
-        OverlayButton(1) => app.close_overlay(),
+        OverlayButton(1) => match app.overlay.clone() {
+            Some(crate::app::Overlay::Consumable(idx)) => {
+                if app.game.handle_action(Action::SellConsumable(idx)).is_ok() {
+                    app.close_overlay();
+                }
+            }
+            _ => app.close_overlay(),
+        },
         OverlayButton(_) => {}
         DeckTab(idx) => {
             use crate::app::DeckTab as DT;

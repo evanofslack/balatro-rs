@@ -48,19 +48,43 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
         lines.push(Line::from(""));
     }
 
-    let use_color = match selection_info {
-        Some((_, _, false)) => Color::DarkGray,
-        _ => Color::Green,
+    let use_unavailable = matches!(selection_info, Some((_, _, false)));
+    let use_selected = app.overlay_cursor == 0;
+    let sell_selected = app.overlay_cursor == 1;
+
+    let use_color = if use_unavailable {
+        Color::DarkGray
+    } else if use_selected {
+        Color::Green
+    } else {
+        Color::DarkGray
+    };
+    let use_style = if use_selected && !use_unavailable {
+        Style::default()
+            .fg(use_color)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(use_color)
     };
 
+    let sell_color = if sell_selected {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
+    let sell_style = if sell_selected {
+        Style::default()
+            .fg(sell_color)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(sell_color)
+    };
+
+    let sell_value = c.sell_value();
     lines.push(Line::from(vec![
-        Span::styled(
-            "  [ Use ]",
-            Style::default().fg(use_color).add_modifier(Modifier::BOLD),
-        ),
+        Span::styled("  [ Use ]", use_style),
         Span::raw("   "),
-        Span::styled("[ Sell ]", Style::default().fg(Color::DarkGray)),
-        Span::styled(" (not yet)", Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("[ Sell (${}) ]", sell_value), sell_style),
     ]));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
@@ -87,6 +111,15 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
             x: rect.x + 2,
             y: rect.y + 7,
             width: 7,
+            height: 1,
+        },
+    );
+    app.widget_rects.insert(
+        WidgetId::OverlayButton(1),
+        Rect {
+            x: rect.x + 12,
+            y: rect.y + 7,
+            width: 14,
             height: 1,
         },
     );

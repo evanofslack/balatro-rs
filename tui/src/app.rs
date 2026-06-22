@@ -61,6 +61,7 @@ pub enum Overlay {
     Controls,
     Save,
     Consumable(usize),
+    Joker(usize),
 }
 
 pub struct AppState {
@@ -68,6 +69,7 @@ pub struct AppState {
     pub focus: FocusZone,
     pub cursor: usize,
     pub overlay: Option<Overlay>,
+    pub overlay_cursor: usize,
     pub deck_tab: DeckTab,
     pub run_info_tab: RunInfoTab,
     pub save_input: String,
@@ -82,6 +84,7 @@ impl AppState {
             focus: FocusZone::BlindSelect,
             cursor: 0,
             overlay: None,
+            overlay_cursor: 0,
             deck_tab: DeckTab::InDeck,
             run_info_tab: RunInfoTab::Deck,
             save_input: String::new(),
@@ -128,6 +131,9 @@ impl AppState {
             (Stage::Blind(_), FocusZone::ActionButtons) => FocusZone::JokerStrip,
             (Stage::Blind(_), FocusZone::JokerStrip) => FocusZone::ConsumableStrip,
             (Stage::Blind(_), FocusZone::ConsumableStrip) => FocusZone::Cards,
+            (Stage::PostBlind(), FocusZone::CashOutButton) => FocusZone::JokerStrip,
+            (Stage::PostBlind(), FocusZone::JokerStrip) => FocusZone::ConsumableStrip,
+            (Stage::PostBlind(), FocusZone::ConsumableStrip) => FocusZone::CashOutButton,
             (Stage::Shop(), FocusZone::ShopJokers) => FocusZone::ShopConsumables,
             (Stage::Shop(), FocusZone::ShopConsumables) => FocusZone::ShopNextRound,
             (Stage::Shop(), FocusZone::ShopNextRound) => FocusZone::JokerStrip,
@@ -147,6 +153,9 @@ impl AppState {
             (Stage::Blind(_), FocusZone::ActionButtons) => FocusZone::Cards,
             (Stage::Blind(_), FocusZone::JokerStrip) => FocusZone::ActionButtons,
             (Stage::Blind(_), FocusZone::ConsumableStrip) => FocusZone::JokerStrip,
+            (Stage::PostBlind(), FocusZone::CashOutButton) => FocusZone::ConsumableStrip,
+            (Stage::PostBlind(), FocusZone::ConsumableStrip) => FocusZone::JokerStrip,
+            (Stage::PostBlind(), FocusZone::JokerStrip) => FocusZone::CashOutButton,
             (Stage::Shop(), FocusZone::ShopJokers) => FocusZone::ConsumableStrip,
             (Stage::Shop(), FocusZone::ConsumableStrip) => FocusZone::JokerStrip,
             (Stage::Shop(), FocusZone::JokerStrip) => FocusZone::ShopNextRound,
