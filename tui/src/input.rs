@@ -58,10 +58,11 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
             KeyCode::Char('u') => {
                 if let Some(c) = app.game.consumables.get(idx).cloned() {
                     let prev = app.game.stage;
-                    app.close_overlay();
-                    let _ = app.game.handle_action(Action::UseConsumable(c));
-                    if app.game.stage != prev {
-                        app.sync_focus_to_stage();
+                    if app.game.handle_action(Action::UseConsumable(c)).is_ok() {
+                        app.close_overlay();
+                        if app.game.stage != prev {
+                            app.sync_focus_to_stage();
+                        }
                     }
                 }
             }
@@ -69,16 +70,18 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
                 0 => {
                     if let Some(c) = app.game.consumables.get(idx).cloned() {
                         let prev = app.game.stage;
-                        app.close_overlay();
-                        let _ = app.game.handle_action(Action::UseConsumable(c));
-                        if app.game.stage != prev {
-                            app.sync_focus_to_stage();
+                        if app.game.handle_action(Action::UseConsumable(c)).is_ok() {
+                            app.close_overlay();
+                            if app.game.stage != prev {
+                                app.sync_focus_to_stage();
+                            }
                         }
                     }
                 }
                 1 => {
-                    app.close_overlay();
-                    let _ = app.game.handle_action(Action::SellConsumable(idx));
+                    if app.game.handle_action(Action::SellConsumable(idx)).is_ok() {
+                        app.close_overlay();
+                    }
                 }
                 _ => {}
             },
@@ -98,10 +101,11 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
             }
             KeyCode::Enter => match app.overlay_cursor {
                 0 => {
-                    app.close_overlay();
-                    let _ = app.game.handle_action(Action::SellJoker(idx));
-                    if app.cursor >= app.game.jokers.len() && app.cursor > 0 {
-                        app.cursor -= 1;
+                    if app.game.handle_action(Action::SellJoker(idx)).is_ok() {
+                        app.close_overlay();
+                        if app.cursor >= app.game.jokers.len() && app.cursor > 0 {
+                            app.cursor -= 1;
+                        }
                     }
                 }
                 _ => app.close_overlay(),
@@ -625,18 +629,20 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             Some(crate::app::Overlay::Consumable(idx)) => {
                 if let Some(c) = app.game.consumables.get(idx).cloned() {
                     let prev = app.game.stage;
-                    app.close_overlay();
-                    let _ = app.game.handle_action(Action::UseConsumable(c));
-                    if app.game.stage != prev {
-                        app.sync_focus_to_stage();
+                    if app.game.handle_action(Action::UseConsumable(c)).is_ok() {
+                        app.close_overlay();
+                        if app.game.stage != prev {
+                            app.sync_focus_to_stage();
+                        }
                     }
                 }
             }
             Some(crate::app::Overlay::Joker(idx)) => {
-                app.close_overlay();
-                let _ = app.game.handle_action(Action::SellJoker(idx));
-                if app.cursor >= app.game.jokers.len() && app.cursor > 0 {
-                    app.cursor -= 1;
+                if app.game.handle_action(Action::SellJoker(idx)).is_ok() {
+                    app.close_overlay();
+                    if app.cursor >= app.game.jokers.len() && app.cursor > 0 {
+                        app.cursor -= 1;
+                    }
                 }
             }
             Some(crate::app::Overlay::Save) => do_save(app),
@@ -644,8 +650,9 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
         },
         OverlayButton(1) => match app.overlay.clone() {
             Some(crate::app::Overlay::Consumable(idx)) => {
-                app.close_overlay();
-                let _ = app.game.handle_action(Action::SellConsumable(idx));
+                if app.game.handle_action(Action::SellConsumable(idx)).is_ok() {
+                    app.close_overlay();
+                }
             }
             _ => app.close_overlay(),
         },

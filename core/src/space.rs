@@ -169,15 +169,15 @@ impl ActionSpace {
     }
 
     fn sell_joker_max(&self) -> usize {
-        self.sell_joker_min() + self.sell_joker.len() - 1
+        self.sell_joker_min() + self.sell_joker.len().saturating_sub(1)
     }
 
     fn sell_consumable_min(&self) -> usize {
-        self.sell_joker_max() + 1
+        self.sell_joker_min() + self.sell_joker.len()
     }
 
     fn sell_consumable_max(&self) -> usize {
-        self.sell_consumable_min() + self.sell_consumable.len() - 1
+        self.sell_consumable_min() + self.sell_consumable.len().saturating_sub(1)
     }
 
     // Not all actions are always legal, by default all actions
@@ -340,10 +340,14 @@ impl ActionSpace {
             n if (self.apply_tarot_min()..=self.apply_tarot_max()).contains(&n) => {
                 Ok(Action::ApplyTarot())
             }
-            n if (self.sell_joker_min()..=self.sell_joker_max()).contains(&n) => {
+            n if !self.sell_joker.is_empty()
+                && (self.sell_joker_min()..=self.sell_joker_max()).contains(&n) =>
+            {
                 Ok(Action::SellJoker(n - self.sell_joker_min()))
             }
-            n if (self.sell_consumable_min()..=self.sell_consumable_max()).contains(&n) => {
+            n if !self.sell_consumable.is_empty()
+                && (self.sell_consumable_min()..=self.sell_consumable_max()).contains(&n) =>
+            {
                 Ok(Action::SellConsumable(n - self.sell_consumable_min()))
             }
             _ => Err(ActionSpaceError::InvalidActionConversion),
@@ -466,6 +470,18 @@ mod tests {
         // + 5 sell_joker + 2 sell_consumable = 91
         assert_eq!(a.size(), 91);
         assert_eq!(a.to_vec().len(), 91);
+    }
+
+    #[test]
+    fn test_action_space_zero_joker_slots_no_panic() {
+        let mut c = Config::default();
+        c.joker_slots = 0;
+        c.consumable_slots = 0;
+        let a = ActionSpace::from(c);
+        // size() and to_vec() must not panic with empty sell vecs
+        assert_eq!(a.to_vec().len(), a.size());
+        // to_action on the apply_tarot index must still resolve and not panic
+        assert!(a.to_action(83, &Game::default()).is_err()); // masked, not a panic
     }
 
     #[test]

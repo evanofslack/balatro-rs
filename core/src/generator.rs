@@ -195,7 +195,7 @@ impl Game {
     }
 
     fn gen_actions_sell_joker(&self) -> Option<impl Iterator<Item = Action>> {
-        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_)) {
+        if matches!(self.stage, Stage::End(_)) {
             return None;
         }
         if self.jokers.is_empty() {
@@ -206,7 +206,7 @@ impl Game {
     }
 
     fn gen_actions_sell_consumable(&self) -> Option<impl Iterator<Item = Action>> {
-        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_)) {
+        if matches!(self.stage, Stage::End(_)) {
             return None;
         }
         if self.consumables.is_empty() {
@@ -470,7 +470,7 @@ impl Game {
     }
 
     fn unmask_action_space_sell_joker(&self, space: &mut ActionSpace) {
-        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_)) {
+        if matches!(self.stage, Stage::End(_)) {
             return;
         }
         self.jokers.iter().enumerate().for_each(|(i, _)| {
@@ -481,7 +481,7 @@ impl Game {
     }
 
     fn unmask_action_space_sell_consumable(&self, space: &mut ActionSpace) {
-        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_)) {
+        if matches!(self.stage, Stage::End(_)) {
             return;
         }
         self.consumables.iter().enumerate().for_each(|(i, _)| {
