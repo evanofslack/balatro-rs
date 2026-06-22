@@ -98,11 +98,11 @@ fn render_cards(f: &mut Frame, app: &mut AppState, area: Rect) {
 
 fn render_apply_button(f: &mut Frame, app: &mut AppState, area: Rect) {
     let selected_count = app.game.available.selected().len();
-    let needed = match &app.game.stage {
-        Stage::TarotHand(t) => t.min_targets(),
-        _ => 0,
+    let (needed, max) = match &app.game.stage {
+        Stage::TarotHand(t) => (t.min_targets(), t.max_targets()),
+        _ => (0, usize::MAX),
     };
-    let ready = selected_count >= needed;
+    let ready = selected_count >= needed && selected_count <= max;
 
     let btn_w: u16 = 16;
     let x_start = area.x + area.width.saturating_sub(btn_w) / 2;
@@ -141,7 +141,23 @@ fn render_apply_button(f: &mut Frame, app: &mut AppState, area: Rect) {
 
 fn render_tarot_info(f: &mut Frame, tarot: &balatro_rs::tarot::Tarot, app: &AppState, area: Rect) {
     let selected_count = app.game.available.selected().len();
-    let needed = tarot.min_targets();
+    let min = tarot.min_targets();
+    let max = tarot.max_targets();
+    let valid = selected_count >= min && selected_count <= max;
+
+    let target_str = if min == max {
+        format!("{}", min)
+    } else {
+        format!("{}-{}", min, max)
+    };
+
+    let hint_color = if valid {
+        Color::Green
+    } else if selected_count > max {
+        Color::Red
+    } else {
+        Color::Yellow
+    };
 
     let lines = vec![
         Line::from(vec![
@@ -159,12 +175,8 @@ fn render_tarot_info(f: &mut Frame, tarot: &balatro_rs::tarot::Tarot, app: &AppS
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            format!("  Select {} card(s) ({} selected)", needed, selected_count),
-            Style::default().fg(if selected_count >= needed {
-                Color::Green
-            } else {
-                Color::Yellow
-            }),
+            format!("  Select {} card(s) ({} selected)", target_str, selected_count),
+            Style::default().fg(hint_color),
         )),
     ];
 

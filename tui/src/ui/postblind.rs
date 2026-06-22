@@ -74,9 +74,10 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
         "  {} hand(s) remaining x ${}",
         app.game.plays, app.game.config.money_per_hand
     );
+    let interest_per = (1.0 / app.game.config.interest_rate).round() as usize;
     let interest_label = format!(
-        "  Interest ($1 per $5, max {})",
-        app.game.config.interest_max
+        "  Interest ($1 per ${}, max {})",
+        interest_per, app.game.config.interest_max
     );
 
     let lines = vec![

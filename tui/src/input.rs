@@ -488,7 +488,11 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
 
     match id {
         Card(idx) => {
-            app.focus = FocusZone::Cards;
+            app.focus = if matches!(app.game.stage, Stage::TarotHand(_)) {
+                FocusZone::TarotCards
+            } else {
+                FocusZone::Cards
+            };
             app.cursor = idx;
             toggle_card(app);
         }
@@ -533,8 +537,12 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             let _ = app.game.handle_action(Action::SelectBlind(blind));
         }
         CashOutButton => {
-            let reward = compute_cashout(app);
-            let _ = app.game.handle_action(Action::CashOut(reward));
+            if matches!(app.game.stage, Stage::End(_)) {
+                app.should_quit = true;
+            } else {
+                let reward = compute_cashout(app);
+                let _ = app.game.handle_action(Action::CashOut(reward));
+            }
         }
         NextRoundButton => {
             let _ = app.game.handle_action(Action::NextRound());
@@ -543,8 +551,8 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             let _ = app.game.handle_action(Action::ApplyTarot());
         }
         TarotButton(_) => {}
-        OverlayButton(0) => {
-            if let Some(crate::app::Overlay::Consumable(idx)) = app.overlay.clone() {
+        OverlayButton(0) => match app.overlay.clone() {
+            Some(crate::app::Overlay::Consumable(idx)) => {
                 if let Some(c) = app.game.consumables.get(idx).cloned() {
                     let prev = app.game.stage;
                     app.close_overlay();
@@ -553,10 +561,10 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
                         app.sync_focus_to_stage();
                     }
                 }
-            } else {
-                app.close_overlay();
             }
-        }
+            Some(crate::app::Overlay::Save) => do_save(app),
+            _ => app.close_overlay(),
+        },
         OverlayButton(1) => app.close_overlay(),
         OverlayButton(_) => {}
         DeckTab(idx) => {
