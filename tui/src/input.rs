@@ -72,28 +72,28 @@ fn handle_key_save(app: &mut AppState, key: KeyEvent) {
 fn handle_key_run_info(app: &mut AppState, key: KeyEvent) {
     match key.code {
         KeyCode::Esc | KeyCode::Char('r') => app.close_overlay(),
-        KeyCode::Tab => {
+        KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => {
             app.run_info_tab = match app.run_info_tab {
                 RunInfoTab::Deck => RunInfoTab::PokerHands,
                 RunInfoTab::PokerHands => RunInfoTab::Vouchers,
                 RunInfoTab::Vouchers => RunInfoTab::Deck,
             };
         }
-        KeyCode::BackTab => {
+        KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => {
             app.run_info_tab = match app.run_info_tab {
                 RunInfoTab::Deck => RunInfoTab::Vouchers,
                 RunInfoTab::PokerHands => RunInfoTab::Deck,
                 RunInfoTab::Vouchers => RunInfoTab::PokerHands,
             };
         }
-        KeyCode::Left if matches!(app.run_info_tab, RunInfoTab::Deck) => {
+        KeyCode::Left | KeyCode::Char('h') if matches!(app.run_info_tab, RunInfoTab::Deck) => {
             app.deck_tab = match app.deck_tab {
                 DeckTab::InDeck => DeckTab::Discarded,
                 DeckTab::InHand => DeckTab::InDeck,
                 DeckTab::Discarded => DeckTab::InHand,
             };
         }
-        KeyCode::Right if matches!(app.run_info_tab, RunInfoTab::Deck) => {
+        KeyCode::Right | KeyCode::Char('l') if matches!(app.run_info_tab, RunInfoTab::Deck) => {
             app.deck_tab = match app.deck_tab {
                 DeckTab::InDeck => DeckTab::InHand,
                 DeckTab::InHand => DeckTab::Discarded,
