@@ -11,6 +11,7 @@ use pyo3::pyclass;
 // available max = 24
 // store consumable slots max = 4
 // consumable slots = 2
+// joker slots = 5
 //
 // 0-23: select card
 // 24-46: move card (left)
@@ -24,8 +25,10 @@ use pyo3::pyclass;
 // 79-80: buy consumable
 // 81-82: use consumable
 // 83: apply tarot
+// 84-88: sell joker
+// 89-90: sell consumable
 //
-// We end up with a vector of length 84 where each index
+// We end up with a vector of length 91 where each index
 // represents a potential action.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
@@ -43,6 +46,8 @@ pub struct ActionSpace {
     pub buy_consumable: Vec<usize>,
     pub use_consumable: Vec<usize>,
     pub apply_tarot: Vec<usize>,
+    pub sell_joker: Vec<usize>,
+    pub sell_consumable: Vec<usize>,
 }
 
 impl ActionSpace {
@@ -59,6 +64,8 @@ impl ActionSpace {
             + self.buy_consumable.len()
             + self.use_consumable.len()
             + self.apply_tarot.len()
+            + self.sell_joker.len()
+            + self.sell_consumable.len()
     }
 
     fn select_card_min(&self) -> usize {
@@ -157,6 +164,22 @@ impl ActionSpace {
         self.apply_tarot_min()
     }
 
+    fn sell_joker_min(&self) -> usize {
+        self.apply_tarot_max() + 1
+    }
+
+    fn sell_joker_max(&self) -> usize {
+        self.sell_joker_min() + self.sell_joker.len() - 1
+    }
+
+    fn sell_consumable_min(&self) -> usize {
+        self.sell_joker_max() + 1
+    }
+
+    fn sell_consumable_max(&self) -> usize {
+        self.sell_consumable_min() + self.sell_consumable.len() - 1
+    }
+
     // Not all actions are always legal, by default all actions
     // are masked out, but provide methods to unmask valid.
     pub(crate) fn unmask_select_card(&mut self, i: usize) -> Result<(), ActionSpaceError> {
@@ -231,6 +254,22 @@ impl ActionSpace {
         self.apply_tarot[0] = 1;
     }
 
+    pub(crate) fn unmask_sell_joker(&mut self, i: usize) -> Result<(), ActionSpaceError> {
+        if i >= self.sell_joker.len() {
+            return Err(ActionSpaceError::InvalidIndex);
+        }
+        self.sell_joker[i] = 1;
+        Ok(())
+    }
+
+    pub(crate) fn unmask_sell_consumable(&mut self, i: usize) -> Result<(), ActionSpaceError> {
+        if i >= self.sell_consumable.len() {
+            return Err(ActionSpaceError::InvalidIndex);
+        }
+        self.sell_consumable[i] = 1;
+        Ok(())
+    }
+
     pub fn to_action(&self, index: usize, game: &Game) -> Result<Action, ActionSpaceError> {
         let vec = self.to_vec();
         if let Some(v) = vec.get(index) {
@@ -301,6 +340,12 @@ impl ActionSpace {
             n if (self.apply_tarot_min()..=self.apply_tarot_max()).contains(&n) => {
                 Ok(Action::ApplyTarot())
             }
+            n if (self.sell_joker_min()..=self.sell_joker_max()).contains(&n) => {
+                Ok(Action::SellJoker(n - self.sell_joker_min()))
+            }
+            n if (self.sell_consumable_min()..=self.sell_consumable_max()).contains(&n) => {
+                Ok(Action::SellConsumable(n - self.sell_consumable_min()))
+            }
             _ => Err(ActionSpaceError::InvalidActionConversion),
         }
     }
@@ -319,6 +364,8 @@ impl ActionSpace {
             self.buy_consumable.clone(),
             self.use_consumable.clone(),
             self.apply_tarot.clone(),
+            self.sell_joker.clone(),
+            self.sell_consumable.clone(),
         ]
         .concat()
     }
@@ -345,6 +392,8 @@ impl From<Config> for ActionSpace {
             buy_consumable: vec![0; c.consumable_slots],
             use_consumable: vec![0; c.consumable_slots],
             apply_tarot: vec![0; 1],
+            sell_joker: vec![0; c.joker_slots],
+            sell_consumable: vec![0; c.consumable_slots],
         }
     }
 }
@@ -365,6 +414,8 @@ impl From<ActionSpace> for Vec<usize> {
             a.buy_consumable,
             a.use_consumable,
             a.apply_tarot,
+            a.sell_joker,
+            a.sell_consumable,
         ]
         .concat()
     }
@@ -411,9 +462,30 @@ mod tests {
         let a = ActionSpace::from(c.clone());
         // 24 select + 23 move_left + 23 move_right + 1 play + 1 discard
         // + 1 cashout + 4 buy_joker + 1 next_round + 1 select_blind
-        // + 2 buy_consumable + 2 use_consumable + 1 apply_tarot = 84
-        assert_eq!(a.size(), 84);
-        assert_eq!(a.to_vec().len(), 84);
+        // + 2 buy_consumable + 2 use_consumable + 1 apply_tarot
+        // + 5 sell_joker + 2 sell_consumable = 91
+        assert_eq!(a.size(), 91);
+        assert_eq!(a.to_vec().len(), 91);
+    }
+
+    #[test]
+    fn test_unmask_sell_joker() {
+        let c = Config::default();
+        let mut a = ActionSpace::from(c);
+        assert_eq!(a.sell_joker[0], 0);
+        a.unmask_sell_joker(0).unwrap();
+        assert_eq!(a.sell_joker[0], 1);
+        assert!(a.unmask_sell_joker(5).is_err());
+    }
+
+    #[test]
+    fn test_unmask_sell_consumable() {
+        let c = Config::default();
+        let mut a = ActionSpace::from(c);
+        assert_eq!(a.sell_consumable[0], 0);
+        a.unmask_sell_consumable(0).unwrap();
+        assert_eq!(a.sell_consumable[0], 1);
+        assert!(a.unmask_sell_consumable(2).is_err());
     }
 
     #[test]

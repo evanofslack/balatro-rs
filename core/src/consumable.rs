@@ -40,6 +40,13 @@ impl Consumable {
             Self::Tarot(t) => t.description().to_string(),
         }
     }
+
+    pub fn sell_value(&self) -> usize {
+        match self {
+            Self::Planet(p) => p.sell_value(),
+            Self::Tarot(t) => t.sell_value(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -56,5 +63,18 @@ mod tests {
     fn test_consumable_planet_name() {
         let c = Consumable::Planet(Planets::Mercury);
         assert_eq!(c.name(), "Mercury");
+    }
+
+    #[test]
+    fn test_consumable_planet_sell_value() {
+        let c = Consumable::Planet(Planets::Mercury);
+        assert_eq!(c.sell_value(), 1);
+    }
+
+    #[test]
+    fn test_consumable_tarot_sell_value() {
+        use crate::tarot::Tarot;
+        let c = Consumable::Tarot(Tarot::Fool);
+        assert_eq!(c.sell_value(), 1);
     }
 }

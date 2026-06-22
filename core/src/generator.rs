@@ -194,6 +194,30 @@ impl Game {
         }
     }
 
+    fn gen_actions_sell_joker(&self) -> Option<impl Iterator<Item = Action>> {
+        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_)) {
+            return None;
+        }
+        if self.jokers.is_empty() {
+            return None;
+        }
+        let actions: Vec<Action> = (0..self.jokers.len()).map(Action::SellJoker).collect();
+        Some(actions.into_iter())
+    }
+
+    fn gen_actions_sell_consumable(&self) -> Option<impl Iterator<Item = Action>> {
+        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_)) {
+            return None;
+        }
+        if self.consumables.is_empty() {
+            return None;
+        }
+        let actions: Vec<Action> = (0..self.consumables.len())
+            .map(Action::SellConsumable)
+            .collect();
+        Some(actions.into_iter())
+    }
+
     // are we in the temp tarot hand stage?
     // if so, we draw a temp hand and give options for applying the tarot.
     fn gen_actions_tarot_hand(&self) -> Option<impl Iterator<Item = Action>> {
@@ -273,6 +297,8 @@ impl Game {
         let buy_consumables = self.gen_actions_buy_consumable();
         let use_consumables = self.gen_actions_use_consumable();
         let tarot_hand = self.gen_actions_tarot_hand();
+        let sell_jokers = self.gen_actions_sell_joker();
+        let sell_consumables = self.gen_actions_sell_consumable();
 
         select_cards
             .into_iter()
@@ -288,6 +314,8 @@ impl Game {
             .chain(buy_consumables.into_iter().flatten())
             .chain(use_consumables.into_iter().flatten())
             .chain(tarot_hand.into_iter().flatten())
+            .chain(sell_jokers.into_iter().flatten())
+            .chain(sell_consumables.into_iter().flatten())
     }
 
     fn unmask_action_space_select_cards(&self, space: &mut ActionSpace) {
@@ -441,6 +469,28 @@ impl Game {
         });
     }
 
+    fn unmask_action_space_sell_joker(&self, space: &mut ActionSpace) {
+        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_)) {
+            return;
+        }
+        self.jokers.iter().enumerate().for_each(|(i, _)| {
+            space
+                .unmask_sell_joker(i)
+                .expect("valid index for sell joker");
+        });
+    }
+
+    fn unmask_action_space_sell_consumable(&self, space: &mut ActionSpace) {
+        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_)) {
+            return;
+        }
+        self.consumables.iter().enumerate().for_each(|(i, _)| {
+            space
+                .unmask_sell_consumable(i)
+                .expect("valid index for sell consumable");
+        });
+    }
+
     fn unmask_action_space_tarot_hand(&self, space: &mut ActionSpace) {
         let Stage::TarotHand(t) = self.stage else {
             return;
@@ -500,6 +550,8 @@ impl Game {
         self.unmask_action_space_buy_consumable(&mut space);
         self.unmask_action_space_use_consumable(&mut space);
         self.unmask_action_space_tarot_hand(&mut space);
+        self.unmask_action_space_sell_joker(&mut space);
+        self.unmask_action_space_sell_consumable(&mut space);
         space
     }
 }

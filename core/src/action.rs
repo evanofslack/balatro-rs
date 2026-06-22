@@ -44,6 +44,8 @@ pub enum Action {
     SelectBlind(Blind),
     // SkipBlind(Blind),
     ApplyTarot(),
+    SellJoker(usize),
+    SellConsumable(usize),
 }
 
 impl fmt::Display for Action {
@@ -83,6 +85,8 @@ impl fmt::Display for Action {
                 write!(f, "SelectBlind: {}", blind)
             }
             Self::ApplyTarot() => write!(f, "ApplyTarot"),
+            Self::SellJoker(idx) => write!(f, "SellJoker: {}", idx),
+            Self::SellConsumable(idx) => write!(f, "SellConsumable: {}", idx),
         }
     }
 }

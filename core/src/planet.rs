@@ -44,6 +44,10 @@ impl Planets {
         3
     }
 
+    pub fn sell_value(&self) -> usize {
+        1
+    }
+
     pub fn name(&self) -> String {
         match self {
             Self::Pluto => "Pluto".to_string(),
