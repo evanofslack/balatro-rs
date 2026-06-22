@@ -1,0 +1,15 @@
+[package]
+name    = "balatro-tui"
+version = "0.0.1"
+edition = "2021"
+
+[[bin]]
+name = "balatro-tui"
+path = "src/main.rs"
+
+[dependencies]
+balatro-rs = { path = "../core/", version = "0.0.1" }
+ratatui    = "0.29"
+crossterm  = { version = "0.28", features = ["event-stream"] }
+clap       = { version = "4", features = ["derive"] }
+anyhow     = "1"
