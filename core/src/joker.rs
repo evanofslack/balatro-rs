@@ -1,4 +1,4 @@
-use crate::card::{Card, Enhancement, Suit, Value};
+use crate::card::{Card, Edition, Enhancement, Suit, Value};
 use crate::effect::Effects;
 use crate::game::Game;
 use crate::hand::{MadeHand, SelectHand};
@@ -9,6 +9,8 @@ use std::sync::{Arc, Mutex};
 use strum::{EnumIter, IntoEnumIterator};
 
 pub trait Joker: std::fmt::Debug + Clone {
+    fn edition(&self) -> Edition;
+    fn set_edition(&mut self, e: Edition);
     fn name(&self) -> String;
     fn blueprint_compatible(&self) -> bool {
         true
@@ -85,6 +87,20 @@ macro_rules! make_jokers {
         }
 
         impl Joker for Jokers {
+            fn edition(&self) -> Edition {
+                match self {
+                    $(
+                        Jokers::$x(joker) => joker.edition(),
+                    )*
+                }
+            }
+            fn set_edition(&mut self, e: Edition) {
+                match self {
+                    $(
+                        Jokers::$x(joker) => joker.set_edition(e),
+                    )*
+                }
+            }
             fn name(&self) -> String {
                 match self {
                     $(
@@ -300,9 +316,13 @@ impl fmt::Display for Jokers {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct TheJoker {}
+pub struct TheJoker {
+    pub edition: Edition,
+}
 
 impl Joker for TheJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Joker".to_string()
     }
@@ -328,9 +348,13 @@ impl Joker for TheJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct GreedyJoker {}
+pub struct GreedyJoker {
+    pub edition: Edition,
+}
 
 impl Joker for GreedyJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Greedy Joker".to_string()
     }
@@ -350,9 +374,9 @@ impl Joker for GreedyJoker {
         fn apply(g: &mut Game, hand: MadeHand) {
             let diamonds = hand
                 .hand
-                .suits()
+                .cards()
                 .iter()
-                .filter(|s| **s == Suit::Diamond)
+                .filter(|c| c.matches_suit(Suit::Diamond))
                 .count();
             g.mult += diamonds * 3
         }
@@ -362,9 +386,13 @@ impl Joker for GreedyJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct LustyJoker {}
+pub struct LustyJoker {
+    pub edition: Edition,
+}
 
 impl Joker for LustyJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Lusty Joker".to_string()
     }
@@ -384,9 +412,9 @@ impl Joker for LustyJoker {
         fn apply(g: &mut Game, hand: MadeHand) {
             let hearts = hand
                 .hand
-                .suits()
+                .cards()
                 .iter()
-                .filter(|s| **s == Suit::Heart)
+                .filter(|c| c.matches_suit(Suit::Heart))
                 .count();
             g.mult += hearts * 3
         }
@@ -396,9 +424,13 @@ impl Joker for LustyJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct WrathfulJoker {}
+pub struct WrathfulJoker {
+    pub edition: Edition,
+}
 
 impl Joker for WrathfulJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Wrathful Joker".to_string()
     }
@@ -418,9 +450,9 @@ impl Joker for WrathfulJoker {
         fn apply(g: &mut Game, hand: MadeHand) {
             let spades = hand
                 .hand
-                .suits()
+                .cards()
                 .iter()
-                .filter(|s| **s == Suit::Spade)
+                .filter(|c| c.matches_suit(Suit::Spade))
                 .count();
             g.mult += spades * 3
         }
@@ -430,9 +462,13 @@ impl Joker for WrathfulJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct GluttonousJoker {}
+pub struct GluttonousJoker {
+    pub edition: Edition,
+}
 
 impl Joker for GluttonousJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Gluttonous Joker".to_string()
     }
@@ -452,9 +488,9 @@ impl Joker for GluttonousJoker {
         fn apply(g: &mut Game, hand: MadeHand) {
             let clubs = hand
                 .hand
-                .suits()
+                .cards()
                 .iter()
-                .filter(|s| **s == Suit::Club)
+                .filter(|c| c.matches_suit(Suit::Club))
                 .count();
             g.mult += clubs * 3
         }
@@ -464,9 +500,13 @@ impl Joker for GluttonousJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct JollyJoker {}
+pub struct JollyJoker {
+    pub edition: Edition,
+}
 
 impl Joker for JollyJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Jolly Joker".to_string()
     }
@@ -494,9 +534,13 @@ impl Joker for JollyJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct ZanyJoker {}
+pub struct ZanyJoker {
+    pub edition: Edition,
+}
 
 impl Joker for ZanyJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Zany Joker".to_string()
     }
@@ -524,9 +568,13 @@ impl Joker for ZanyJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct MadJoker {}
+pub struct MadJoker {
+    pub edition: Edition,
+}
 
 impl Joker for MadJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Mad Joker".to_string()
     }
@@ -554,9 +602,13 @@ impl Joker for MadJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct CrazyJoker {}
+pub struct CrazyJoker {
+    pub edition: Edition,
+}
 
 impl Joker for CrazyJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Crazy Joker".to_string()
     }
@@ -584,9 +636,13 @@ impl Joker for CrazyJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct DrollJoker {}
+pub struct DrollJoker {
+    pub edition: Edition,
+}
 
 impl Joker for DrollJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Droll Joker".to_string()
     }
@@ -614,9 +670,13 @@ impl Joker for DrollJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct SlyJoker {}
+pub struct SlyJoker {
+    pub edition: Edition,
+}
 
 impl Joker for SlyJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Sly Joker".to_string()
     }
@@ -644,9 +704,13 @@ impl Joker for SlyJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct WilyJoker {}
+pub struct WilyJoker {
+    pub edition: Edition,
+}
 
 impl Joker for WilyJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Wily Joker".to_string()
     }
@@ -674,9 +738,13 @@ impl Joker for WilyJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct CleverJoker {}
+pub struct CleverJoker {
+    pub edition: Edition,
+}
 
 impl Joker for CleverJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Clever Joker".to_string()
     }
@@ -704,9 +772,13 @@ impl Joker for CleverJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct DeviousJoker {}
+pub struct DeviousJoker {
+    pub edition: Edition,
+}
 
 impl Joker for DeviousJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Devious Joker".to_string()
     }
@@ -734,9 +806,13 @@ impl Joker for DeviousJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct CraftyJoker {}
+pub struct CraftyJoker {
+    pub edition: Edition,
+}
 
 impl Joker for CraftyJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Crafty Joker".to_string()
     }
@@ -764,9 +840,13 @@ impl Joker for CraftyJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct HalfJoker {}
+pub struct HalfJoker {
+    pub edition: Edition,
+}
 
 impl Joker for HalfJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Half Joker".to_string()
     }
@@ -794,9 +874,13 @@ impl Joker for HalfJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct JokerStencil {}
+pub struct JokerStencil {
+    pub edition: Edition,
+}
 
 impl Joker for JokerStencil {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Joker Stencil".to_string()
     }
@@ -825,9 +909,13 @@ impl Joker for JokerStencil {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Banner {}
+pub struct Banner {
+    pub edition: Edition,
+}
 
 impl Joker for Banner {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Banner".to_string()
     }
@@ -853,9 +941,13 @@ impl Joker for Banner {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct MysticSummit {}
+pub struct MysticSummit {
+    pub edition: Edition,
+}
 
 impl Joker for MysticSummit {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Mystic Summit".to_string()
     }
@@ -883,9 +975,13 @@ impl Joker for MysticSummit {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Fibonacci {}
+pub struct Fibonacci {
+    pub edition: Edition,
+}
 
 impl Joker for Fibonacci {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Fibonacci".to_string()
     }
@@ -920,9 +1016,13 @@ impl Joker for Fibonacci {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct ScaryFace {}
+pub struct ScaryFace {
+    pub edition: Edition,
+}
 
 impl Joker for ScaryFace {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Scary Face".to_string()
     }
@@ -952,9 +1052,13 @@ impl Joker for ScaryFace {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct AbstractJoker {}
+pub struct AbstractJoker {
+    pub edition: Edition,
+}
 
 impl Joker for AbstractJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Abstract Joker".to_string()
     }
@@ -980,9 +1084,13 @@ impl Joker for AbstractJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Pareidolia {}
+pub struct Pareidolia {
+    pub edition: Edition,
+}
 
 impl Joker for Pareidolia {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Pareidolia".to_string()
     }
@@ -1023,9 +1131,13 @@ impl Joker for Pareidolia {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct EvenSteven {}
+pub struct EvenSteven {
+    pub edition: Edition,
+}
 
 impl Joker for EvenSteven {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Even Steven".to_string()
     }
@@ -1055,9 +1167,13 @@ impl Joker for EvenSteven {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct OddTodd {}
+pub struct OddTodd {
+    pub edition: Edition,
+}
 
 impl Joker for OddTodd {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Odd Todd".to_string()
     }
@@ -1087,9 +1203,13 @@ impl Joker for OddTodd {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Scholar {}
+pub struct Scholar {
+    pub edition: Edition,
+}
 
 impl Joker for Scholar {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Scholar".to_string()
     }
@@ -1120,9 +1240,13 @@ impl Joker for Scholar {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct BusinessCard {}
+pub struct BusinessCard {
+    pub edition: Edition,
+}
 
 impl Joker for BusinessCard {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Business Card".to_string()
     }
@@ -1152,9 +1276,13 @@ impl Joker for BusinessCard {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct FacelessJoker {}
+pub struct FacelessJoker {
+    pub edition: Edition,
+}
 
 impl Joker for FacelessJoker {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Faceless Joker".to_string()
     }
@@ -1182,9 +1310,13 @@ impl Joker for FacelessJoker {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Baron {}
+pub struct Baron {
+    pub edition: Edition,
+}
 
 impl Joker for Baron {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Baron".to_string()
     }
@@ -1213,9 +1345,13 @@ impl Joker for Baron {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct MidasMask {}
+pub struct MidasMask {
+    pub edition: Edition,
+}
 
 impl Joker for MidasMask {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Midas Mask".to_string()
     }
@@ -1256,9 +1392,13 @@ impl Joker for MidasMask {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Photograph {}
+pub struct Photograph {
+    pub edition: Edition,
+}
 
 impl Joker for Photograph {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Photograph".to_string()
     }
@@ -1289,9 +1429,13 @@ impl Joker for Photograph {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct ReservedParking {}
+pub struct ReservedParking {
+    pub edition: Edition,
+}
 
 impl Joker for ReservedParking {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Reserved Parking".to_string()
     }
@@ -1321,9 +1465,13 @@ impl Joker for ReservedParking {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct BaseballCard {}
+pub struct BaseballCard {
+    pub edition: Edition,
+}
 
 impl Joker for BaseballCard {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Baseball Card".to_string()
     }
@@ -1356,9 +1504,13 @@ impl Joker for BaseballCard {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Bull {}
+pub struct Bull {
+    pub edition: Edition,
+}
 
 impl Joker for Bull {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Bull".to_string()
     }
@@ -1384,9 +1536,13 @@ impl Joker for Bull {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct WalkieTalkie {}
+pub struct WalkieTalkie {
+    pub edition: Edition,
+}
 
 impl Joker for WalkieTalkie {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Walkie Talkie".to_string()
     }
@@ -1417,9 +1573,13 @@ impl Joker for WalkieTalkie {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct SmileyFace {}
+pub struct SmileyFace {
+    pub edition: Edition,
+}
 
 impl Joker for SmileyFace {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Smiley Face".to_string()
     }
@@ -1449,9 +1609,13 @@ impl Joker for SmileyFace {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct GoldenTicket {}
+pub struct GoldenTicket {
+    pub edition: Edition,
+}
 
 impl Joker for GoldenTicket {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Golden Ticket".to_string()
     }
@@ -1481,9 +1645,13 @@ impl Joker for GoldenTicket {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Acrobat {}
+pub struct Acrobat {
+    pub edition: Edition,
+}
 
 impl Joker for Acrobat {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Acrobat".to_string()
     }
@@ -1511,9 +1679,13 @@ impl Joker for Acrobat {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct RoughGem {}
+pub struct RoughGem {
+    pub edition: Edition,
+}
 
 impl Joker for RoughGem {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Rough Gem".to_string()
     }
@@ -1532,7 +1704,7 @@ impl Joker for RoughGem {
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
             for card in _hand.hand.cards() {
-                if card.suit == Suit::Diamond {
+                if card.matches_suit(Suit::Diamond) {
                     g.money += 1;
                 }
             }
@@ -1543,9 +1715,13 @@ impl Joker for RoughGem {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
-pub struct Bloodstone {}
+pub struct Bloodstone {
+    pub edition: Edition,
+}
 
 impl Joker for Bloodstone {
+    fn edition(&self) -> Edition { self.edition }
+    fn set_edition(&mut self, e: Edition) { self.edition = e; }
     fn name(&self) -> String {
         "Bloodstone".to_string()
     }
@@ -1564,7 +1740,7 @@ impl Joker for Bloodstone {
     fn effects(&self, _in: &Game) -> Vec<Effects> {
         fn apply(g: &mut Game, _hand: MadeHand) {
             for card in _hand.hand.cards() {
-                if card.suit == Suit::Heart && g.prob_roll(1, 2) {
+                if card.matches_suit(Suit::Heart) && g.prob_roll(1, 2) {
                     g.mult += g.mult / 2;
                 }
             }
@@ -1619,7 +1795,7 @@ mod tests {
         // (5 + 11) * (1 + 4) = 80
         let after = 80;
 
-        let j = Jokers::TheJoker(TheJoker {});
+        let j = Jokers::TheJoker(TheJoker::default());
         score_before_after_joker(j, hand, before, after);
     }
 
@@ -1642,7 +1818,7 @@ mod tests {
         // (60 + 44) * (7 + 6) = 1352
         let after = 1352;
 
-        let j = Jokers::LustyJoker(LustyJoker {});
+        let j = Jokers::LustyJoker(LustyJoker::default());
         score_before_after_joker(j, hand, before, after)
     }
 
@@ -1664,7 +1840,7 @@ mod tests {
         // (60 + 44) * (7 + 9) = 1664
         let after = 1664;
 
-        let j = Jokers::GreedyJoker(GreedyJoker {});
+        let j = Jokers::GreedyJoker(GreedyJoker::default());
         score_before_after_joker(j, hand, before, after);
     }
 
@@ -1686,7 +1862,7 @@ mod tests {
         // (60 + 44) * (7 + 3) = 1040
         let after = 1040;
 
-        let j = Jokers::WrathfulJoker(WrathfulJoker {});
+        let j = Jokers::WrathfulJoker(WrathfulJoker::default());
         score_before_after_joker(j, hand, before, after);
     }
 
@@ -1707,7 +1883,7 @@ mod tests {
         // (60 + 44) * (7 + 12) = 1976
         let after = 1976;
 
-        let j = Jokers::GluttonousJoker(GluttonousJoker {});
+        let j = Jokers::GluttonousJoker(GluttonousJoker::default());
         score_before_after_joker(j, hand, before, after)
     }
 
@@ -1728,7 +1904,7 @@ mod tests {
         // (60 + 44) * (7 + 8) = 1560
         let after = 1560;
 
-        let j = Jokers::JollyJoker(JollyJoker {});
+        let j = Jokers::JollyJoker(JollyJoker::default());
         score_before_after_joker(j, hand, before, after)
     }
 
@@ -1749,7 +1925,7 @@ mod tests {
         // (60 + 44) * (7 + 12) = 1976
         let after = 1976;
 
-        let j = Jokers::ZanyJoker(ZanyJoker {});
+        let j = Jokers::ZanyJoker(ZanyJoker::default());
         score_before_after_joker(j, hand, before, after)
     }
 
@@ -1764,7 +1940,7 @@ mod tests {
         // Played cards (2 ace, 2 king) -> 42 chips
         // (20 + 42) * (2) = 124
         let before = 124;
-        let j = Jokers::MadJoker(MadJoker {});
+        let j = Jokers::MadJoker(MadJoker::default());
         // Score two pair with joker
         // two pair (level 1) -> 20 chips, 2 mult
         // Played cards (2 ace, 2 king) -> 42 chips
@@ -1796,7 +1972,7 @@ mod tests {
         // (20 + 30) * (4 + 12) = 800
         let after = 800;
 
-        let j = Jokers::CrazyJoker(CrazyJoker {});
+        let j = Jokers::CrazyJoker(CrazyJoker::default());
         score_before_after_joker(j, hand, before, after);
     }
 
@@ -1821,7 +1997,7 @@ mod tests {
         // (24 + 35) * (4 + 10) = 826
         let after = 826;
 
-        let j = Jokers::DrollJoker(DrollJoker {});
+        let j = Jokers::DrollJoker(DrollJoker::default());
         score_before_after_joker(j, hand, before, after);
     }
 
@@ -1842,7 +2018,7 @@ mod tests {
         // (60 + 44 + 50) * (7) = 1078
         let after = 1078;
 
-        let j = Jokers::SlyJoker(SlyJoker {});
+        let j = Jokers::SlyJoker(SlyJoker::default());
         score_before_after_joker(j, hand, before, after);
     }
 
@@ -1863,7 +2039,7 @@ mod tests {
         // (60 + 44 + 100) * (7) = 1428
         let after = 1428;
 
-        let j = Jokers::WilyJoker(WilyJoker {});
+        let j = Jokers::WilyJoker(WilyJoker::default());
         score_before_after_joker(j, hand, before, after);
     }
 
@@ -1885,7 +2061,7 @@ mod tests {
         // (20 + 42 + 80) * (2) = 284
         let after = 284;
 
-        let j = Jokers::CleverJoker(CleverJoker {});
+        let j = Jokers::CleverJoker(CleverJoker::default());
         score_before_after_joker(j, hand, before, after);
     }
 
@@ -1910,7 +2086,7 @@ mod tests {
         // (20 + 30 + 100) * (4) = 600
         let after = 600;
 
-        let j = Jokers::DeviousJoker(DeviousJoker {});
+        let j = Jokers::DeviousJoker(DeviousJoker::default());
         score_before_after_joker(j, hand, before, after);
     }
 
@@ -1934,7 +2110,7 @@ mod tests {
         // joker w/ flush = +80 chips
         // (24 + 35 + 80) * (4) = 556
         let after = 556;
-        let j = Jokers::CraftyJoker(CraftyJoker {});
+        let j = Jokers::CraftyJoker(CraftyJoker::default());
         score_before_after_joker(j, hand, before, after);
     }
 
@@ -1955,7 +2131,7 @@ mod tests {
         // (30 + 33) * (3 + 20) = 1449
         let after = 1449;
 
-        let j = Jokers::HalfJoker(HalfJoker {});
+        let j = Jokers::HalfJoker(HalfJoker::default());
         score_before_after_joker(j, hand, before, after);
     }
 
@@ -1976,7 +2152,7 @@ mod tests {
 
         // Stencil alone in 5 slots = 4 empty -> X4
         // (5 + 11) * (1 * 4) = 64
-        let j = Jokers::JokerStencil(JokerStencil {});
+        let j = Jokers::JokerStencil(JokerStencil::default());
         g.money += 1000;
         g.stage = Stage::Shop();
         g.shop.jokers.push(j.clone());
@@ -1985,7 +2161,7 @@ mod tests {
         assert_eq!(g.calc_score(best.clone()), 64);
 
         // Add another joker -> 3 empty -> X3
-        let j2 = Jokers::Banner(Banner {});
+        let j2 = Jokers::Banner(Banner::default());
         g.money += 1000;
         g.stage = Stage::Shop();
         g.shop.jokers.push(j2.clone());
@@ -2000,7 +2176,7 @@ mod tests {
         let ace = Card::new(Value::Ace, Suit::Club);
         let hand = SelectHand::new(vec![ace]);
         let best = hand.best_hand().unwrap();
-        let j = Jokers::Banner(Banner {});
+        let j = Jokers::Banner(Banner::default());
 
         // High card (level 1) -> 5 chips, 1 mult
         // Played cards (1 ace) -> 11 chips
@@ -2032,7 +2208,7 @@ mod tests {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]);
         let best = hand.best_hand().unwrap();
-        let j = Jokers::MysticSummit(MysticSummit {});
+        let j = Jokers::MysticSummit(MysticSummit::default());
 
         // High card (level 1): 5 chips, 1 mult
         // Played (1 ace): 11 chips
@@ -2067,7 +2243,7 @@ mod tests {
         let five = Card::new(Value::Five, Suit::Heart);
         let eight = Card::new(Value::Eight, Suit::Heart);
         let hand = SelectHand::new(vec![ace, two, three, five, eight]);
-        let j = Jokers::Fibonacci(Fibonacci {});
+        let j = Jokers::Fibonacci(Fibonacci::default());
 
         // Flush (level 1): 35 chips, 4 mult
         // Played (5 cards): 11 + 2 + 3 + 5 + 8 = 29 chips
@@ -2088,7 +2264,7 @@ mod tests {
         let jack = Card::new(Value::Jack, Suit::Heart);
         let ten = Card::new(Value::Ten, Suit::Diamond);
         let hand = SelectHand::new(vec![ace, jack, queen, king, ten]);
-        let j = Jokers::ScaryFace(ScaryFace {});
+        let j = Jokers::ScaryFace(ScaryFace::default());
 
         // Straight (level 1): 30 chips, 4 mult
         // Played (5 cards): 11 + 10 + 10 + 10 + 10 = 51 chips
@@ -2120,7 +2296,7 @@ mod tests {
         // (5 + 11) * (1 + 3) = 64
         g.money += 1000;
         g.stage = Stage::Shop();
-        let aj = Jokers::AbstractJoker(AbstractJoker {});
+        let aj = Jokers::AbstractJoker(AbstractJoker::default());
         g.shop.jokers.push(aj.clone());
         g.buy_joker(aj).unwrap();
         g.stage = Stage::Blind(Blind::Small);
@@ -2130,7 +2306,7 @@ mod tests {
         // (5 + 11) * (1 + 6) = 112
         g.money += 1000;
         g.stage = Stage::Shop();
-        let sf = Jokers::ScaryFace(ScaryFace {});
+        let sf = Jokers::ScaryFace(ScaryFace::default());
         g.shop.jokers.push(sf.clone());
         g.buy_joker(sf).unwrap();
         g.stage = Stage::Blind(Blind::Small);
@@ -2160,7 +2336,7 @@ mod tests {
         // Add Scary Face: still no face cards, so still 220
         g.money += 1000;
         g.stage = Stage::Shop();
-        let sf = Jokers::ScaryFace(ScaryFace {});
+        let sf = Jokers::ScaryFace(ScaryFace::default());
         g.shop.jokers.push(sf.clone());
         g.buy_joker(sf).unwrap();
         g.stage = Stage::Blind(Blind::Small);
@@ -2171,7 +2347,7 @@ mod tests {
         // (30 + 25 + 150) * 4 = 820
         g.money += 1000;
         g.stage = Stage::Shop();
-        let p = Jokers::Pareidolia(Pareidolia {});
+        let p = Jokers::Pareidolia(Pareidolia::default());
         g.shop.jokers.push(p.clone());
         g.buy_joker(p).unwrap();
         g.stage = Stage::Blind(Blind::Small);
@@ -2186,7 +2362,7 @@ mod tests {
         let eight = Card::new(Value::Eight, Suit::Club);
         let ten = Card::new(Value::Ten, Suit::Club);
         let hand = SelectHand::new(vec![two, four, six, eight, ten]);
-        let j = Jokers::EvenSteven(EvenSteven {});
+        let j = Jokers::EvenSteven(EvenSteven::default());
 
         // Flush (level 1): 35 chips, 4 mult
         // Played (5 cards): 2 + 4 + 6 + 8 + 10 = 30 chips
@@ -2207,7 +2383,7 @@ mod tests {
         let nine = Card::new(Value::Nine, Suit::Club);
         let ace = Card::new(Value::Ace, Suit::Club);
         let hand = SelectHand::new(vec![three, five, seven, nine, ace]);
-        let j = Jokers::EvenSteven(EvenSteven {});
+        let j = Jokers::EvenSteven(EvenSteven::default());
 
         // Flush (level 1): 35 chips, 4 mult
         // Played (5 cards): 3 + 5 + 7 + 9 + 11 = 35 chips
@@ -2227,7 +2403,7 @@ mod tests {
         let seven = Card::new(Value::Seven, Suit::Heart);
         let nine = Card::new(Value::Nine, Suit::Heart);
         let hand = SelectHand::new(vec![ace, three, five, seven, nine]);
-        let j = Jokers::OddTodd(OddTodd {});
+        let j = Jokers::OddTodd(OddTodd::default());
 
         // Flush (level 1): 35 chips, 4 mult
         // Played (5 cards): 11 + 3 + 5 + 7 + 9 = 35 chips
@@ -2248,7 +2424,7 @@ mod tests {
         let eight = Card::new(Value::Eight, Suit::Club);
         let ten = Card::new(Value::Ten, Suit::Club);
         let hand = SelectHand::new(vec![two, four, six, eight, ten]);
-        let j = Jokers::OddTodd(OddTodd {});
+        let j = Jokers::OddTodd(OddTodd::default());
 
         // Flush (level 1): 35 chips, 4 mult
         // Played (5 cards): 2 + 4 + 6 + 8 + 10 = 30 chips
@@ -2264,7 +2440,7 @@ mod tests {
     fn test_scholar() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace, ace]);
-        let j = Jokers::Scholar(Scholar {});
+        let j = Jokers::Scholar(Scholar::default());
 
         // Pair (level 1): 10 chips, 2 mult
         // Played (2 aces): 2 * 11 = 22 chips
@@ -2281,7 +2457,7 @@ mod tests {
     fn test_scholar_no_aces() {
         let king = Card::new(Value::King, Suit::Club);
         let hand = SelectHand::new(vec![king]);
-        let j = Jokers::Scholar(Scholar {});
+        let j = Jokers::Scholar(Scholar::default());
 
         // High card (level 1): 5 chips, 1 mult
         // Played (1 king): 10 chips
@@ -2297,7 +2473,7 @@ mod tests {
     fn test_business_card_no_face_cards() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace, ace]);
-        let j = Jokers::BusinessCard(BusinessCard {});
+        let j = Jokers::BusinessCard(BusinessCard::default());
 
         let mut g = Game {
             stage: Stage::Blind(Blind::Small),
@@ -2323,7 +2499,7 @@ mod tests {
         let queen = Card::new(Value::Queen, Suit::Heart);
         let jack = Card::new(Value::Jack, Suit::Heart);
         let hand = SelectHand::new(vec![king, queen, jack]);
-        let j = Jokers::BusinessCard(BusinessCard {});
+        let j = Jokers::BusinessCard(BusinessCard::default());
 
         let mut g = Game {
             stage: Stage::Blind(Blind::Small),
@@ -2351,7 +2527,7 @@ mod tests {
 
     #[test]
     fn test_faceless_joker() {
-        let j = Jokers::FacelessJoker(FacelessJoker {});
+        let j = Jokers::FacelessJoker(FacelessJoker::default());
 
         let mut g = Game::default();
         g.start();
@@ -2377,7 +2553,7 @@ mod tests {
 
     #[test]
     fn test_faceless_joker_few_cards() {
-        let j = Jokers::FacelessJoker(FacelessJoker {});
+        let j = Jokers::FacelessJoker(FacelessJoker::default());
 
         let mut g = Game::default();
         g.start();
@@ -2405,7 +2581,7 @@ mod tests {
     fn test_baron() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace, ace]);
-        let j = Jokers::Baron(Baron {});
+        let j = Jokers::Baron(Baron::default());
 
         let mut g = Game {
             stage: Stage::Blind(Blind::Small),
@@ -2437,7 +2613,7 @@ mod tests {
     fn test_baron_no_kings() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace, ace]);
-        let j = Jokers::Baron(Baron {});
+        let j = Jokers::Baron(Baron::default());
 
         let mut g = Game {
             stage: Stage::Blind(Blind::Small),
@@ -2468,7 +2644,7 @@ mod tests {
     fn test_midas_mask() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace, ace]);
-        let j = Jokers::MidasMask(MidasMask {});
+        let j = Jokers::MidasMask(MidasMask::default());
 
         // Pair (level 1): 10 chips, 2 mult
         // Played (2 aces): 22 chips
@@ -2484,7 +2660,7 @@ mod tests {
     fn test_photograph() {
         let king = Card::new(Value::King, Suit::Heart);
         let hand = SelectHand::new(vec![king]);
-        let j = Jokers::Photograph(Photograph {});
+        let j = Jokers::Photograph(Photograph::default());
 
         // High card (level 1): 5 chips, 1 mult
         // Played (1 king): 10 chips
@@ -2501,7 +2677,7 @@ mod tests {
     fn test_photograph_no_face() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]);
-        let j = Jokers::Photograph(Photograph {});
+        let j = Jokers::Photograph(Photograph::default());
 
         // High card (level 1): 5 chips, 1 mult
         // Played (1 ace): 11 chips
@@ -2517,7 +2693,7 @@ mod tests {
     fn test_reserved_parking() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]);
-        let j = Jokers::ReservedParking(ReservedParking {});
+        let j = Jokers::ReservedParking(ReservedParking::default());
 
         let mut g = Game {
             stage: Stage::Blind(Blind::Small),
@@ -2553,7 +2729,7 @@ mod tests {
     fn test_reserved_parking_no_face() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]);
-        let j = Jokers::ReservedParking(ReservedParking {});
+        let j = Jokers::ReservedParking(ReservedParking::default());
 
         let mut g = Game {
             stage: Stage::Blind(Blind::Small),
@@ -2594,7 +2770,7 @@ mod tests {
         assert_eq!(g.calc_score(best.clone()), 60);
 
         // Buy 2 uncommon jokers (MidasMask, Pareidolia) and BaseballCard
-        let midas = Jokers::MidasMask(MidasMask {});
+        let midas = Jokers::MidasMask(MidasMask::default());
         g.money += 1000;
         g.stage = Stage::Shop();
         g.shop.jokers.push(midas.clone());
@@ -2602,7 +2778,7 @@ mod tests {
         g.stage = Stage::Blind(Blind::Small);
         g.calc_score(best.clone());
 
-        let pareidolia = Jokers::Pareidolia(Pareidolia {});
+        let pareidolia = Jokers::Pareidolia(Pareidolia::default());
         g.money += 1000;
         g.stage = Stage::Shop();
         g.shop.jokers.push(pareidolia.clone());
@@ -2610,7 +2786,7 @@ mod tests {
         g.stage = Stage::Blind(Blind::Small);
         g.calc_score(best.clone());
 
-        let bb = Jokers::BaseballCard(BaseballCard {});
+        let bb = Jokers::BaseballCard(BaseballCard::default());
         g.money += 1000;
         g.stage = Stage::Shop();
         g.shop.jokers.push(bb.clone());
@@ -2634,7 +2810,7 @@ mod tests {
         };
 
         // Buy BaseballCard with no uncommon jokers
-        let bb = Jokers::BaseballCard(BaseballCard {});
+        let bb = Jokers::BaseballCard(BaseballCard::default());
         g.money += 1000;
         g.stage = Stage::Shop();
         g.shop.jokers.push(bb.clone());
@@ -2651,7 +2827,7 @@ mod tests {
     fn test_bull() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]);
-        let j = Jokers::Bull(Bull {});
+        let j = Jokers::Bull(Bull::default());
 
         let mut g = Game {
             stage: Stage::Blind(Blind::Small),
@@ -2680,7 +2856,7 @@ mod tests {
     fn test_bull_no_money() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]);
-        let j = Jokers::Bull(Bull {});
+        let j = Jokers::Bull(Bull::default());
 
         let mut g = Game {
             stage: Stage::Blind(Blind::Small),
@@ -2709,7 +2885,7 @@ mod tests {
     fn test_walkie_talkie() {
         let ten = Card::new(Value::Ten, Suit::Heart);
         let hand = SelectHand::new(vec![ten, ten]);
-        let j = Jokers::WalkieTalkie(WalkieTalkie {});
+        let j = Jokers::WalkieTalkie(WalkieTalkie::default());
 
         // Pair (level 1): 10 chips, 2 mult
         // Played (2 tens): 20 chips
@@ -2726,7 +2902,7 @@ mod tests {
     fn test_walkie_talkie_other_cards() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]);
-        let j = Jokers::WalkieTalkie(WalkieTalkie {});
+        let j = Jokers::WalkieTalkie(WalkieTalkie::default());
 
         // High card (level 1): 5 chips, 1 mult
         // Played (1 ace): 11 chips
@@ -2743,7 +2919,7 @@ mod tests {
         let king = Card::new(Value::King, Suit::Heart);
         let king2 = Card::new(Value::King, Suit::Diamond);
         let hand = SelectHand::new(vec![king, king2]);
-        let j = Jokers::SmileyFace(SmileyFace {});
+        let j = Jokers::SmileyFace(SmileyFace::default());
 
         // Pair (level 1): 10 chips, 2 mult
         // Played (2 kings): 10 + 10 = 20 chips
@@ -2760,7 +2936,7 @@ mod tests {
     fn test_smiley_face_no_face() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]);
-        let j = Jokers::SmileyFace(SmileyFace {});
+        let j = Jokers::SmileyFace(SmileyFace::default());
 
         // High card (level 1): 5 chips, 1 mult
         // Played (1 ace): 11 chips
@@ -2776,7 +2952,7 @@ mod tests {
     fn test_golden_ticket_no_gold() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace, ace]);
-        let j = Jokers::GoldenTicket(GoldenTicket {});
+        let j = Jokers::GoldenTicket(GoldenTicket::default());
 
         let mut g = Game {
             stage: Stage::Blind(Blind::Small),
@@ -2801,7 +2977,7 @@ mod tests {
         let mut ace = Card::new(Value::Ace, Suit::Heart);
         ace.enhancement = Some(Enhancement::Gold);
         let hand = SelectHand::new(vec![ace]);
-        let j = Jokers::GoldenTicket(GoldenTicket {});
+        let j = Jokers::GoldenTicket(GoldenTicket::default());
 
         let mut g = Game::default();
         g.money += 1000;
@@ -2819,7 +2995,7 @@ mod tests {
     fn test_acrobat_final_hand() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]);
-        let j = Jokers::Acrobat(Acrobat {});
+        let j = Jokers::Acrobat(Acrobat::default());
 
         let mut g = Game {
             stage: Stage::Blind(Blind::Small),
@@ -2844,7 +3020,7 @@ mod tests {
     fn test_acrobat_not_final_hand() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]);
-        let j = Jokers::Acrobat(Acrobat {});
+        let j = Jokers::Acrobat(Acrobat::default());
 
         let mut g = Game::default();
         g.money += 1000;
@@ -2864,7 +3040,7 @@ mod tests {
     fn test_rough_gem_no_diamonds() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace, ace]);
-        let j = Jokers::RoughGem(RoughGem {});
+        let j = Jokers::RoughGem(RoughGem::default());
 
         let mut g = Game {
             stage: Stage::Blind(Blind::Small),
@@ -2888,7 +3064,7 @@ mod tests {
         let dia1 = Card::new(Value::Ace, Suit::Diamond);
         let dia2 = Card::new(Value::Ace, Suit::Club);
         let hand = SelectHand::new(vec![dia1, dia2]);
-        let j = Jokers::RoughGem(RoughGem {});
+        let j = Jokers::RoughGem(RoughGem::default());
 
         let mut g = Game::default();
         g.money += 1000;
@@ -2906,7 +3082,7 @@ mod tests {
     fn test_bloodstone_no_hearts() {
         let ace = Card::new(Value::Ace, Suit::Club);
         let hand = SelectHand::new(vec![ace]);
-        let j = Jokers::Bloodstone(Bloodstone {});
+        let j = Jokers::Bloodstone(Bloodstone::default());
 
         let mut g = Game {
             stage: Stage::Blind(Blind::Small),
@@ -2929,7 +3105,7 @@ mod tests {
         let heart = Card::new(Value::Ace, Suit::Heart);
         let heart2 = Card::new(Value::Ace, Suit::Diamond);
         let hand = SelectHand::new(vec![heart, heart2]);
-        let j = Jokers::Bloodstone(Bloodstone {});
+        let j = Jokers::Bloodstone(Bloodstone::default());
 
         let mut g = Game::default();
         g.money += 1000;
@@ -2955,5 +3131,47 @@ mod tests {
         }
         assert!(saw_increase, "Bloodstone should sometimes Xmult");
         assert!(saw_no_increase, "Bloodstone should sometimes not Xmult");
+    }
+
+    #[test]
+    fn test_wild_counts_for_suit_jokers() {
+        // Two Aces so they form a Pair — one is Wild (Spade but counts as all suits)
+        let mut wild = Card::new(Value::Ace, Suit::Spade);
+        wild.enhancement = Some(Enhancement::Wild);
+        let heart = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![heart, wild]);
+
+        // Pair (level 1): 10 chips, 2 mult
+        // Played: Ace (11) + Ace (11) = 22 chips
+        // (10 + 22) * 2 = 64
+        let before = 64;
+
+        // LustyJoker: heart (1) + wild-as-heart (1) = 2 hearts -> +6 mult
+        // (10 + 22) * (2 + 6) = 32 * 8 = 256
+        let after = 256;
+        let j = Jokers::LustyJoker(LustyJoker::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_wild_counts_for_rough_gem() {
+        let mut wild = Card::new(Value::Ace, Suit::Heart);
+        wild.enhancement = Some(Enhancement::Wild);
+        let hand = SelectHand::new(vec![wild]);
+
+        let j = Jokers::RoughGem(RoughGem::default());
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let money_before = g.money;
+        g.calc_score(hand.best_hand().unwrap());
+        assert_eq!(g.money, money_before + 1, "Wild should count as Diamond for RoughGem");
     }
 }
