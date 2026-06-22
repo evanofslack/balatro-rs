@@ -285,7 +285,7 @@ impl Game {
                 Edition::Holographic => self.mult += 10,
                 _ => {}
             }
-            for e in joker.effects(&self.clone()) {
+            for e in joker.effects(self) {
                 if let Effects::OnScore(f) = e {
                     f.lock().unwrap()(self, hand.clone())
                 }
