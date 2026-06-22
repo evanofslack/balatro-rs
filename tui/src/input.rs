@@ -18,8 +18,8 @@ pub fn handle_key(app: &mut AppState, key: KeyEvent) {
         KeyCode::Char('r') => app.overlay = Some(Overlay::RunInfo),
         KeyCode::Char('?') => app.overlay = Some(Overlay::Controls),
         KeyCode::Char('i') => open_inspect(app),
-        KeyCode::Tab => app.tab_next(),
-        KeyCode::BackTab => app.tab_prev(),
+        KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => app.tab_next(),
+        KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => app.tab_prev(),
         _ => handle_key_stage(app, key),
     }
 }
@@ -107,6 +107,13 @@ fn handle_key_run_info(app: &mut AppState, key: KeyEvent) {
 fn handle_key_stage(app: &mut AppState, key: KeyEvent) {
     let prev_stage = app.game.stage.clone();
 
+    // Normalize vim motion keys to arrow keys for all zone handlers
+    let key = match key.code {
+        KeyCode::Char('h') => KeyEvent { code: KeyCode::Left, ..key },
+        KeyCode::Char('l') => KeyEvent { code: KeyCode::Right, ..key },
+        _ => key,
+    };
+
     match &app.game.stage.clone() {
         Stage::PreBlind() => handle_key_preblind(app, key),
         Stage::Blind(_) => handle_key_blind(app, key),
@@ -128,23 +135,33 @@ fn handle_key_stage(app: &mut AppState, key: KeyEvent) {
 fn handle_key_preblind(app: &mut AppState, key: KeyEvent) {
     use balatro_rs::stage::Blind;
 
+    let blinds = [Blind::Small, Blind::Big, Blind::Boss];
+
     match key.code {
         KeyCode::Left => {
-            if app.cursor > 0 {
-                app.cursor -= 1;
+            let mut c = app.cursor;
+            while c > 0 {
+                c -= 1;
+                let b = blinds[c];
+                if app.game.gen_actions().any(|a| matches!(a, Action::SelectBlind(x) if x == b)) {
+                    app.cursor = c;
+                    break;
+                }
             }
         }
         KeyCode::Right => {
-            if app.cursor < 2 {
-                app.cursor += 1;
+            let mut c = app.cursor;
+            while c + 1 < blinds.len() {
+                c += 1;
+                let b = blinds[c];
+                if app.game.gen_actions().any(|a| matches!(a, Action::SelectBlind(x) if x == b)) {
+                    app.cursor = c;
+                    break;
+                }
             }
         }
-        KeyCode::Enter => {
-            let blind = match app.cursor {
-                0 => Blind::Small,
-                1 => Blind::Big,
-                _ => Blind::Boss,
-            };
+        KeyCode::Enter | KeyCode::Char(' ') => {
+            let blind = blinds[app.cursor.min(2)];
             let _ = app.game.handle_action(Action::SelectBlind(blind));
         }
         _ => {}
@@ -186,7 +203,7 @@ fn handle_key_blind_cards(app: &mut AppState, key: KeyEvent) {
                 app.cursor += 1;
             }
         }
-        KeyCode::Enter => toggle_card(app),
+        KeyCode::Enter | KeyCode::Char(' ') => toggle_card(app),
         _ => {}
     }
 }
@@ -305,10 +322,6 @@ fn handle_key_shop_jokers(app: &mut AppState, key: KeyEvent) {
                 let _ = app.game.handle_action(Action::BuyJoker(joker));
             }
         }
-        KeyCode::Down => {
-            app.focus = FocusZone::ShopConsumables;
-            app.cursor = 0;
-        }
         _ => {}
     }
 }
@@ -331,10 +344,6 @@ fn handle_key_shop_consumables(app: &mut AppState, key: KeyEvent) {
                 let c = app.game.shop.consumables[app.cursor].clone();
                 let _ = app.game.handle_action(Action::BuyConsumable(c));
             }
-        }
-        KeyCode::Up => {
-            app.focus = FocusZone::ShopJokers;
-            app.cursor = 0;
         }
         _ => {}
     }
@@ -364,7 +373,7 @@ fn handle_key_tarot_cards(app: &mut AppState, key: KeyEvent) {
                 app.cursor += 1;
             }
         }
-        KeyCode::Enter => toggle_card(app),
+        KeyCode::Enter | KeyCode::Char(' ') => toggle_card(app),
         _ => {}
     }
 }

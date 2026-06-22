@@ -8,8 +8,8 @@ use ratatui::{
 };
 
 pub fn render(f: &mut Frame, _app: &mut crate::app::AppState, area: Rect) {
-    let w: u16 = 52;
-    let h: u16 = 30;
+    let w: u16 = 58;
+    let h: u16 = 22;
     let rect = centered_rect(w, h, area);
     f.render_widget(Clear, rect);
 
@@ -25,35 +25,19 @@ pub fn render(f: &mut Frame, _app: &mut crate::app::AppState, area: Rect) {
 
     let lines = vec![
         Line::from(""),
-        section("Universal"),
-        Line::from(""),
         bind("?", "Show controls"),
-        bind("r", "Run info (deck, poker hands)"),
-        bind("s", "Save game"),
-        bind("q / Ctrl+C", "Quit"),
-        Line::from(""),
-        section("Navigation"),
-        Line::from(""),
-        bind("Tab / Shift+Tab", "Cycle zones"),
-        bind("i", "Inspect focused item"),
+        bind("r", "Run info (Deck, Poker Hands)"),
+        bind("s", "Save"),
+        bind("q", "Quit"),
+        bind("Tab / Shift+Tab", "Next / prev zone"),
+        bind("←/→", "Move cursor"),
+        bind("Enter / Space", "Select / confirm"),
+        bind("i", "Inspect item"),
         bind("Esc / Enter", "Close overlay"),
         Line::from(""),
-        section("Blind"),
-        Line::from(""),
-        bind("Enter", "Select / deselect card"),
-        bind("p", "Play hand"),
-        bind("d", "Discard"),
-        bind("←/→", "Move cursor"),
-        Line::from(""),
-        section("Pre-Blind"),
-        Line::from(""),
-        bind("←/→", "Navigate blinds"),
-        bind("Enter", "Select blind"),
-        Line::from(""),
-        section("Shop"),
-        Line::from(""),
-        bind("Enter", "Buy item"),
-        bind("n", "Next round"),
+        bind("p", "Play hand  (blind)"),
+        bind("d", "Discard    (blind)"),
+        bind("n", "Next round (shop)"),
     ];
 
     let para = Paragraph::new(lines);
@@ -68,11 +52,4 @@ fn bind(key: &'static str, action: &'static str) -> Line<'static> {
         ),
         Span::styled(action, Style::default().fg(Color::White)),
     ])
-}
-
-fn section(title: &'static str) -> Line<'static> {
-    Line::from(Span::styled(
-        format!("  {} ", title),
-        Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
-    ))
 }

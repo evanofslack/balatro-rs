@@ -1,4 +1,5 @@
 use crate::app::AppState;
+use balatro_rs::rank::HandRank;
 use balatro_rs::stage::Stage;
 use ratatui::{
     Frame,
@@ -16,6 +17,33 @@ fn label(s: &str) -> Span<'static> {
 
 fn value(s: String, color: Color) -> Span<'static> {
     Span::styled(s, Style::default().fg(color).add_modifier(Modifier::BOLD))
+}
+
+fn hand_rank_name(rank: HandRank) -> &'static str {
+    match rank {
+        HandRank::HighCard => "High Card",
+        HandRank::OnePair => "One Pair",
+        HandRank::TwoPair => "Two Pair",
+        HandRank::ThreeOfAKind => "Three of a Kind",
+        HandRank::Straight => "Straight",
+        HandRank::Flush => "Flush",
+        HandRank::FullHouse => "Full House",
+        HandRank::FourOfAKind => "Four of a Kind",
+        HandRank::StraightFlush => "Straight Flush",
+        HandRank::RoyalFlush => "Royal Flush",
+        HandRank::FiveOfAKind => "Five of a Kind",
+        HandRank::FlushHouse => "Flush House",
+        HandRank::FlushFive => "Flush Five",
+    }
+}
+
+fn level_color(level: usize) -> Color {
+    match level {
+        1 => Color::Gray,
+        2..=4 => Color::Cyan,
+        5..=9 => Color::Yellow,
+        _ => Color::Magenta,
+    }
 }
 
 pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
@@ -99,25 +127,48 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     ]));
     lines.push(Line::from(""));
 
-    // Chips × Mult
-    let chips_span = Span::styled(
-        format!(" {} ", game.chips),
-        Style::default()
-            .fg(Color::White)
-            .bg(Color::Blue)
-            .add_modifier(Modifier::BOLD),
-    );
-    let mult_span = Span::styled(
-        format!(" {} ", game.mult),
-        Style::default()
-            .fg(Color::White)
-            .bg(Color::Red)
-            .add_modifier(Modifier::BOLD),
-    );
+    // Live hand evaluation — always reserves space so layout doesn't shift.
+    // In blind with selection: shows detected hand name + level + live chips/mult.
+    // Otherwise: blank name line + 0×0 boxes.
+    let eval = if let Stage::Blind(_) = &game.stage {
+        let selected = game.available.selected();
+        if !selected.is_empty() {
+            balatro_rs::hand::SelectHand::new(selected.clone()).best_hand().ok()
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let (hand_name_line, disp_chips, disp_mult) = match &eval {
+        Some(made) => {
+            let lvl = game.planetarium.level(made.rank);
+            let line = Line::from(vec![
+                Span::styled(
+                    hand_rank_name(made.rank),
+                    Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!(" lvl.{}", lvl.level),
+                    Style::default().fg(level_color(lvl.level)),
+                ),
+            ]);
+            (line, lvl.chips, lvl.mult)
+        }
+        None => (Line::from(""), 0, 0),
+    };
+    lines.push(hand_name_line);
     lines.push(Line::from(vec![
-        chips_span,
+        Span::styled(
+            format!(" {} ", disp_chips),
+            Style::default().fg(Color::White).bg(Color::Blue).add_modifier(Modifier::BOLD),
+        ),
         Span::raw(" × "),
-        mult_span,
+        Span::styled(
+            format!(" {} ", disp_mult),
+            Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD),
+        ),
     ]));
     lines.push(Line::from(""));
 

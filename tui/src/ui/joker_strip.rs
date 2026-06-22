@@ -1,11 +1,11 @@
 use crate::app::{AppState, FocusZone, WidgetId};
 use balatro_rs::joker::Joker;
 use ratatui::{
-    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
 };
 
 pub const STRIP_H: u16 = 5;
@@ -29,20 +29,34 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     let consumable_total = app.game.config.consumable_slots as u16 * (CONSUMABLE_W + 1) + 6;
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(consumable_total),
-        ])
+        .constraints([Constraint::Min(0), Constraint::Length(consumable_total)])
         .split(inner);
 
     render_jokers(f, app, chunks[0]);
     render_consumables(f, app, chunks[1]);
 }
 
+fn wrap_joker_name(name: &str, max_w: usize) -> (String, String) {
+    if name.len() <= max_w {
+        return (name.to_string(), String::new());
+    }
+    // Split at last space within max_w, fall back to hard cut
+    let split = name[..max_w].rfind(' ').unwrap_or(max_w);
+    let line1 = name[..split].to_string();
+    let rest = name[split..].trim_start();
+    let line2 = if rest.len() > max_w {
+        format!("{}…", &rest[..max_w.saturating_sub(1)])
+    } else {
+        rest.to_string()
+    };
+    (line1, line2)
+}
+
 fn render_jokers(f: &mut Frame, app: &mut AppState, area: Rect) {
     let jokers = &app.game.jokers;
     let slots = app.game.config.joker_slots;
     let focused = app.focus == FocusZone::JokerStrip;
+    let inner_w = (JOKER_W as usize).saturating_sub(2);
 
     let mut x = area.x + 1;
 
@@ -59,7 +73,11 @@ fn render_jokers(f: &mut Frame, app: &mut AppState, area: Rect) {
 
         if let Some(joker) = jokers.get(i) {
             let is_cursor = focused && app.cursor == i;
-            let border_type = if is_cursor { BorderType::Double } else { BorderType::Plain };
+            let border_type = if is_cursor {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            };
             let border_style = if is_cursor {
                 Style::default().fg(Color::Yellow)
             } else {
@@ -70,14 +88,20 @@ fn render_jokers(f: &mut Frame, app: &mut AppState, area: Rect) {
                 .border_type(border_type)
                 .border_style(border_style);
             let name = joker.name();
-            let truncated = if name.len() > (JOKER_W as usize).saturating_sub(2) {
-                format!("{}…", &name[..(JOKER_W as usize).saturating_sub(3)])
-            } else {
-                name.clone()
-            };
+            let (line1, line2) = wrap_joker_name(&name, inner_w);
             let lines = vec![
-                Line::from(Span::styled(truncated, Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD))),
-                Line::from(Span::styled(joker.rarity().to_string(), Style::default().fg(Color::DarkGray))),
+                Line::from(Span::styled(
+                    line1,
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Line::from(Span::styled(
+                    line2,
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
+                )),
             ];
             let para = Paragraph::new(lines).block(block);
             f.render_widget(para, slot_rect);
@@ -124,7 +148,11 @@ fn render_consumables(f: &mut Frame, app: &mut AppState, area: Rect) {
 
         if let Some(c) = consumables.get(i) {
             let is_cursor = focused && app.cursor == i;
-            let border_type = if is_cursor { BorderType::Double } else { BorderType::Plain };
+            let border_type = if is_cursor {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            };
             let border_style = if is_cursor {
                 Style::default().fg(Color::Yellow)
             } else {
@@ -141,12 +169,21 @@ fn render_consumables(f: &mut Frame, app: &mut AppState, area: Rect) {
                 name
             };
             let lines = vec![
-                Line::from(Span::styled(truncated, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-                Line::from(Span::styled(c.type_label().to_string(), Style::default().fg(Color::DarkGray))),
+                Line::from(Span::styled(
+                    truncated,
+                    Style::default()
+                        .fg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                Line::from(Span::styled(
+                    c.type_label().to_string(),
+                    Style::default().fg(Color::DarkGray),
+                )),
             ];
             let para = Paragraph::new(lines).block(block);
             f.render_widget(para, slot_rect);
-            app.widget_rects.insert(WidgetId::ConsumableSlot(i), slot_rect);
+            app.widget_rects
+                .insert(WidgetId::ConsumableSlot(i), slot_rect);
         } else {
             let block = Block::default()
                 .borders(Borders::ALL)

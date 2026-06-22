@@ -67,12 +67,12 @@ fn enhancement_indicator(enh: Enhancement) -> (&'static str, Color) {
     }
 }
 
-// Card dimensions: 8 wide × 6 tall (including borders)
-// Each card slot: 9 wide (8 + 1 gap), 7 tall (6 card + 1 shift buffer)
-pub const CARD_W: u16 = 8;
-pub const CARD_H: u16 = 6;
-pub const SLOT_W: u16 = 9; // CARD_W + 1 gap
-pub const SLOT_H: u16 = 7; // CARD_H + 1 shift row
+// Card dimensions: 10 wide × 7 tall (including borders)
+// Each card slot: 11 wide (10 + 1 gap), 8 tall (7 card + 1 shift buffer)
+pub const CARD_W: u16 = 10;
+pub const CARD_H: u16 = 7;
+pub const SLOT_W: u16 = 11; // CARD_W + 1 gap
+pub const SLOT_H: u16 = 8;  // CARD_H + 1 shift row
 
 fn card_inner_text(card: Card) -> Text<'static> {
     let is_wild = card.enhancement == Some(Enhancement::Wild);
@@ -87,11 +87,12 @@ fn card_inner_text(card: Card) -> Text<'static> {
     let rank_style = Style::default().fg(rank_color).add_modifier(Modifier::BOLD);
     let suit_style = Style::default().fg(suit_display_color).add_modifier(Modifier::BOLD);
 
-    // Interior: 6 wide, 4 tall.
+    // Interior: 8 wide, 5 tall.
     // Row 0: seal indicator (top-right) or blank
     // Row 1: rank + suit centered
     // Row 2: blank
     // Row 3: enhancement indicator (bottom-left) or blank
+    // Row 4: blank
 
     let seal_span: Option<Span<'static>> = card.seal.map(|s| match s {
         Seal::Gold => Span::styled("◆ ", Style::default().fg(Color::Yellow)),
@@ -101,22 +102,20 @@ fn card_inner_text(card: Card) -> Text<'static> {
     });
 
     let row0 = match seal_span {
-        Some(s) => Line::from(vec![Span::raw("    "), s]),
+        Some(s) => Line::from(vec![Span::raw("      "), s]),
         None => Line::from(""),
     };
 
     let row1 = if is_stone {
         Line::from(vec![
-            Span::raw("  "),
+            Span::raw("   "),
             Span::styled("●●●", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
-            Span::raw("  "),
         ])
     } else {
         Line::from(vec![
-            Span::raw("  "),
+            Span::raw("   "),
             Span::styled(rank_str(card.value), rank_style),
             Span::styled(suit_display_char.to_string(), suit_style),
-            Span::raw("   "),
         ])
     };
 
@@ -126,13 +125,12 @@ fn card_inner_text(card: Card) -> Text<'static> {
             Line::from(vec![
                 Span::raw(" "),
                 Span::styled(label, Style::default().fg(color).add_modifier(Modifier::BOLD)),
-                Span::raw("   "),
             ])
         }
         _ => Line::from(""),
     };
 
-    Text::from(vec![row0, row1, Line::from(""), row3])
+    Text::from(vec![row0, row1, Line::from(""), row3, Line::from("")])
 }
 
 fn card_block(card: Card, is_cursor: bool) -> Block<'static> {
