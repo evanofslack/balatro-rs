@@ -23,7 +23,7 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     f.render_widget(block, area);
 
     let tarot = match &app.game.stage {
-        Stage::TarotHand(t) => t.clone(),
+        Stage::TarotHand(t) => *t,
         _ => return,
     };
 

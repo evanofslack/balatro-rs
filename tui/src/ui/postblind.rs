@@ -69,7 +69,7 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     let sep = "─".repeat(panel_w as usize - 2);
 
     let score_label = format!("  Round score: ◆ {}", app.game.last_score);
-    let blind_label = format!("  Beat the blind");
+    let blind_label = "  Beat the blind".to_string();
     let hands_label = format!(
         "  {} hand(s) remaining x ${}",
         app.game.plays, app.game.config.money_per_hand

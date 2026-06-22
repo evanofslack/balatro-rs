@@ -95,7 +95,7 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     // TarotHand description
     if let Stage::TarotHand(t) = &game.stage {
         let desc = t.description();
-        for word_line in wrap(&desc, (inner.width as usize).saturating_sub(1)) {
+        for word_line in wrap(desc, (inner.width as usize).saturating_sub(1)) {
             lines.push(Line::from(Span::raw(word_line)));
         }
         lines.push(Line::from(""));

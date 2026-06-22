@@ -47,7 +47,7 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
         Overlay::Consumable(idx) => match key.code {
             KeyCode::Enter | KeyCode::Char('u') => {
                 if let Some(c) = app.game.consumables.get(idx).cloned() {
-                    let prev = app.game.stage.clone();
+                    let prev = app.game.stage;
                     app.close_overlay();
                     let _ = app.game.handle_action(Action::UseConsumable(c));
                     if app.game.stage != prev {
@@ -111,7 +111,7 @@ fn handle_key_run_info(app: &mut AppState, key: KeyEvent) {
 }
 
 fn handle_key_stage(app: &mut AppState, key: KeyEvent) {
-    let prev_stage = app.game.stage.clone();
+    let prev_stage = app.game.stage;
 
     // Normalize vim motion keys to arrow keys for all zone handlers
     let key = match key.code {
@@ -399,11 +399,8 @@ fn handle_key_tarot_cards(app: &mut AppState, key: KeyEvent) {
 }
 
 fn handle_key_tarot_buttons(app: &mut AppState, key: KeyEvent) {
-    match key.code {
-        KeyCode::Enter => {
-            let _ = app.game.handle_action(Action::ApplyTarot());
-        }
-        _ => {}
+    if key.code == KeyCode::Enter {
+        let _ = app.game.handle_action(Action::ApplyTarot());
     }
 }
 
@@ -487,7 +484,7 @@ pub fn handle_mouse(app: &mut AppState, event: MouseEvent) {
 
 fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
     use crate::app::WidgetId::*;
-    let prev_stage = app.game.stage.clone();
+    let prev_stage = app.game.stage;
 
     match id {
         Card(idx) => {
@@ -549,7 +546,7 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
         OverlayButton(0) => {
             if let Some(crate::app::Overlay::Consumable(idx)) = app.overlay.clone() {
                 if let Some(c) = app.game.consumables.get(idx).cloned() {
-                    let prev = app.game.stage.clone();
+                    let prev = app.game.stage;
                     app.close_overlay();
                     let _ = app.game.handle_action(Action::UseConsumable(c));
                     if app.game.stage != prev {

@@ -10,7 +10,7 @@ use ratatui::{
 
 pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     let end = match &app.game.stage {
-        Stage::End(e) => e.clone(),
+        Stage::End(e) => *e,
         _ => return,
     };
 
