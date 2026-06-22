@@ -278,10 +278,20 @@ impl Game {
             }
         }
 
-        // apply joker effects
-        for e in self.effect_registry.on_score.clone() {
-            if let Effects::OnScore(f) = e {
-                f.lock().unwrap()(self, hand.clone())
+        // apply joker effects with per-joker edition ordering
+        for joker in self.jokers.clone() {
+            match joker.edition() {
+                Edition::Foil => self.chips += 50,
+                Edition::Holographic => self.mult += 10,
+                _ => {}
+            }
+            for e in joker.effects(&self.clone()) {
+                if let Effects::OnScore(f) = e {
+                    f.lock().unwrap()(self, hand.clone())
+                }
+            }
+            if joker.edition() == Edition::Polychrome {
+                self.mult = (self.mult as f64 * 1.5) as usize;
             }
         }
 
@@ -322,7 +332,7 @@ impl Game {
         self.stage = Stage::Shop();
         let planetarium = self.planetarium.clone();
         let held = self.consumables.clone();
-        self.shop.refresh(&planetarium, &held, false);
+        self.shop.refresh(&planetarium, &held, false, self.prob_mult);
         Ok(())
     }
 
@@ -334,7 +344,10 @@ impl Game {
             return Err(GameError::InvalidAction);
         }
         self.money += self.jokers[idx].sell_value();
-        self.jokers.remove(idx);
+        let sold = self.jokers.remove(idx);
+        if sold.edition() == Edition::Negative {
+            self.config.joker_slots = self.config.joker_slots.saturating_sub(1);
+        }
         self.effect_registry
             .register_jokers(self.jokers.clone(), &self.clone());
         Ok(())
@@ -355,6 +368,9 @@ impl Game {
     pub(crate) fn buy_joker(&mut self, joker: Jokers) -> Result<(), GameError> {
         if self.stage != Stage::Shop() {
             return Err(GameError::InvalidStage);
+        }
+        if joker.edition() == Edition::Negative {
+            self.config.joker_slots = (self.config.joker_slots + 1).min(self.config.joker_slots_max);
         }
         if self.jokers.len() >= self.config.joker_slots {
             return Err(GameError::NoAvailableSlot);
@@ -900,7 +916,7 @@ mod tests {
         g.stage = Stage::Shop();
         g.money = 10;
         g.shop
-            .refresh(&g.planetarium.clone(), &g.consumables.clone(), false);
+            .refresh(&g.planetarium.clone(), &g.consumables.clone(), false, g.prob_mult);
 
         let j1 = g.shop.joker_from_index(0).expect("is joker");
         g.buy_joker(j1.clone()).expect("buy joker");
@@ -931,7 +947,7 @@ mod tests {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let played = vec![ace];
         let held = vec![];
-        let jokers = vec![Jokers::MysticSummit(MysticSummit {})];
+        let jokers = vec![Jokers::MysticSummit(MysticSummit::default())];
         let hand = SelectHand::new(played.clone()).best_hand().unwrap();
         // Set g.discards to 0 via the scratch Game — we need to reach into it
         // Instead, just verify the joker triggers with discards=0 and doesn't with >0
@@ -1048,6 +1064,107 @@ mod tests {
     }
 
     #[test]
+    fn test_joker_edition_foil() {
+        use crate::joker::{Jokers, TheJoker};
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+
+        // TheJoker Base: (5+11)*(1+4) = 80
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        let mut j = Jokers::TheJoker(TheJoker::default());
+        j.set_edition(Edition::Foil);
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        // Foil fires before TheJoker: chips += 50, then +4 mult
+        // (5+11+50) * (1+4) = 66 * 5 = 330
+        assert_eq!(g.calc_score(hand), 330);
+    }
+
+    #[test]
+    fn test_joker_edition_holographic() {
+        use crate::joker::{Jokers, TheJoker};
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        let mut j = Jokers::TheJoker(TheJoker::default());
+        j.set_edition(Edition::Holographic);
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        // Holo fires before TheJoker: mult += 10, then +4 mult
+        // (5+11) * (1+10+4) = 16 * 15 = 240
+        assert_eq!(g.calc_score(hand), 240);
+    }
+
+    #[test]
+    fn test_joker_edition_polychrome() {
+        use crate::joker::{Jokers, TheJoker};
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        let mut j = Jokers::TheJoker(TheJoker::default());
+        j.set_edition(Edition::Polychrome);
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        // TheJoker fires (+4 mult), then Polychrome x1.5: floor((1+4)*1.5) = 7
+        // (5+11) * 7 = 112
+        assert_eq!(g.calc_score(hand), 112);
+    }
+
+    #[test]
+    fn test_joker_edition_negative_buy_increases_slots() {
+        use crate::joker::{Jokers, TheJoker};
+        let mut g = Game::default();
+        let slots_before = g.config.joker_slots;
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut j = Jokers::TheJoker(TheJoker::default());
+        j.set_edition(Edition::Negative);
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+
+        assert_eq!(g.config.joker_slots, slots_before + 1);
+    }
+
+    #[test]
+    fn test_joker_edition_negative_sell_decreases_slots() {
+        use crate::joker::{Jokers, TheJoker};
+        let mut g = Game::default();
+        let slots_before = g.config.joker_slots;
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut j = Jokers::TheJoker(TheJoker::default());
+        j.set_edition(Edition::Negative);
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        assert_eq!(g.config.joker_slots, slots_before + 1);
+
+        g.sell_joker(0).unwrap();
+        assert_eq!(g.config.joker_slots, slots_before);
+    }
+
+    #[test]
     fn test_destroy_card() {
         let mut g = Game::default();
         g.deal();
@@ -1080,7 +1197,7 @@ mod tests {
         use crate::joker::{Jokers, TheJoker};
         let mut g = Game::default();
         g.start();
-        let joker = Jokers::TheJoker(TheJoker {});
+        let joker = Jokers::TheJoker(TheJoker::default());
         g.jokers.push(joker);
         let jokers = g.jokers.clone();
         g.effect_registry.register_jokers(jokers, &g.clone());
@@ -1185,7 +1302,7 @@ mod tests {
         g.start();
         g.stage = Stage::Shop();
         g.money = 0;
-        let joker = Jokers::TheJoker(TheJoker {});
+        let joker = Jokers::TheJoker(TheJoker::default());
         let sell_value = joker.sell_value();
         g.jokers.push(joker);
         assert_eq!(g.jokers.len(), 1);
@@ -1210,7 +1327,7 @@ mod tests {
         let mut g = Game::default();
         g.start();
         g.stage = Stage::End(crate::stage::End::Win);
-        g.jokers.push(Jokers::TheJoker(TheJoker {}));
+        g.jokers.push(Jokers::TheJoker(TheJoker::default()));
         let res = g.sell_joker(0);
         assert!(matches!(res, Err(GameError::InvalidStage)));
     }
@@ -1223,7 +1340,7 @@ mod tests {
         g.stage = Stage::Blind(Blind::Small);
         g.blind = Some(Blind::Small);
         g.money = 0;
-        let joker = Jokers::TheJoker(TheJoker {});
+        let joker = Jokers::TheJoker(TheJoker::default());
         let sell_value = joker.sell_value();
         g.jokers.push(joker);
 
@@ -1276,7 +1393,7 @@ mod tests {
         g.start();
         g.stage = Stage::TarotHand(Tarot::Magician);
         g.money = 0;
-        let joker = Jokers::TheJoker(TheJoker {});
+        let joker = Jokers::TheJoker(TheJoker::default());
         let sell_value = joker.sell_value();
         g.jokers.push(joker);
 
@@ -1307,7 +1424,7 @@ mod tests {
         let mut g = Game::default();
         g.start();
         g.stage = Stage::Shop();
-        let joker = Jokers::TheJoker(TheJoker {});
+        let joker = Jokers::TheJoker(TheJoker::default());
         g.jokers.push(joker);
         let jokers = g.jokers.clone();
         g.effect_registry.register_jokers(jokers, &g.clone());
