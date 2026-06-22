@@ -1,15 +1,35 @@
 # balatro-tui
 
-Terminal UI for balatro-rs, built with [ratatui](https://github.com/ratatui-org/ratatui).
+Terminal UI for the balatro-rs game engine, built with ratatui.
 
-## Run
+## Running
 
 ```bash
-# new game
+# from workspace root
 cargo run -p balatro-tui
 
-# load a saved game
+# or from tui/
+cargo run
+```
+
+## Options
+
+| Flag            | Description                              |
+| --------------- | ---------------------------------------- |
+| `--load <FILE>` | Load a saved game state from a JSON file |
+
+```bash
 cargo run -p balatro-tui -- --load game.json
+```
+
+## Saving and loading
+
+Press `s` during any stage to open the save dialog. The filename defaults to `game_<timestamp>.json` and can be edited before confirming.
+
+Reload a saved game with `--load`:
+
+```bash
+cargo run -p balatro-tui -- --load game_1781391549.json
 ```
 
 ## Layout
