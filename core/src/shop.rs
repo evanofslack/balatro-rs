@@ -161,16 +161,16 @@ impl Shop {
 
 fn gen_edition(prob_mult: u32) -> Edition {
     let mut rng = thread_rng();
-    if rng.gen_ratio((3 * prob_mult).min(1000), 1000) {
+    if rng.gen_ratio(3u32.saturating_mul(prob_mult).min(1000), 1000) {
         return Edition::Negative;
     }
-    if rng.gen_ratio((3 * prob_mult).min(1000), 1000) {
+    if rng.gen_ratio(3u32.saturating_mul(prob_mult).min(1000), 1000) {
         return Edition::Polychrome;
     }
-    if rng.gen_ratio((14 * prob_mult).min(1000), 1000) {
+    if rng.gen_ratio(14u32.saturating_mul(prob_mult).min(1000), 1000) {
         return Edition::Holographic;
     }
-    if rng.gen_ratio((20 * prob_mult).min(1000), 1000) {
+    if rng.gen_ratio(20u32.saturating_mul(prob_mult).min(1000), 1000) {
         return Edition::Foil;
     }
     Edition::Base

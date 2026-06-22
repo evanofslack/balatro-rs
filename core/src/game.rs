@@ -291,7 +291,7 @@ impl Game {
                 }
             }
             if joker.edition() == Edition::Polychrome {
-                self.mult = (self.mult as f64 * 1.5) as usize;
+                self.mult += self.mult / 2;
             }
         }
 

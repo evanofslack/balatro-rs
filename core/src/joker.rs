@@ -317,6 +317,7 @@ impl fmt::Display for Jokers {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct TheJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -353,6 +354,7 @@ impl Joker for TheJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct GreedyJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -395,6 +397,7 @@ impl Joker for GreedyJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct LustyJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -437,6 +440,7 @@ impl Joker for LustyJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct WrathfulJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -479,6 +483,7 @@ impl Joker for WrathfulJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct GluttonousJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -521,6 +526,7 @@ impl Joker for GluttonousJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct JollyJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -559,6 +565,7 @@ impl Joker for JollyJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct ZanyJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -597,6 +604,7 @@ impl Joker for ZanyJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct MadJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -635,6 +643,7 @@ impl Joker for MadJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct CrazyJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -673,6 +682,7 @@ impl Joker for CrazyJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct DrollJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -711,6 +721,7 @@ impl Joker for DrollJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct SlyJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -749,6 +760,7 @@ impl Joker for SlyJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct WilyJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -787,6 +799,7 @@ impl Joker for WilyJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct CleverJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -825,6 +838,7 @@ impl Joker for CleverJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct DeviousJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -863,6 +877,7 @@ impl Joker for DeviousJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct CraftyJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -901,6 +916,7 @@ impl Joker for CraftyJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct HalfJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -939,6 +955,7 @@ impl Joker for HalfJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct JokerStencil {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -978,6 +995,7 @@ impl Joker for JokerStencil {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct Banner {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1014,6 +1032,7 @@ impl Joker for Banner {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct MysticSummit {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1052,6 +1071,7 @@ impl Joker for MysticSummit {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct Fibonacci {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1097,6 +1117,7 @@ impl Joker for Fibonacci {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct ScaryFace {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1137,6 +1158,7 @@ impl Joker for ScaryFace {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct AbstractJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1173,6 +1195,7 @@ impl Joker for AbstractJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct Pareidolia {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1224,6 +1247,7 @@ impl Joker for Pareidolia {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct EvenSteven {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1264,6 +1288,7 @@ impl Joker for EvenSteven {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct OddTodd {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1304,6 +1329,7 @@ impl Joker for OddTodd {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct Scholar {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1345,6 +1371,7 @@ impl Joker for Scholar {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct BusinessCard {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1385,6 +1412,7 @@ impl Joker for BusinessCard {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct FacelessJoker {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1423,6 +1451,7 @@ impl Joker for FacelessJoker {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct Baron {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1462,6 +1491,7 @@ impl Joker for Baron {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct MidasMask {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1513,6 +1543,7 @@ impl Joker for MidasMask {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct Photograph {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1554,6 +1585,7 @@ impl Joker for Photograph {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct ReservedParking {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1594,6 +1626,7 @@ impl Joker for ReservedParking {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct BaseballCard {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1637,6 +1670,7 @@ impl Joker for BaseballCard {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct Bull {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1673,6 +1707,7 @@ impl Joker for Bull {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct WalkieTalkie {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1714,6 +1749,7 @@ impl Joker for WalkieTalkie {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct SmileyFace {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1754,6 +1790,7 @@ impl Joker for SmileyFace {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct GoldenTicket {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1794,6 +1831,7 @@ impl Joker for GoldenTicket {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct Acrobat {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1832,6 +1870,7 @@ impl Joker for Acrobat {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct RoughGem {
+    #[serde(default)]
     pub edition: Edition,
 }
 
@@ -1872,6 +1911,7 @@ impl Joker for RoughGem {
 #[derive(Debug, Clone, Default, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 #[cfg_attr(feature = "python", pyclass(eq))]
 pub struct Bloodstone {
+    #[serde(default)]
     pub edition: Edition,
 }
 
