@@ -25,3 +25,9 @@ dev: fmt check
 
 cli:
     cargo run -p balatro-cli
+
+tui:
+    cargo run -p balatro-tui
+
+tui-load FILE:
+    cargo run -p balatro-tui -- --load {{FILE}}

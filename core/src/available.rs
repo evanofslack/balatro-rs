@@ -22,6 +22,15 @@ impl Available {
         }
     }
 
+    pub(crate) fn deselect_card(&mut self, card: Card) -> Result<(), GameError> {
+        if let Some((i, _)) = self.cards.iter().find_position(|(c, _a)| c.id == card.id) {
+            self.cards[i].1 = false;
+            Ok(())
+        } else {
+            Err(GameError::NoCardMatch)
+        }
+    }
+
     pub fn selected(&self) -> Vec<Card> {
         self.cards
             .iter()

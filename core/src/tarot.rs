@@ -63,6 +63,33 @@ impl Tarot {
         }
     }
 
+    pub fn description(&self) -> &str {
+        match self {
+            Self::Fool => "Creates a copy of the last Tarot used",
+            Self::Magician => "Enhances up to 2 selected cards into Lucky Cards",
+            Self::HighPriestess => "Gives 2 random Planet cards",
+            Self::Empress => "Enhances up to 2 selected cards into Mult Cards",
+            Self::Emperor => "Gives 2 random Tarot cards",
+            Self::Hierophant => "Enhances up to 2 selected cards into Bonus Cards",
+            Self::Lovers => "Enhances 1 selected card into a Wild Card",
+            Self::Chariot => "Enhances 1 selected card into a Steel Card",
+            Self::Justice => "Enhances 1 selected card into a Glass Card",
+            Self::Hermit => "Doubles your money (up to $20)",
+            Self::WheelOfFortune => "Adds a Foil, Holo or Polychrome to 1 random Joker",
+            Self::Strength => "Increases the rank of up to 2 selected cards",
+            Self::HangedMan => "Destroys up to 2 selected cards",
+            Self::Death => "Converts the left selected card into the right",
+            Self::Temperance => "Gives $1 per Joker sell value (max $50)",
+            Self::Devil => "Enhances 1 selected card into a Gold Card",
+            Self::Tower => "Enhances 1 selected card into a Stone Card",
+            Self::Star => "Converts up to 3 selected cards to Diamonds",
+            Self::Moon => "Converts up to 3 selected cards to Clubs",
+            Self::Sun => "Converts up to 3 selected cards to Hearts",
+            Self::Judgement => "Creates a random Joker card",
+            Self::World => "Converts up to 3 selected cards to Spades",
+        }
+    }
+
     pub fn cost(&self) -> usize {
         3
     }

@@ -32,6 +32,7 @@ impl fmt::Display for MoveDirection {
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]
 pub enum Action {
     SelectCard(Card),
+    DeselectCard(Card),
     MoveCard(MoveDirection, Card),
     Play(),
     Discard(),
@@ -50,6 +51,9 @@ impl fmt::Display for Action {
         match self {
             Self::SelectCard(card) => {
                 write!(f, "SelectCard: {}", card)
+            }
+            Self::DeselectCard(card) => {
+                write!(f, "DeselectCard: {}", card)
             }
             Self::Play() => {
                 write!(f, "Play")
