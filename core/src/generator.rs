@@ -25,6 +25,18 @@ impl Game {
         Some(combos)
     }
 
+    // Get all legal DeselectCard actions that can be executed given current state
+    fn gen_actions_deselect_card(&self) -> Option<impl Iterator<Item = Action>> {
+        if !self.stage.is_blind() {
+            return None;
+        }
+        let selected = self.available.selected();
+        if selected.is_empty() {
+            return None;
+        }
+        Some(selected.into_iter().map(Action::DeselectCard))
+    }
+
     // Get all legal Play actions that can be executed given current state
     fn gen_actions_play(&self) -> Option<impl Iterator<Item = Action>> {
         // Can only play hand during blinds
@@ -200,6 +212,13 @@ impl Game {
             vec![]
         };
 
+        let deselect_cards: Vec<Action> = self
+            .available
+            .selected()
+            .into_iter()
+            .map(Action::DeselectCard)
+            .collect();
+
         let move_left: Vec<Action> = self
             .available
             .cards()
@@ -231,6 +250,7 @@ impl Game {
 
         let all: Vec<Action> = select_cards
             .into_iter()
+            .chain(deselect_cards)
             .chain(move_left)
             .chain(move_right)
             .chain(apply)
@@ -242,6 +262,7 @@ impl Game {
     // Get all legal actions that can be executed given current state
     pub fn gen_actions(&self) -> impl Iterator<Item = Action> {
         let select_cards = self.gen_actions_select_card();
+        let deselect_cards = self.gen_actions_deselect_card();
         let plays = self.gen_actions_play();
         let discards = self.gen_actions_discard();
         let move_cards = self.gen_actions_move_card();
@@ -256,6 +277,7 @@ impl Game {
         select_cards
             .into_iter()
             .flatten()
+            .chain(deselect_cards.into_iter().flatten())
             .chain(plays.into_iter().flatten())
             .chain(discards.into_iter().flatten())
             .chain(move_cards.into_iter().flatten())
