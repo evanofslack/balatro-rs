@@ -57,6 +57,7 @@ pub struct Game {
     pub prob_mult: u32,
 
     pub last_consumable_used: Option<Consumable>,
+    #[cfg_attr(feature = "serde", serde(default))]
     pub last_score: usize,
     // track stage so we can come back to it after temp tarot stage
     pub(crate) tarot_prev_stage: Option<Stage>,
