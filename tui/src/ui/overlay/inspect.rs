@@ -3,6 +3,7 @@ use crate::ui::cards::{rank_str, suit_char, suit_color};
 use crate::ui::overlay::centered_rect;
 use crate::ui::wrap;
 use balatro_rs::joker::Joker;
+use balatro_rs::pack::PackCategory;
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -110,6 +111,41 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
                 Line::from(vec![
                     Span::raw("  Cost:  "),
                     Span::styled(format!("${}", c.cost()), Style::default().fg(Color::Yellow)),
+                ]),
+                Line::from(""),
+            ];
+            for word_line in wrap(&desc, w as usize - 4) {
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", word_line),
+                    Style::default().fg(Color::White),
+                )));
+            }
+            lines.push(Line::from(""));
+            lines.push(close_line());
+            (title, lines)
+        }
+        InspectTarget::Pack(pack) => {
+            let title = format!(" {} ", pack.name());
+            let category = match pack.category {
+                PackCategory::Arcana => "Arcana",
+                PackCategory::Buffoon => "Buffoon",
+                PackCategory::Celestial => "Celestial",
+                PackCategory::Standard => "Standard",
+                PackCategory::Spectral => "Spectral",
+            };
+            let desc = pack.description();
+            let mut lines = vec![
+                Line::from(""),
+                Line::from(vec![
+                    Span::raw("  Category: "),
+                    Span::styled(category, Style::default().fg(Color::Cyan)),
+                ]),
+                Line::from(vec![
+                    Span::raw("  Cost:     "),
+                    Span::styled(
+                        format!("${}", pack.cost()),
+                        Style::default().fg(Color::Yellow),
+                    ),
                 ]),
                 Line::from(""),
             ];

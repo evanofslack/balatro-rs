@@ -45,12 +45,12 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
             }
         }
         Overlay::Consumable(idx) => match key.code {
-            KeyCode::Left | KeyCode::Char('h') => {
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab => {
                 if app.overlay_cursor > 0 {
                     app.overlay_cursor -= 1;
                 }
             }
-            KeyCode::Right | KeyCode::Char('l') => {
+            KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => {
                 if app.overlay_cursor < 1 {
                     app.overlay_cursor += 1;
                 }
@@ -89,12 +89,12 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
             _ => {}
         },
         Overlay::Joker(idx) => match key.code {
-            KeyCode::Left | KeyCode::Char('h') => {
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab => {
                 if app.overlay_cursor > 0 {
                     app.overlay_cursor -= 1;
                 }
             }
-            KeyCode::Right | KeyCode::Char('l') => {
+            KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => {
                 if app.overlay_cursor < 1 {
                     app.overlay_cursor += 1;
                 }
@@ -491,6 +491,8 @@ fn handle_key_tarot(app: &mut AppState, key: KeyEvent) {
     match &app.focus {
         FocusZone::TarotCards => handle_key_tarot_cards(app, key),
         FocusZone::TarotButtons => handle_key_tarot_buttons(app, key),
+        FocusZone::JokerStrip => handle_key_joker_strip(app, key),
+        FocusZone::ConsumableStrip => handle_key_consumable_strip(app, key),
         _ => {
             app.focus = FocusZone::TarotCards;
             app.cursor = 0;
@@ -557,6 +559,16 @@ fn open_inspect(app: &mut AppState) {
         FocusZone::ShopJokers => {
             if let Some(joker) = app.game.shop.jokers.get(app.cursor) {
                 app.overlay = Some(Overlay::Inspect(InspectTarget::Joker(joker.clone())));
+            }
+        }
+        FocusZone::ShopPacks => {
+            if let Some(pack) = app.game.shop.packs.get(app.cursor) {
+                app.overlay = Some(Overlay::Inspect(InspectTarget::Pack(pack.clone())));
+            }
+        }
+        FocusZone::PackContents => {
+            if let Some(target) = crate::ui::pack::inspect_target_for_cursor(app) {
+                app.overlay = Some(Overlay::Inspect(target));
             }
         }
         _ => {}

@@ -18,7 +18,7 @@ use ratatui::style::Color;
 use ratatui::Frame;
 
 const MIN_WIDTH: u16 = 80;
-const MIN_HEIGHT: u16 = 20;
+const MIN_HEIGHT: u16 = 30;
 
 pub fn render(f: &mut Frame, app: &mut AppState) {
     app.widget_rects.clear();

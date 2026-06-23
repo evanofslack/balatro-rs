@@ -164,6 +164,12 @@ fn card_block(card: Card, is_cursor: bool) -> Block<'static> {
         .border_style(Style::default().fg(border_color))
 }
 
+pub fn render_card(f: &mut Frame, card: Card, rect: Rect, is_cursor: bool) {
+    let block = card_block(card, is_cursor);
+    let text = card_inner_text(card);
+    f.render_widget(Paragraph::new(text).block(block), rect);
+}
+
 pub fn render_hand(
     f: &mut Frame,
     app: &mut AppState,
