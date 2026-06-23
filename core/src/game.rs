@@ -485,7 +485,7 @@ impl Game {
             let done = self
                 .open_pack
                 .as_ref()
-                .map_or(false, |s| s.picks_remaining == 0);
+                .is_some_and(|s| s.picks_remaining == 0);
             if done {
                 self.finish_pack();
             }
@@ -574,7 +574,7 @@ impl Game {
         let done = self
             .open_pack
             .as_ref()
-            .map_or(false, |s| s.picks_remaining == 0);
+            .is_some_and(|s| s.picks_remaining == 0);
         if done {
             self.finish_pack();
         }

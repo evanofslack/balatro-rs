@@ -324,7 +324,7 @@ impl PackGenerator {
 
         let choices: Vec<&(PackCategory, PackSize, u32)> = all_choices
             .iter()
-            .filter(|(cat, sz, _)| exclude.map_or(true, |(ec, es)| cat != ec || sz != es))
+            .filter(|(cat, sz, _)| exclude.is_none_or(|(ec, es)| cat != ec || sz != es))
             .collect();
 
         let weights: Vec<u32> = choices.iter().map(|(_, _, w)| *w).collect();
