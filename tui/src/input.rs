@@ -159,16 +159,14 @@ fn handle_key_run_info(app: &mut AppState, key: KeyEvent) {
         }
         KeyCode::Left | KeyCode::Char('h') if matches!(app.run_info_tab, RunInfoTab::Deck) => {
             app.deck_tab = match app.deck_tab {
-                DeckTab::InDeck => DeckTab::Discarded,
-                DeckTab::InHand => DeckTab::InDeck,
-                DeckTab::Discarded => DeckTab::InHand,
+                DeckTab::Remaining => DeckTab::Full,
+                DeckTab::Full => DeckTab::Remaining,
             };
         }
         KeyCode::Right | KeyCode::Char('l') if matches!(app.run_info_tab, RunInfoTab::Deck) => {
             app.deck_tab = match app.deck_tab {
-                DeckTab::InDeck => DeckTab::InHand,
-                DeckTab::InHand => DeckTab::Discarded,
-                DeckTab::Discarded => DeckTab::InDeck,
+                DeckTab::Remaining => DeckTab::Full,
+                DeckTab::Full => DeckTab::Remaining,
             };
         }
         _ => {}
@@ -753,9 +751,8 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
         DeckTab(idx) => {
             use crate::app::DeckTab as DT;
             app.deck_tab = match idx {
-                0 => DT::InDeck,
-                1 => DT::InHand,
-                _ => DT::Discarded,
+                0 => DT::Remaining,
+                _ => DT::Full,
             };
         }
     }
