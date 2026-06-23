@@ -1,4 +1,4 @@
-use crate::action::{Action, MoveDirection};
+use crate::action::{Action, MoveDirection, SortBy};
 use crate::config::Config;
 use crate::error::ActionSpaceError;
 use crate::game::Game;
@@ -30,8 +30,13 @@ const PACK_CONTENTS_MAX: usize = 5;
 // 83: apply tarot
 // 84-88: sell joker
 // 89-90: sell consumable
+// 91-92: buy pack
+// 93-97: pick pack card
+// 98: skip pack
+// 99: sort hand (rank)
+// 100: sort hand (suit)
 //
-// We end up with a vector of length 91 where each index
+// We end up with a vector of length 101 where each index
 // represents a potential action.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
@@ -54,6 +59,7 @@ pub struct ActionSpace {
     pub buy_pack: Vec<usize>,
     pub pick_pack_card: Vec<usize>,
     pub skip_pack: Vec<usize>,
+    pub sort_hand: Vec<usize>,
 }
 
 impl ActionSpace {
@@ -75,6 +81,7 @@ impl ActionSpace {
             + self.buy_pack.len()
             + self.pick_pack_card.len()
             + self.skip_pack.len()
+            + self.sort_hand.len()
     }
 
     fn select_card_min(&self) -> usize {
@@ -213,6 +220,14 @@ impl ActionSpace {
         self.skip_pack_min()
     }
 
+    fn sort_hand_min(&self) -> usize {
+        self.skip_pack_min() + self.skip_pack.len()
+    }
+
+    fn sort_hand_max(&self) -> usize {
+        self.sort_hand_min() + self.sort_hand.len().saturating_sub(1)
+    }
+
     // Not all actions are always legal, by default all actions
     // are masked out, but provide methods to unmask valid.
     pub(crate) fn unmask_select_card(&mut self, i: usize) -> Result<(), ActionSpaceError> {
@@ -323,6 +338,14 @@ impl ActionSpace {
         self.skip_pack[0] = 1;
     }
 
+    pub(crate) fn unmask_sort_hand(&mut self, i: usize) -> Result<(), ActionSpaceError> {
+        if i >= self.sort_hand.len() {
+            return Err(ActionSpaceError::InvalidIndex);
+        }
+        self.sort_hand[i] = 1;
+        Ok(())
+    }
+
     pub fn to_action(&self, index: usize, game: &Game) -> Result<Action, ActionSpaceError> {
         let vec = self.to_vec();
         if let Some(v) = vec.get(index) {
@@ -428,6 +451,14 @@ impl ActionSpace {
             {
                 Ok(Action::SkipPack())
             }
+            n if !self.sort_hand.is_empty()
+                && (self.sort_hand_min()..=self.sort_hand_max()).contains(&n) =>
+            {
+                match n - self.sort_hand_min() {
+                    0 => Ok(Action::SortHand(SortBy::Rank)),
+                    _ => Ok(Action::SortHand(SortBy::Suit)),
+                }
+            }
             _ => Err(ActionSpaceError::InvalidActionConversion),
         }
     }
@@ -451,6 +482,7 @@ impl ActionSpace {
             self.buy_pack.clone(),
             self.pick_pack_card.clone(),
             self.skip_pack.clone(),
+            self.sort_hand.clone(),
         ]
         .concat()
     }
@@ -482,6 +514,7 @@ impl From<Config> for ActionSpace {
             buy_pack: vec![0; PACK_SLOTS],
             pick_pack_card: vec![0; PACK_CONTENTS_MAX],
             skip_pack: vec![0; 1],
+            sort_hand: vec![0; 2],
         }
     }
 }
@@ -507,6 +540,7 @@ impl From<ActionSpace> for Vec<usize> {
             a.buy_pack,
             a.pick_pack_card,
             a.skip_pack,
+            a.sort_hand,
         ]
         .concat()
     }
@@ -555,9 +589,9 @@ mod tests {
         // + 1 cashout + 4 buy_joker + 1 next_round + 1 select_blind
         // + 2 buy_consumable + 2 use_consumable + 1 apply_tarot
         // + 5 sell_joker + 2 sell_consumable
-        // + 2 buy_pack + 5 pick_pack_card + 1 skip_pack = 99
-        assert_eq!(a.size(), 99);
-        assert_eq!(a.to_vec().len(), 99);
+        // + 2 buy_pack + 5 pick_pack_card + 1 skip_pack + 2 sort_hand = 101
+        assert_eq!(a.size(), 101);
+        assert_eq!(a.to_vec().len(), 101);
     }
 
     #[test]

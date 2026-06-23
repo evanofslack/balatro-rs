@@ -1,5 +1,5 @@
 use crate::app::{AppState, DeckTab, FocusZone, Overlay, RunInfoTab};
-use balatro_rs::action::Action;
+use balatro_rs::action::{Action, SortBy};
 use balatro_rs::stage::Stage;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
 
@@ -292,7 +292,7 @@ fn handle_key_blind_buttons(app: &mut AppState, key: KeyEvent) {
             }
         }
         KeyCode::Right => {
-            if app.cursor < 2 {
+            if app.cursor < 3 {
                 app.cursor += 1;
             }
         }
@@ -300,8 +300,13 @@ fn handle_key_blind_buttons(app: &mut AppState, key: KeyEvent) {
             0 => {
                 let _ = app.game.handle_action(Action::Play());
             }
-            1 => {}
+            1 => {
+                let _ = app.game.handle_action(Action::SortHand(SortBy::Rank));
+            }
             2 => {
+                let _ = app.game.handle_action(Action::SortHand(SortBy::Suit));
+            }
+            3 => {
                 let _ = app.game.handle_action(Action::Discard());
             }
             _ => {}
@@ -624,7 +629,13 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
         ActionButton(0) => {
             let _ = app.game.handle_action(Action::Play());
         }
+        ActionButton(1) => {
+            let _ = app.game.handle_action(Action::SortHand(SortBy::Rank));
+        }
         ActionButton(2) => {
+            let _ = app.game.handle_action(Action::SortHand(SortBy::Suit));
+        }
+        ActionButton(3) => {
             let _ = app.game.handle_action(Action::Discard());
         }
         ActionButton(_) => {}

@@ -748,6 +748,14 @@ impl Game {
                 Stage::PackOpen() => self.pick_pack_card(content),
                 _ => Err(GameError::InvalidStage),
             },
+            Action::SortHand(sort_by) => {
+                if self.stage.is_blind() {
+                    self.available.sort(sort_by);
+                    Ok(())
+                } else {
+                    Err(GameError::InvalidAction)
+                }
+            }
             Action::SkipPack() => match self.stage {
                 Stage::PackOpen() => self.skip_pack(),
                 _ => Err(GameError::InvalidStage),

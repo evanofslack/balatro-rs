@@ -76,64 +76,133 @@ fn render_cards(f: &mut Frame, app: &mut AppState, area: Rect) {
 }
 
 fn render_buttons(f: &mut Frame, app: &mut AppState, area: Rect) {
-    let buttons = [
-        ("Play Hand", FocusZone::ActionButtons, 0),
-        ("Sort Hand", FocusZone::ActionButtons, 1),
-        ("Discard", FocusZone::ActionButtons, 2),
-    ];
-
-    let btn_width: u16 = 16;
-    let btn_height: u16 = 3;
-    let total_width = buttons.len() as u16 * (btn_width + 2);
-    let x_start = area.x + area.width.saturating_sub(total_width) / 2;
-
     let focused_btns = app.focus == FocusZone::ActionButtons;
+    let btn_height: u16 = 3;
+    let play_w: u16 = 16;
+    let sort_w: u16 = 22;
+    let discard_w: u16 = 16;
+    let gap: u16 = 2;
+    let total_width = play_w + gap + sort_w + gap + discard_w;
+    let x_start = area.x + area.width.saturating_sub(total_width) / 2;
+    let y = area.y + area.height.saturating_sub(btn_height) / 2;
 
-    for (i, (label, _, btn_idx)) in buttons.iter().enumerate() {
-        let x = x_start + i as u16 * (btn_width + 2);
-        let btn_rect = Rect {
-            x,
-            y: area.y + area.height.saturating_sub(btn_height) / 2,
-            width: btn_width,
+    // Play Hand (cursor 0)
+    {
+        let is_focused = focused_btns && app.cursor == 0;
+        let rect = Rect {
+            x: x_start,
+            y,
+            width: play_w,
             height: btn_height,
         };
-
-        let is_sort = *btn_idx == 1;
-        let is_focused = focused_btns && app.cursor == *btn_idx;
-
-        let style = if is_sort {
-            Style::default().fg(Color::DarkGray)
-        } else if is_focused {
+        let style = if is_focused {
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };
-
-        let border_type = if is_focused {
-            BorderType::Double
-        } else {
-            BorderType::Plain
-        };
-        let border_style = if is_focused {
-            Style::default().fg(Color::Yellow)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        };
-
         let block = Block::default()
             .borders(Borders::ALL)
-            .border_type(border_type)
-            .border_style(border_style);
-
-        let para = Paragraph::new(Line::from(Span::styled(label.to_string(), style)))
+            .border_type(if is_focused {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            })
+            .border_style(if is_focused {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            });
+        let para = Paragraph::new(Line::from(Span::styled("Play Hand", style)))
             .block(block)
             .alignment(Alignment::Center);
+        f.render_widget(para, rect);
+        app.widget_rects.insert(WidgetId::ActionButton(0), rect);
+    }
 
-        f.render_widget(para, btn_rect);
-        app.widget_rects
-            .insert(WidgetId::ActionButton(*btn_idx), btn_rect);
+    // Sort Hand box (cursors 1=Rank, 2=Suit)
+    {
+        let sort_focused = focused_btns && (app.cursor == 1 || app.cursor == 2);
+        let rect = Rect {
+            x: x_start + play_w + gap,
+            y,
+            width: sort_w,
+            height: btn_height,
+        };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(if sort_focused {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            })
+            .border_style(if sort_focused {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            })
+            .title("Sort Hand")
+            .title_alignment(Alignment::Center);
+        let rank_style = if focused_btns && app.cursor == 1 {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let suit_style = if focused_btns && app.cursor == 2 {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let inner = block.inner(rect);
+        f.render_widget(block, rect);
+        let line = Line::from(vec![
+            Span::styled("Rank", rank_style),
+            Span::styled("  |  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Suit", suit_style),
+        ]);
+        f.render_widget(Paragraph::new(line).alignment(Alignment::Center), inner);
+        app.widget_rects.insert(WidgetId::ActionButton(1), rect);
+        app.widget_rects.insert(WidgetId::ActionButton(2), rect);
+    }
+
+    // Discard (cursor 3)
+    {
+        let is_focused = focused_btns && app.cursor == 3;
+        let rect = Rect {
+            x: x_start + play_w + gap + sort_w + gap,
+            y,
+            width: discard_w,
+            height: btn_height,
+        };
+        let style = if is_focused {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(if is_focused {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            })
+            .border_style(if is_focused {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            });
+        let para = Paragraph::new(Line::from(Span::styled("Discard", style)))
+            .block(block)
+            .alignment(Alignment::Center);
+        f.render_widget(para, rect);
+        app.widget_rects.insert(WidgetId::ActionButton(3), rect);
     }
 }
 

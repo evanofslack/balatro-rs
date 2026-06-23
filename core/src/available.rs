@@ -1,7 +1,20 @@
-use crate::action::MoveDirection;
-use crate::card::Card;
+use crate::action::{MoveDirection, SortBy};
+use crate::card::{Card, Enhancement, Suit};
 use crate::error::GameError;
 use itertools::Itertools;
+use std::cmp::Ordering;
+
+fn suit_order(card: &Card) -> u8 {
+    if card.enhancement == Some(Enhancement::Wild) {
+        return 4;
+    }
+    match card.suit {
+        Suit::Spade => 0,
+        Suit::Heart => 1,
+        Suit::Club => 2,
+        Suit::Diamond => 3,
+    }
+}
 
 /// Available is the set of cards drawn from deck and available for
 /// moving, selecting, playing and discarding.
@@ -107,6 +120,33 @@ impl Available {
         }
     }
 
+    pub(crate) fn sort(&mut self, sort_by: SortBy) {
+        match sort_by {
+            SortBy::Rank => self.sort_by_rank(),
+            SortBy::Suit => self.sort_by_suit(),
+        }
+    }
+
+    fn sort_by_rank(&mut self) {
+        self.cards.sort_by(|(a, _), (b, _)| {
+            let a_stone = a.enhancement == Some(Enhancement::Stone);
+            let b_stone = b.enhancement == Some(Enhancement::Stone);
+            match (a_stone, b_stone) {
+                (true, false) => Ordering::Greater,
+                (false, true) => Ordering::Less,
+                _ => b.value.cmp(&a.value).then_with(|| a.suit.cmp(&b.suit)),
+            }
+        });
+    }
+
+    fn sort_by_suit(&mut self) {
+        self.cards.sort_by(|(a, _), (b, _)| {
+            suit_order(a)
+                .cmp(&suit_order(b))
+                .then_with(|| b.value.cmp(&a.value))
+        });
+    }
+
     pub fn cards(&self) -> Vec<Card> {
         self.cards.iter().map(|(c, _)| *c).collect()
     }
@@ -165,5 +205,45 @@ mod tests {
 
         let res = a.move_card(MoveDirection::Right, ace);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_sort_by_rank() {
+        let two = Card::new(Value::Two, Suit::Heart);
+        let ace = Card::new(Value::Ace, Suit::Spade);
+        let king = Card::new(Value::King, Suit::Diamond);
+        let mut stone = Card::new(Value::Five, Suit::Club);
+        stone.enhancement = Some(Enhancement::Stone);
+
+        let mut a = Available::default();
+        a.extend(vec![two, stone, king, ace]);
+        a.sort(SortBy::Rank);
+
+        let cards = a.cards();
+        assert_eq!(cards[0].value, Value::Ace);
+        assert_eq!(cards[1].value, Value::King);
+        assert_eq!(cards[2].value, Value::Two);
+        assert_eq!(cards[3].enhancement, Some(Enhancement::Stone));
+    }
+
+    #[test]
+    fn test_sort_by_suit() {
+        let spade = Card::new(Value::Two, Suit::Spade);
+        let heart = Card::new(Value::King, Suit::Heart);
+        let club = Card::new(Value::Ace, Suit::Club);
+        let diamond = Card::new(Value::Three, Suit::Diamond);
+        let mut wild = Card::new(Value::Five, Suit::Heart);
+        wild.enhancement = Some(Enhancement::Wild);
+
+        let mut a = Available::default();
+        a.extend(vec![diamond, wild, club, heart, spade]);
+        a.sort(SortBy::Suit);
+
+        let cards = a.cards();
+        assert_eq!(cards[0].suit, Suit::Spade);
+        assert_eq!(cards[1].suit, Suit::Heart);
+        assert_eq!(cards[2].suit, Suit::Club);
+        assert_eq!(cards[3].suit, Suit::Diamond);
+        assert_eq!(cards[4].enhancement, Some(Enhancement::Wild));
     }
 }
