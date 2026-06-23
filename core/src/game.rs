@@ -1580,4 +1580,144 @@ mod tests {
         g.sell_joker(0).expect("sell joker");
         assert!(g.effect_registry.on_score.is_empty());
     }
+
+    #[test]
+    fn test_buy_pack() {
+        use crate::pack::{Pack, PackCategory, PackSize};
+        use crate::planet::Planets;
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.money = 100;
+        let pack = Pack {
+            category: PackCategory::Celestial,
+            size: PackSize::Normal,
+            contents: vec![PackContent::Planet(Planets::Mercury)],
+        };
+        let cost = pack.cost();
+        let picks = pack.picks_allowed();
+        g.shop.packs.push(pack.clone());
+        g.buy_pack(pack).expect("buy pack");
+        assert_eq!(g.stage, Stage::PackOpen());
+        assert_eq!(g.money, 100 - cost);
+        let state = g.open_pack.as_ref().expect("open pack state");
+        assert_eq!(state.picks_remaining, picks);
+    }
+
+    #[test]
+    fn test_skip_pack() {
+        let mut g = Game::default();
+        g.start();
+        g.open_pack = Some(OpenPackState {
+            picks_remaining: 1,
+            description: String::new(),
+            contents: vec![],
+        });
+        g.stage = Stage::PackOpen();
+        g.skip_pack().expect("skip pack");
+        assert_eq!(g.stage, Stage::Shop());
+        assert!(g.open_pack.is_none());
+    }
+
+    #[test]
+    fn test_pick_pack_card_planet() {
+        use crate::planet::Planets;
+        let mut g = Game::default();
+        g.start();
+        g.open_pack = Some(OpenPackState {
+            picks_remaining: 1,
+            description: String::new(),
+            contents: vec![PackContent::Planet(Planets::Mercury)],
+        });
+        g.stage = Stage::PackOpen();
+        let level_before = g.planetarium.level(HandRank::OnePair).level;
+        g.pick_pack_card(PackContent::Planet(Planets::Mercury))
+            .expect("pick planet");
+        assert_eq!(g.stage, Stage::Shop());
+        assert!(g.open_pack.is_none());
+        assert_eq!(g.planetarium.level(HandRank::OnePair).level, level_before + 1);
+    }
+
+    #[test]
+    fn test_pick_pack_card_joker() {
+        use crate::joker::{Jokers, TheJoker};
+        let mut g = Game::default();
+        g.start();
+        let joker = Jokers::TheJoker(TheJoker::default());
+        let before_len = g.jokers.len();
+        g.open_pack = Some(OpenPackState {
+            picks_remaining: 1,
+            description: String::new(),
+            contents: vec![PackContent::Joker(joker.clone())],
+        });
+        g.stage = Stage::PackOpen();
+        g.pick_pack_card(PackContent::Joker(joker)).expect("pick joker");
+        assert_eq!(g.jokers.len(), before_len + 1);
+        assert_eq!(g.stage, Stage::Shop());
+        assert!(g.open_pack.is_none());
+    }
+
+    #[test]
+    fn test_pick_pack_card_joker_slots_full() {
+        use crate::joker::{Jokers, TheJoker};
+        let mut g = Game::default();
+        g.start();
+        let slots = g.config.joker_slots;
+        for _ in 0..slots {
+            g.jokers.push(Jokers::TheJoker(TheJoker::default()));
+        }
+        let joker = Jokers::TheJoker(TheJoker::default());
+        g.open_pack = Some(OpenPackState {
+            picks_remaining: 1,
+            description: String::new(),
+            contents: vec![PackContent::Joker(joker.clone())],
+        });
+        g.stage = Stage::PackOpen();
+        let res = g.pick_pack_card(PackContent::Joker(joker));
+        assert!(matches!(res, Err(GameError::NoAvailableSlot)));
+    }
+
+    #[test]
+    fn test_negative_joker_from_pack_expands_slots() {
+        use crate::joker::{Jokers, TheJoker};
+        let mut g = Game::default();
+        g.start();
+        let slots = g.config.joker_slots;
+        for _ in 0..slots {
+            g.jokers.push(Jokers::TheJoker(TheJoker::default()));
+        }
+        let mut neg_joker = Jokers::TheJoker(TheJoker::default());
+        neg_joker.set_edition(Edition::Negative);
+        g.open_pack = Some(OpenPackState {
+            picks_remaining: 1,
+            description: String::new(),
+            contents: vec![PackContent::Joker(neg_joker.clone())],
+        });
+        g.stage = Stage::PackOpen();
+        g.pick_pack_card(PackContent::Joker(neg_joker))
+            .expect("pick negative joker from full pack");
+        assert_eq!(g.config.joker_slots, slots + 1);
+        assert_eq!(g.jokers.len(), slots + 1);
+        assert_eq!(g.stage, Stage::Shop());
+        assert!(g.open_pack.is_none());
+    }
+
+    #[test]
+    fn test_pick_pack_card_targeting_tarot() {
+        let mut g = Game::default();
+        g.start();
+        assert!(Tarot::Lovers.requires_targets());
+        g.open_pack = Some(OpenPackState {
+            picks_remaining: 1,
+            description: String::new(),
+            contents: vec![PackContent::Tarot(Tarot::Lovers)],
+        });
+        g.stage = Stage::PackOpen();
+        g.pick_pack_card(PackContent::Tarot(Tarot::Lovers))
+            .expect("pick targeting tarot");
+        assert!(matches!(g.stage, Stage::TarotHand(Tarot::Lovers)));
+        assert_eq!(g.tarot_prev_stage, Some(Stage::PackOpen()));
+        // picks_remaining decremented later in apply_tarot, not here
+        assert_eq!(g.open_pack.as_ref().unwrap().picks_remaining, 1);
+    }
 }
