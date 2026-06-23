@@ -9,6 +9,7 @@ use crate::effect::{EffectRegistry, Effects};
 use crate::error::GameError;
 use crate::hand::{MadeHand, SelectHand};
 use crate::joker::{Joker, Jokers};
+use crate::pack::{OpenPackState, Pack, PackCategory, PackContent};
 use crate::planet::Planetarium;
 use crate::rank::HandRank;
 use crate::shop::Shop;
@@ -61,6 +62,10 @@ pub struct Game {
     pub last_score: usize,
     // track stage so we can come back to it after temp tarot stage
     pub(crate) tarot_prev_stage: Option<Stage>,
+
+    // open pack state (set when a pack is purchased and being opened)
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub open_pack: Option<OpenPackState>,
 }
 
 impl Game {
@@ -94,6 +99,7 @@ impl Game {
             last_consumable_used: None,
             last_score: 0,
             tarot_prev_stage: None,
+            open_pack: None,
             config,
         }
     }
@@ -463,14 +469,130 @@ impl Game {
         if t != Tarot::Fool {
             self.last_consumable_used = Some(Consumable::Tarot(t));
         }
-        if !prev.is_blind() {
+        // Don't clear the hand when returning to PackOpen; finish_pack handles cleanup
+        if !prev.is_blind() && !prev.is_pack_open() {
             let cards = self.available.cards();
             self.available.empty();
             self.deck.extend(cards);
             self.deck.shuffle();
         }
         self.stage = prev;
+        // Returning to a pack open: decrement picks and possibly finish
+        if prev.is_pack_open() {
+            if let Some(ref mut state) = self.open_pack {
+                state.picks_remaining = state.picks_remaining.saturating_sub(1);
+            }
+            let done = self.open_pack.as_ref().map_or(false, |s| s.picks_remaining == 0);
+            if done {
+                self.finish_pack();
+            }
+        }
         Ok(())
+    }
+
+    pub(crate) fn buy_pack(&mut self, pack: Pack) -> Result<(), GameError> {
+        if self.stage != Stage::Shop() {
+            return Err(GameError::InvalidStage);
+        }
+        if pack.cost() > self.money {
+            return Err(GameError::InvalidBalance);
+        }
+        self.shop.buy_pack(&pack)?;
+        self.money -= pack.cost();
+
+        // Arcana packs draw a hand for the player to apply tarots against
+        if pack.category == PackCategory::Arcana {
+            let n = self.config.available.min(self.deck.len());
+            self.draw(n);
+        }
+
+        self.open_pack = Some(OpenPackState {
+            picks_remaining: pack.picks_allowed(),
+            description: pack.description(),
+            contents: pack.contents,
+        });
+        self.stage = Stage::PackOpen();
+        Ok(())
+    }
+
+    pub(crate) fn pick_pack_card(&mut self, content: PackContent) -> Result<(), GameError> {
+        if self.stage != Stage::PackOpen() {
+            return Err(GameError::InvalidStage);
+        }
+
+        // Remove the chosen content from the pack
+        {
+            let state = self.open_pack.as_mut().ok_or(GameError::InvalidAction)?;
+            let pos = state
+                .contents
+                .iter()
+                .position(|c| c == &content)
+                .ok_or(GameError::InvalidAction)?;
+            state.contents.remove(pos);
+        }
+
+        // Targeting tarots enter TarotHand; picks_remaining decremented later in apply_tarot
+        if let PackContent::Tarot(t) = &content {
+            if t.requires_targets() {
+                self.tarot_prev_stage = Some(Stage::PackOpen());
+                self.stage = Stage::TarotHand(*t);
+                return Ok(());
+            }
+        }
+
+        match content {
+            PackContent::Tarot(t) => {
+                t.apply(self)?;
+            }
+            PackContent::Planet(p) => {
+                self.planetarium.level_up(p.hand_rank());
+            }
+            PackContent::Joker(j) => {
+                if j.edition() == Edition::Negative {
+                    self.config.joker_slots =
+                        (self.config.joker_slots + 1).min(self.config.joker_slots_max);
+                }
+                if self.jokers.len() >= self.config.joker_slots {
+                    return Err(GameError::NoAvailableSlot);
+                }
+                self.jokers.push(j);
+                self.effect_registry
+                    .register_jokers(self.jokers.clone(), &self.clone());
+            }
+            PackContent::PlayingCard(c) => {
+                self.deck.push(c);
+            }
+        }
+
+        if let Some(ref mut state) = self.open_pack {
+            state.picks_remaining = state.picks_remaining.saturating_sub(1);
+        }
+
+        let done = self.open_pack.as_ref().map_or(false, |s| s.picks_remaining == 0);
+        if done {
+            self.finish_pack();
+        }
+        Ok(())
+    }
+
+    pub(crate) fn skip_pack(&mut self) -> Result<(), GameError> {
+        if self.stage != Stage::PackOpen() {
+            return Err(GameError::InvalidStage);
+        }
+        self.finish_pack();
+        Ok(())
+    }
+
+    fn finish_pack(&mut self) {
+        // Return any drawn hand (Arcana packs draw cards for tarot targeting)
+        if !self.available.cards().is_empty() {
+            let cards = self.available.cards();
+            self.available.empty();
+            self.deck.extend(cards);
+            self.deck.shuffle();
+        }
+        self.open_pack = None;
+        self.stage = Stage::Shop();
     }
 
     fn select_blind(&mut self, blind: Blind) -> Result<(), GameError> {
@@ -612,6 +734,18 @@ impl Game {
             Action::ApplyTarot() => self.apply_tarot(),
             Action::SellJoker(idx) => self.sell_joker(idx),
             Action::SellConsumable(idx) => self.sell_consumable(idx),
+            Action::BuyPack(pack) => match self.stage {
+                Stage::Shop() => self.buy_pack(pack),
+                _ => Err(GameError::InvalidStage),
+            },
+            Action::PickPackCard(content) => match self.stage {
+                Stage::PackOpen() => self.pick_pack_card(content),
+                _ => Err(GameError::InvalidStage),
+            },
+            Action::SkipPack() => match self.stage {
+                Stage::PackOpen() => self.skip_pack(),
+                _ => Err(GameError::InvalidStage),
+            },
         }
     }
 

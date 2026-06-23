@@ -11,6 +11,7 @@ pub mod game;
 pub mod generator;
 pub mod hand;
 pub mod joker;
+pub mod pack;
 pub mod planet;
 pub mod rank;
 pub mod shop;

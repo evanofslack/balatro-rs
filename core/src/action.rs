@@ -1,6 +1,7 @@
 use crate::card::Card;
 use crate::consumable::Consumable;
 use crate::joker::Jokers;
+use crate::pack::{Pack, PackContent};
 use crate::stage::Blind;
 #[cfg(feature = "python")]
 use pyo3::pyclass;
@@ -46,6 +47,9 @@ pub enum Action {
     ApplyTarot(),
     SellJoker(usize),
     SellConsumable(usize),
+    BuyPack(Pack),
+    PickPackCard(PackContent),
+    SkipPack(),
 }
 
 impl fmt::Display for Action {
@@ -87,6 +91,9 @@ impl fmt::Display for Action {
             Self::ApplyTarot() => write!(f, "ApplyTarot"),
             Self::SellJoker(idx) => write!(f, "SellJoker: {}", idx),
             Self::SellConsumable(idx) => write!(f, "SellConsumable: {}", idx),
+            Self::BuyPack(pack) => write!(f, "BuyPack: {}", pack.name()),
+            Self::PickPackCard(content) => write!(f, "PickPackCard: {}", content.name()),
+            Self::SkipPack() => write!(f, "SkipPack"),
         }
     }
 }
