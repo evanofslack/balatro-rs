@@ -134,7 +134,10 @@ impl Available {
             match (a_stone, b_stone) {
                 (true, false) => Ordering::Greater,
                 (false, true) => Ordering::Less,
-                _ => b.value.cmp(&a.value).then_with(|| suit_order(a).cmp(&suit_order(b))),
+                _ => b
+                    .value
+                    .cmp(&a.value)
+                    .then_with(|| suit_order(a).cmp(&suit_order(b))),
             }
         });
     }

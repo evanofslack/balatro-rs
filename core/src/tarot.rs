@@ -4,7 +4,6 @@ use crate::game::Game;
 use crate::joker::Joker;
 #[cfg(feature = "python")]
 use pyo3::pyclass;
-use rand::prelude::*;
 use strum::{EnumIter, IntoEnumIterator};
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -269,7 +268,8 @@ impl Tarot {
                     if game.consumables.len() >= slots {
                         break;
                     }
-                    let planet = gen.gen_planet_consumable(&game.planetarium, &[]);
+                    let planetarium = game.planetarium.clone();
+                    let planet = gen.gen_planet_consumable(&planetarium, &[], &mut game.rng);
                     game.consumables.push(planet);
                 }
             }
@@ -280,13 +280,15 @@ impl Tarot {
                     if game.consumables.len() >= slots {
                         break;
                     }
-                    let tarot = gen.gen_tarot_consumable();
+                    let tarot = gen.gen_tarot_consumable(&mut game.rng);
                     game.consumables.push(tarot);
                 }
             }
             Self::Judgement => {
                 if game.jokers.len() < game.config.joker_slots {
-                    let joker = crate::shop::JokerGenerator::new().gen_joker(game.prob_mult);
+                    let prob_mult = game.prob_mult;
+                    let joker =
+                        crate::shop::JokerGenerator::new().gen_joker(prob_mult, &mut game.rng);
                     game.jokers.push(joker);
                 }
             }
@@ -301,9 +303,9 @@ impl Tarot {
         Ok(())
     }
 
-    pub fn random() -> Self {
+    pub fn random(rng: &mut impl rand::Rng) -> Self {
         let all: Vec<Self> = Self::iter().collect();
-        let i = thread_rng().gen_range(0..all.len());
+        let i = rng.gen_range(0..all.len());
         all[i]
     }
 }

@@ -4,7 +4,7 @@ mod ui;
 
 use anyhow::Result;
 use app::AppState;
-use balatro_rs::game::Game;
+use balatro_rs::{config::Config, game::Game};
 use clap::Parser;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
@@ -19,6 +19,8 @@ use std::{fs, io, time::Duration};
 struct Args {
     #[arg(long, value_name = "FILE")]
     load: Option<String>,
+    #[arg(long, value_name = "SEED")]
+    seed: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -30,7 +32,15 @@ fn main() -> Result<()> {
             Game::from_json(&contents)?
         }
         None => {
-            let mut g = Game::default();
+            let mut config = Config::default();
+            match args.seed {
+                None => {}
+                Some(s) => match s.parse::<u64>() {
+                    Ok(u) => config.seed = Some(u),
+                    Err(_) => config.seed_str = Some(s),
+                },
+            }
+            let mut g = Game::new(config);
             g.start();
             g
         }

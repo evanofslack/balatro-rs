@@ -17,7 +17,13 @@ use crate::stage::{Blind, End, Stage};
 use crate::tarot::Tarot;
 
 use rand::prelude::*;
+use rand_chacha::ChaCha8Rng;
 use std::fmt;
+
+#[cfg(feature = "serde")]
+fn default_rng() -> ChaCha8Rng {
+    ChaCha8Rng::from_entropy()
+}
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
@@ -60,6 +66,13 @@ pub struct Game {
     pub last_consumable_used: Option<Consumable>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub last_score: usize,
+
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub seed: u64,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub seed_str: Option<String>,
+    #[cfg_attr(feature = "serde", serde(default = "default_rng"))]
+    pub(crate) rng: ChaCha8Rng,
     // track stage so we can come back to it after temp tarot stage
     pub(crate) tarot_prev_stage: Option<Stage>,
 
@@ -71,6 +84,17 @@ pub struct Game {
 impl Game {
     pub fn new(config: Config) -> Self {
         let ante_start = Ante::try_from(config.ante_start).unwrap_or(Ante::One);
+        let (seed, seed_str, rng) = match (config.seed_str.clone(), config.seed) {
+            (Some(s), _) => {
+                let u = crate::seed_from_str(&s);
+                (u, Some(s), ChaCha8Rng::seed_from_u64(u))
+            }
+            (None, Some(u)) => (u, None, ChaCha8Rng::seed_from_u64(u)),
+            (None, None) => {
+                let u: u64 = thread_rng().gen();
+                (u, None, ChaCha8Rng::seed_from_u64(u))
+            }
+        };
         Self {
             shop: Shop::new(),
             planetarium: Planetarium::new(),
@@ -100,6 +124,9 @@ impl Game {
             last_score: 0,
             tarot_prev_stage: None,
             open_pack: None,
+            seed,
+            seed_str,
+            rng,
             config,
         }
     }
@@ -126,7 +153,7 @@ impl Game {
         self.deck.append(&mut self.discarded);
         self.deck.extend(self.available.cards());
         self.available.empty();
-        self.deck.shuffle();
+        self.deck.shuffle(&mut self.rng);
     }
 
     // draw from deck to available
@@ -144,7 +171,7 @@ impl Game {
         // add available back to deck and empty
         self.deck.extend(self.available.cards());
         self.available.empty();
-        self.deck.shuffle();
+        self.deck.shuffle(&mut self.rng);
         self.draw(self.config.available);
     }
 
@@ -222,9 +249,9 @@ impl Game {
         self.deck.mutate_card(id, f);
     }
 
-    // RNG roll where we can manually influence the odds
-    pub fn prob_roll(&self, numerator: u32, denominator: u32) -> bool {
-        thread_rng().gen_ratio((numerator * self.prob_mult).min(denominator), denominator)
+    pub fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool {
+        self.rng
+            .gen_ratio((numerator * self.prob_mult).min(denominator), denominator)
     }
 
     pub fn calc_score(&mut self, mut hand: MadeHand) -> usize {
@@ -339,7 +366,7 @@ impl Game {
         let planetarium = self.planetarium.clone();
         let held = self.consumables.clone();
         self.shop
-            .refresh(&planetarium, &held, false, self.prob_mult);
+            .refresh(&planetarium, &held, false, self.prob_mult, &mut self.rng);
         Ok(())
     }
 
@@ -474,7 +501,7 @@ impl Game {
             let cards = self.available.cards();
             self.available.empty();
             self.deck.extend(cards);
-            self.deck.shuffle();
+            self.deck.shuffle(&mut self.rng);
         }
         self.stage = prev;
         // Returning to a pack open: decrement picks and possibly finish
@@ -595,7 +622,7 @@ impl Game {
             let cards = self.available.cards();
             self.available.empty();
             self.deck.extend(cards);
-            self.deck.shuffle();
+            self.deck.shuffle(&mut self.rng);
         }
         self.open_pack = None;
         self.stage = Stage::Shop();
@@ -1065,12 +1092,11 @@ mod tests {
         g.start();
         g.stage = Stage::Shop();
         g.money = 10;
-        g.shop.refresh(
-            &g.planetarium.clone(),
-            &g.consumables.clone(),
-            false,
-            g.prob_mult,
-        );
+        let planetarium = g.planetarium.clone();
+        let consumables = g.consumables.clone();
+        let prob_mult = g.prob_mult;
+        g.shop
+            .refresh(&planetarium, &consumables, false, prob_mult, &mut g.rng);
 
         let j1 = g.shop.joker_from_index(0).expect("is joker");
         g.buy_joker(j1.clone()).expect("buy joker");

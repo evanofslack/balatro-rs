@@ -9,6 +9,7 @@ keywords = ["balatro", "game-engine", "move-generator"]
 
 [dependencies]
 rand = "~0.8.5"
+rand_chacha = "0.3"
 thiserror = "~1.0.61"
 serde = { version = "~1.0.215", optional = true, features = ["derive"] }
 serde_json = { version = "~1.0.118", optional = true }
@@ -26,7 +27,7 @@ criterion = "0.3"
 [features]
 default = ["serde", "python"]
 python = ["dep:pyo3"]
-serde = ["dep:serde", "dep:serde_json", "uuid?/serde"]
+serde = ["dep:serde", "dep:serde_json", "uuid?/serde", "rand_chacha/serde1"]
 colored = ["dep:colored"]
 
 [[bench]]

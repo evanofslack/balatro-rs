@@ -85,11 +85,31 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
         }
     }
 
+    let seed_label = app
+        .game
+        .seed_str
+        .as_deref()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| app.game.seed.to_string());
+    let seed_text = format!("Seed: {}  ", seed_label);
+    let seed_w = seed_text.len() as u16;
+    let footer = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(0), Constraint::Length(seed_w)])
+        .split(chunks[3]);
     f.render_widget(
         Paragraph::new(Span::styled(
             "  Tab next  ←/→ deck view  Esc / r close",
             Style::default().fg(Color::DarkGray),
         )),
-        chunks[3],
+        footer[0],
+    );
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Seed: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(seed_label, Style::default().fg(Color::White)),
+            Span::raw("  "),
+        ])),
+        footer[1],
     );
 }

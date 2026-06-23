@@ -1,4 +1,4 @@
-default: dev
+default: pre
 
 test:
     cargo test
@@ -15,13 +15,13 @@ check:
 build:
     cargo build
 
+pre: test fmt check lint 
+
 python-dev:
     cd pylatro && maturin develop
 
 bench:
     cargo bench -p balatro-rs
-
-dev: fmt check
 
 cli:
     cargo run -p balatro-cli
@@ -31,3 +31,6 @@ tui:
 
 tui-load FILE:
     cargo run -p balatro-tui -- --load {{FILE}}
+
+tui-seed SEED:
+    cargo run -p balatro-tui -- --seed {{SEED}}

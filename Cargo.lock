@@ -110,6 +110,7 @@ dependencies = [
  "itertools 0.13.0",
  "pyo3",
  "rand",
+ "rand_chacha",
  "serde",
  "serde_json",
  "strum",
@@ -837,6 +838,7 @@ checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
 dependencies = [
  "ppv-lite86",
  "rand_core",
+ "serde",
 ]
 
 [[package]]
