@@ -67,7 +67,9 @@ pub struct Game {
     #[cfg_attr(feature = "serde", serde(default))]
     pub last_score: usize,
 
+    #[cfg_attr(feature = "serde", serde(default))]
     pub seed: u64,
+    #[cfg_attr(feature = "serde", serde(default))]
     pub seed_str: Option<String>,
     #[cfg_attr(feature = "serde", serde(default = "default_rng"))]
     pub(crate) rng: ChaCha8Rng,
