@@ -54,7 +54,7 @@ fn render_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         .split(area);
 
     render_jokers_for_sale(f, app, chunks[0]);
-    render_consumables_for_sale(f, app, chunks[1]);
+    render_packs_for_sale(f, app, chunks[1]);
 }
 
 fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
@@ -147,9 +147,9 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
     }
 }
 
-fn render_consumables_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
+fn render_packs_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
     let label = Paragraph::new(Span::styled(
-        "Consumables",
+        "Booster Packs",
         Style::default().fg(Color::DarkGray),
     ));
     let label_area = Rect {
@@ -160,24 +160,27 @@ fn render_consumables_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
     };
     f.render_widget(label, label_area);
 
-    let consumables = app.game.shop.consumables.clone();
-    let focused = app.focus == FocusZone::ShopConsumables;
+    let packs = app.game.shop.packs.clone();
+    let focused = app.focus == FocusZone::ShopPacks;
 
-    for (i, c) in consumables.iter().enumerate() {
+    for (i, pack) in packs.iter().enumerate() {
         let x = area.x + 1;
-        let y = area.y + 1 + i as u16 * (ITEM_H / 2 + 1);
-        if y + ITEM_H / 2 > area.y + area.height {
+        const PACK_H: u16 = 7;
+        let y = area.y + 1 + i as u16 * (PACK_H + 1);
+        if y + PACK_H > area.y + area.height {
             break;
         }
         let item_rect = Rect {
             x,
             y,
             width: area.width.saturating_sub(2),
-            height: ITEM_H / 2,
+            height: PACK_H,
         };
 
         let is_cursor = focused && app.cursor == i;
-        let can_afford = app.game.money >= c.cost();
+        let can_afford = app.game.money >= pack.cost();
+
+        let category_color = pack_category_color(&pack.category);
 
         let border_type = if is_cursor {
             BorderType::Double
@@ -187,43 +190,52 @@ fn render_consumables_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         let border_color = if is_cursor {
             Color::Yellow
         } else if can_afford {
-            Color::Cyan
+            category_color
         } else {
             Color::DarkGray
         };
 
         let block = Block::default()
             .title(Span::styled(
-                format!(" {} ", c.name()),
+                format!(" {} ", pack.name()),
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(category_color)
                     .add_modifier(Modifier::BOLD),
             ))
             .borders(Borders::ALL)
             .border_type(border_type)
             .border_style(Style::default().fg(border_color));
 
-        let lines = vec![Line::from(vec![
-            Span::styled(
-                c.type_label().to_string(),
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                format!("${}", c.cost()),
-                Style::default()
-                    .fg(if can_afford {
-                        Color::Yellow
-                    } else {
-                        Color::DarkGray
-                    })
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ])];
+        let inner_w = item_rect.width.saturating_sub(2) as usize;
+        let desc = pack.description();
+        let mut lines: Vec<Line> = crate::ui::wrap(&desc, inner_w)
+            .into_iter()
+            .map(|s| Line::from(Span::styled(s, Style::default().fg(Color::White))))
+            .collect();
+        lines.push(Line::from(Span::styled(
+            format!("${}", pack.cost()),
+            Style::default()
+                .fg(if can_afford {
+                    Color::Yellow
+                } else {
+                    Color::DarkGray
+                })
+                .add_modifier(Modifier::BOLD),
+        )));
         let para = Paragraph::new(Text::from(lines)).block(block);
         f.render_widget(para, item_rect);
-        app.widget_rects
-            .insert(WidgetId::ShopConsumable(i), item_rect);
+        app.widget_rects.insert(WidgetId::ShopPack(i), item_rect);
+    }
+}
+
+fn pack_category_color(category: &balatro_rs::pack::PackCategory) -> Color {
+    use balatro_rs::pack::PackCategory;
+    match category {
+        PackCategory::Arcana => Color::Cyan,
+        PackCategory::Celestial => Color::Blue,
+        PackCategory::Buffoon => Color::Magenta,
+        PackCategory::Standard => Color::White,
+        PackCategory::Spectral => Color::LightGreen,
     }
 }
 

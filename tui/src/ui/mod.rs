@@ -3,6 +3,7 @@ pub mod cards;
 pub mod end;
 pub mod joker_strip;
 pub mod overlay;
+pub mod pack;
 pub mod postblind;
 pub mod preblind;
 pub mod shop;
@@ -35,6 +36,7 @@ pub fn render(f: &mut Frame, app: &mut AppState) {
         Stage::PostBlind() => postblind::render(f, app, area),
         Stage::Shop() => shop::render(f, app, area),
         Stage::TarotHand(_) => tarot::render(f, app, area),
+        Stage::PackOpen() => pack::render(f, app, area),
         Stage::End(_) => end::render(f, app, area),
     }
 

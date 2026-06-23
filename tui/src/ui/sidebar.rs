@@ -67,6 +67,12 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
                 .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
         )),
+        Stage::PackOpen() => Line::from(Span::styled(
+            "Pack Open",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
         Stage::End(_) => Line::from(Span::styled(
             "Game Over",
             Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),

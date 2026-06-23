@@ -9,7 +9,9 @@ pub enum WidgetId {
     JokerSlot(usize),
     ConsumableSlot(usize),
     ShopJoker(usize),
-    ShopConsumable(usize),
+    ShopPack(usize),
+    PackContent(usize),
+    SkipPackButton,
     BlindOption(usize),
     CashOutButton,
     NextRoundButton,
@@ -25,9 +27,11 @@ pub enum FocusZone {
     JokerStrip,
     ConsumableStrip,
     ShopJokers,
-    ShopConsumables,
+    ShopPacks,
     ShopNextRound,
     BlindSelect,
+    PackContents,
+    PackSkip,
     CashOutButton,
     TarotCards,
     TarotButtons,
@@ -115,30 +119,72 @@ impl AppState {
             Stage::PostBlind() => FocusZone::CashOutButton,
             Stage::Shop() => FocusZone::ShopJokers,
             Stage::TarotHand(_) => FocusZone::TarotCards,
+            Stage::PackOpen() => FocusZone::PackContents,
             Stage::End(_) => FocusZone::CashOutButton,
         }
     }
 
     pub fn sync_focus_to_stage(&mut self) {
         self.focus = self.default_focus_for_stage();
-        self.cursor = 0;
+        self.cursor = self.default_cursor_for_focus();
+    }
+
+    fn default_cursor_for_focus(&self) -> usize {
+        use balatro_rs::stage::{Blind, Stage};
+        if matches!(self.game.stage, Stage::PreBlind()) {
+            // Start on the first selectable blind so the cursor isn't on a cleared one
+            let blinds = [Blind::Small, Blind::Big, Blind::Boss];
+            return blinds
+                .iter()
+                .enumerate()
+                .find(|(_, b)| {
+                    self.game
+                        .gen_actions()
+                        .any(|a| matches!(a, balatro_rs::action::Action::SelectBlind(x) if &x == *b))
+                })
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+        }
+        0
     }
 
     pub fn tab_next(&mut self) {
         use balatro_rs::stage::Stage;
+        let has_jokers = !self.game.jokers.is_empty();
+        let has_consumables = !self.game.consumables.is_empty();
         self.focus = match (&self.game.stage, &self.focus) {
             (Stage::Blind(_), FocusZone::Cards) => FocusZone::ActionButtons,
-            (Stage::Blind(_), FocusZone::ActionButtons) => FocusZone::JokerStrip,
-            (Stage::Blind(_), FocusZone::JokerStrip) => FocusZone::ConsumableStrip,
+            (Stage::Blind(_), FocusZone::ActionButtons) => {
+                if has_jokers { FocusZone::JokerStrip }
+                else if has_consumables { FocusZone::ConsumableStrip }
+                else { FocusZone::Cards }
+            }
+            (Stage::Blind(_), FocusZone::JokerStrip) => {
+                if has_consumables { FocusZone::ConsumableStrip } else { FocusZone::Cards }
+            }
             (Stage::Blind(_), FocusZone::ConsumableStrip) => FocusZone::Cards,
-            (Stage::PostBlind(), FocusZone::CashOutButton) => FocusZone::JokerStrip,
-            (Stage::PostBlind(), FocusZone::JokerStrip) => FocusZone::ConsumableStrip,
+            (Stage::PostBlind(), FocusZone::CashOutButton) => {
+                if has_jokers { FocusZone::JokerStrip }
+                else if has_consumables { FocusZone::ConsumableStrip }
+                else { FocusZone::CashOutButton }
+            }
+            (Stage::PostBlind(), FocusZone::JokerStrip) => {
+                if has_consumables { FocusZone::ConsumableStrip } else { FocusZone::CashOutButton }
+            }
             (Stage::PostBlind(), FocusZone::ConsumableStrip) => FocusZone::CashOutButton,
-            (Stage::Shop(), FocusZone::ShopJokers) => FocusZone::ShopConsumables,
-            (Stage::Shop(), FocusZone::ShopConsumables) => FocusZone::ShopNextRound,
-            (Stage::Shop(), FocusZone::ShopNextRound) => FocusZone::JokerStrip,
-            (Stage::Shop(), FocusZone::JokerStrip) => FocusZone::ConsumableStrip,
-            (Stage::Shop(), FocusZone::ConsumableStrip) => FocusZone::ShopJokers,
+            (Stage::Shop(), FocusZone::ShopPacks) => FocusZone::ShopJokers,
+            (Stage::Shop(), FocusZone::ShopJokers) => FocusZone::ShopNextRound,
+            (Stage::Shop(), FocusZone::ShopNextRound) => {
+                if has_jokers { FocusZone::JokerStrip }
+                else if has_consumables { FocusZone::ConsumableStrip }
+                else { FocusZone::ShopPacks }
+            }
+            (Stage::Shop(), FocusZone::JokerStrip) => {
+                if has_consumables { FocusZone::ConsumableStrip } else { FocusZone::ShopPacks }
+            }
+            (Stage::Shop(), FocusZone::ConsumableStrip) => FocusZone::ShopPacks,
+            (Stage::PackOpen(), FocusZone::PackContents) => FocusZone::PackSkip,
+            (Stage::PackOpen(), FocusZone::PackSkip) => FocusZone::PackContents,
             (Stage::TarotHand(_), FocusZone::TarotCards) => FocusZone::TarotButtons,
             (Stage::TarotHand(_), FocusZone::TarotButtons) => FocusZone::TarotCards,
             _ => self.focus.clone(),
@@ -148,19 +194,41 @@ impl AppState {
 
     pub fn tab_prev(&mut self) {
         use balatro_rs::stage::Stage;
+        let has_jokers = !self.game.jokers.is_empty();
+        let has_consumables = !self.game.consumables.is_empty();
         self.focus = match (&self.game.stage, &self.focus) {
-            (Stage::Blind(_), FocusZone::Cards) => FocusZone::ConsumableStrip,
+            (Stage::Blind(_), FocusZone::Cards) => {
+                if has_consumables { FocusZone::ConsumableStrip }
+                else if has_jokers { FocusZone::JokerStrip }
+                else { FocusZone::ActionButtons }
+            }
             (Stage::Blind(_), FocusZone::ActionButtons) => FocusZone::Cards,
             (Stage::Blind(_), FocusZone::JokerStrip) => FocusZone::ActionButtons,
-            (Stage::Blind(_), FocusZone::ConsumableStrip) => FocusZone::JokerStrip,
-            (Stage::PostBlind(), FocusZone::CashOutButton) => FocusZone::ConsumableStrip,
-            (Stage::PostBlind(), FocusZone::ConsumableStrip) => FocusZone::JokerStrip,
+            (Stage::Blind(_), FocusZone::ConsumableStrip) => {
+                if has_jokers { FocusZone::JokerStrip } else { FocusZone::ActionButtons }
+            }
+            (Stage::PostBlind(), FocusZone::CashOutButton) => {
+                if has_consumables { FocusZone::ConsumableStrip }
+                else if has_jokers { FocusZone::JokerStrip }
+                else { FocusZone::CashOutButton }
+            }
+            (Stage::PostBlind(), FocusZone::ConsumableStrip) => {
+                if has_jokers { FocusZone::JokerStrip } else { FocusZone::CashOutButton }
+            }
             (Stage::PostBlind(), FocusZone::JokerStrip) => FocusZone::CashOutButton,
-            (Stage::Shop(), FocusZone::ShopJokers) => FocusZone::ConsumableStrip,
-            (Stage::Shop(), FocusZone::ConsumableStrip) => FocusZone::JokerStrip,
+            (Stage::Shop(), FocusZone::ShopPacks) => {
+                if has_consumables { FocusZone::ConsumableStrip }
+                else if has_jokers { FocusZone::JokerStrip }
+                else { FocusZone::ShopNextRound }
+            }
+            (Stage::Shop(), FocusZone::ShopJokers) => FocusZone::ShopPacks,
+            (Stage::Shop(), FocusZone::ConsumableStrip) => {
+                if has_jokers { FocusZone::JokerStrip } else { FocusZone::ShopNextRound }
+            }
             (Stage::Shop(), FocusZone::JokerStrip) => FocusZone::ShopNextRound,
-            (Stage::Shop(), FocusZone::ShopNextRound) => FocusZone::ShopConsumables,
-            (Stage::Shop(), FocusZone::ShopConsumables) => FocusZone::ShopJokers,
+            (Stage::Shop(), FocusZone::ShopNextRound) => FocusZone::ShopJokers,
+            (Stage::PackOpen(), FocusZone::PackContents) => FocusZone::PackSkip,
+            (Stage::PackOpen(), FocusZone::PackSkip) => FocusZone::PackContents,
             (Stage::TarotHand(_), FocusZone::TarotCards) => FocusZone::TarotButtons,
             (Stage::TarotHand(_), FocusZone::TarotButtons) => FocusZone::TarotCards,
             _ => self.focus.clone(),
