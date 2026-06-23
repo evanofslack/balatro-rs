@@ -33,6 +33,10 @@ impl Deck {
         self.cards.extend(other);
     }
 
+    pub(crate) fn push(&mut self, card: Card) {
+        self.cards.push(card);
+    }
+
     pub(crate) fn remove_by_id(&mut self, id: usize) {
         self.cards.retain(|c| c.id != id);
     }

@@ -1,7 +1,9 @@
 use crate::action::{Action, MoveDirection};
+use crate::card::Edition;
 use crate::consumable::Consumable;
 use crate::game::Game;
 use crate::joker::Joker;
+use crate::pack::PackContent;
 use crate::space::ActionSpace;
 use crate::stage::{Blind, Stage};
 
@@ -158,7 +160,10 @@ impl Game {
 
     // Get use consumable actions
     fn gen_actions_use_consumable(&self) -> Option<impl Iterator<Item = Action>> {
-        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_)) {
+        if matches!(
+            self.stage,
+            Stage::End(_) | Stage::TarotHand(_) | Stage::PackOpen()
+        ) {
             return None;
         }
         if self.consumables.is_empty() {
@@ -216,6 +221,49 @@ impl Game {
             .map(Action::SellConsumable)
             .collect();
         Some(actions.into_iter())
+    }
+
+    // Get buy pack actions
+    fn gen_actions_buy_pack(&self) -> Option<impl Iterator<Item = Action>> {
+        if self.stage != Stage::Shop() {
+            return None;
+        }
+        self.shop.gen_moves_buy_pack(self.money)
+    }
+
+    // Get pick pack card actions (active while a pack is open)
+    fn gen_actions_pick_pack_card(&self) -> Option<impl Iterator<Item = Action>> {
+        if self.stage != Stage::PackOpen() {
+            return None;
+        }
+        let state = self.open_pack.as_ref()?;
+        let joker_slots = self.config.joker_slots;
+        let joker_count = self.jokers.len();
+        let picks: Vec<Action> = state
+            .contents
+            .iter()
+            .filter(|c| match c {
+                PackContent::Joker(j) => {
+                    joker_count < joker_slots || j.edition() == Edition::Negative
+                }
+                _ => true,
+            })
+            .cloned()
+            .map(Action::PickPackCard)
+            .collect();
+        if picks.is_empty() {
+            None
+        } else {
+            Some(picks.into_iter())
+        }
+    }
+
+    // Skip is always available while a pack is open
+    fn gen_actions_skip_pack(&self) -> Option<impl Iterator<Item = Action>> {
+        if self.stage != Stage::PackOpen() {
+            return None;
+        }
+        Some(vec![Action::SkipPack()].into_iter())
     }
 
     // are we in the temp tarot hand stage?
@@ -299,6 +347,9 @@ impl Game {
         let tarot_hand = self.gen_actions_tarot_hand();
         let sell_jokers = self.gen_actions_sell_joker();
         let sell_consumables = self.gen_actions_sell_consumable();
+        let buy_packs = self.gen_actions_buy_pack();
+        let pick_pack_cards = self.gen_actions_pick_pack_card();
+        let skip_packs = self.gen_actions_skip_pack();
 
         select_cards
             .into_iter()
@@ -316,6 +367,9 @@ impl Game {
             .chain(tarot_hand.into_iter().flatten())
             .chain(sell_jokers.into_iter().flatten())
             .chain(sell_consumables.into_iter().flatten())
+            .chain(buy_packs.into_iter().flatten())
+            .chain(pick_pack_cards.into_iter().flatten())
+            .chain(skip_packs.into_iter().flatten())
     }
 
     fn unmask_action_space_select_cards(&self, space: &mut ActionSpace) {
@@ -491,6 +545,53 @@ impl Game {
         });
     }
 
+    fn unmask_action_space_buy_pack(&self, space: &mut ActionSpace) {
+        if self.stage != Stage::Shop() {
+            return;
+        }
+        self.shop
+            .packs
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.cost() <= self.money)
+            .for_each(|(i, _)| {
+                space.unmask_buy_pack(i).expect("valid index for buy pack");
+            });
+    }
+
+    fn unmask_action_space_pick_pack_card(&self, space: &mut ActionSpace) {
+        if self.stage != Stage::PackOpen() {
+            return;
+        }
+        let Some(state) = self.open_pack.as_ref() else {
+            return;
+        };
+        let joker_count = self.jokers.len();
+        let joker_slots = self.config.joker_slots;
+        state
+            .contents
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| match c {
+                PackContent::Joker(j) => {
+                    joker_count < joker_slots || j.edition() == Edition::Negative
+                }
+                _ => true,
+            })
+            .for_each(|(i, _)| {
+                space
+                    .unmask_pick_pack_card(i)
+                    .expect("valid index for pick pack card");
+            });
+    }
+
+    fn unmask_action_space_skip_pack(&self, space: &mut ActionSpace) {
+        if self.stage != Stage::PackOpen() {
+            return;
+        }
+        space.unmask_skip_pack();
+    }
+
     fn unmask_action_space_tarot_hand(&self, space: &mut ActionSpace) {
         let Stage::TarotHand(t) = self.stage else {
             return;
@@ -552,6 +653,9 @@ impl Game {
         self.unmask_action_space_tarot_hand(&mut space);
         self.unmask_action_space_sell_joker(&mut space);
         self.unmask_action_space_sell_consumable(&mut space);
+        self.unmask_action_space_buy_pack(&mut space);
+        self.unmask_action_space_pick_pack_card(&mut space);
+        self.unmask_action_space_skip_pack(&mut space);
         space
     }
 }

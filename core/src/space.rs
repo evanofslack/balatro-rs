@@ -6,6 +6,9 @@ use crate::stage::Blind;
 #[cfg(feature = "python")]
 use pyo3::pyclass;
 
+const PACK_SLOTS: usize = 2;
+const PACK_CONTENTS_MAX: usize = 5;
+
 // Hard code a bounded action space.
 // Given constraints:
 // available max = 24
@@ -48,6 +51,9 @@ pub struct ActionSpace {
     pub apply_tarot: Vec<usize>,
     pub sell_joker: Vec<usize>,
     pub sell_consumable: Vec<usize>,
+    pub buy_pack: Vec<usize>,
+    pub pick_pack_card: Vec<usize>,
+    pub skip_pack: Vec<usize>,
 }
 
 impl ActionSpace {
@@ -66,6 +72,9 @@ impl ActionSpace {
             + self.apply_tarot.len()
             + self.sell_joker.len()
             + self.sell_consumable.len()
+            + self.buy_pack.len()
+            + self.pick_pack_card.len()
+            + self.skip_pack.len()
     }
 
     fn select_card_min(&self) -> usize {
@@ -180,6 +189,30 @@ impl ActionSpace {
         self.sell_consumable_min() + self.sell_consumable.len().saturating_sub(1)
     }
 
+    fn buy_pack_min(&self) -> usize {
+        self.sell_consumable_min() + self.sell_consumable.len()
+    }
+
+    fn buy_pack_max(&self) -> usize {
+        self.buy_pack_min() + self.buy_pack.len().saturating_sub(1)
+    }
+
+    fn pick_pack_card_min(&self) -> usize {
+        self.buy_pack_min() + self.buy_pack.len()
+    }
+
+    fn pick_pack_card_max(&self) -> usize {
+        self.pick_pack_card_min() + self.pick_pack_card.len().saturating_sub(1)
+    }
+
+    fn skip_pack_min(&self) -> usize {
+        self.pick_pack_card_min() + self.pick_pack_card.len()
+    }
+
+    fn skip_pack_max(&self) -> usize {
+        self.skip_pack_min()
+    }
+
     // Not all actions are always legal, by default all actions
     // are masked out, but provide methods to unmask valid.
     pub(crate) fn unmask_select_card(&mut self, i: usize) -> Result<(), ActionSpaceError> {
@@ -270,6 +303,26 @@ impl ActionSpace {
         Ok(())
     }
 
+    pub(crate) fn unmask_buy_pack(&mut self, i: usize) -> Result<(), ActionSpaceError> {
+        if i >= self.buy_pack.len() {
+            return Err(ActionSpaceError::InvalidIndex);
+        }
+        self.buy_pack[i] = 1;
+        Ok(())
+    }
+
+    pub(crate) fn unmask_pick_pack_card(&mut self, i: usize) -> Result<(), ActionSpaceError> {
+        if i >= self.pick_pack_card.len() {
+            return Err(ActionSpaceError::InvalidIndex);
+        }
+        self.pick_pack_card[i] = 1;
+        Ok(())
+    }
+
+    pub(crate) fn unmask_skip_pack(&mut self) {
+        self.skip_pack[0] = 1;
+    }
+
     pub fn to_action(&self, index: usize, game: &Game) -> Result<Action, ActionSpaceError> {
         let vec = self.to_vec();
         if let Some(v) = vec.get(index) {
@@ -350,6 +403,31 @@ impl ActionSpace {
             {
                 Ok(Action::SellConsumable(n - self.sell_consumable_min()))
             }
+            n if !self.buy_pack.is_empty()
+                && (self.buy_pack_min()..=self.buy_pack_max()).contains(&n) =>
+            {
+                let n_offset = n - self.buy_pack_min();
+                game.shop
+                    .pack_from_index(n_offset)
+                    .map(Action::BuyPack)
+                    .ok_or(ActionSpaceError::InvalidActionConversion)
+            }
+            n if !self.pick_pack_card.is_empty()
+                && (self.pick_pack_card_min()..=self.pick_pack_card_max()).contains(&n) =>
+            {
+                let n_offset = n - self.pick_pack_card_min();
+                game.open_pack
+                    .as_ref()
+                    .and_then(|s| s.contents.get(n_offset))
+                    .cloned()
+                    .map(Action::PickPackCard)
+                    .ok_or(ActionSpaceError::InvalidActionConversion)
+            }
+            n if !self.skip_pack.is_empty()
+                && (self.skip_pack_min()..=self.skip_pack_max()).contains(&n) =>
+            {
+                Ok(Action::SkipPack())
+            }
             _ => Err(ActionSpaceError::InvalidActionConversion),
         }
     }
@@ -370,6 +448,9 @@ impl ActionSpace {
             self.apply_tarot.clone(),
             self.sell_joker.clone(),
             self.sell_consumable.clone(),
+            self.buy_pack.clone(),
+            self.pick_pack_card.clone(),
+            self.skip_pack.clone(),
         ]
         .concat()
     }
@@ -398,6 +479,9 @@ impl From<Config> for ActionSpace {
             apply_tarot: vec![0; 1],
             sell_joker: vec![0; c.joker_slots],
             sell_consumable: vec![0; c.consumable_slots],
+            buy_pack: vec![0; PACK_SLOTS],
+            pick_pack_card: vec![0; PACK_CONTENTS_MAX],
+            skip_pack: vec![0; 1],
         }
     }
 }
@@ -420,6 +504,9 @@ impl From<ActionSpace> for Vec<usize> {
             a.apply_tarot,
             a.sell_joker,
             a.sell_consumable,
+            a.buy_pack,
+            a.pick_pack_card,
+            a.skip_pack,
         ]
         .concat()
     }
@@ -467,14 +554,19 @@ mod tests {
         // 24 select + 23 move_left + 23 move_right + 1 play + 1 discard
         // + 1 cashout + 4 buy_joker + 1 next_round + 1 select_blind
         // + 2 buy_consumable + 2 use_consumable + 1 apply_tarot
-        // + 5 sell_joker + 2 sell_consumable = 91
-        assert_eq!(a.size(), 91);
-        assert_eq!(a.to_vec().len(), 91);
+        // + 5 sell_joker + 2 sell_consumable
+        // + 2 buy_pack + 5 pick_pack_card + 1 skip_pack = 99
+        assert_eq!(a.size(), 99);
+        assert_eq!(a.to_vec().len(), 99);
     }
 
     #[test]
     fn test_action_space_zero_joker_slots_no_panic() {
-        let c = Config { joker_slots: 0, consumable_slots: 0, ..Default::default() };
+        let c = Config {
+            joker_slots: 0,
+            consumable_slots: 0,
+            ..Default::default()
+        };
         let a = ActionSpace::from(c);
         // size() and to_vec() must not panic with empty sell vecs
         assert_eq!(a.to_vec().len(), a.size());

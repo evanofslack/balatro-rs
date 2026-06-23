@@ -70,11 +70,17 @@ pub enum Stage {
     End(End),
     // (Temp stage) Target a tarot, hand drawn for card selection, pending tarot applied on ApplyTarot
     TarotHand(Tarot),
+    // (Temp stage) A booster pack has been purchased and is open; player chooses contents
+    PackOpen(),
 }
 
 impl Stage {
     pub(crate) fn is_blind(&self) -> bool {
         matches!(self, Stage::Blind(_))
+    }
+
+    pub(crate) fn is_pack_open(&self) -> bool {
+        matches!(self, Stage::PackOpen())
     }
 }
 
@@ -96,6 +102,7 @@ impl Stage {
                 End::Lose => 7,
             },
             Self::TarotHand(_) => 8,
+            Self::PackOpen() => 9,
         }
     }
 }

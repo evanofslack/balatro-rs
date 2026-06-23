@@ -3,6 +3,7 @@ pub mod cards;
 pub mod end;
 pub mod joker_strip;
 pub mod overlay;
+pub mod pack;
 pub mod postblind;
 pub mod preblind;
 pub mod shop;
@@ -17,7 +18,7 @@ use ratatui::style::Color;
 use ratatui::Frame;
 
 const MIN_WIDTH: u16 = 80;
-const MIN_HEIGHT: u16 = 20;
+const MIN_HEIGHT: u16 = 30;
 
 pub fn render(f: &mut Frame, app: &mut AppState) {
     app.widget_rects.clear();
@@ -35,6 +36,7 @@ pub fn render(f: &mut Frame, app: &mut AppState) {
         Stage::PostBlind() => postblind::render(f, app, area),
         Stage::Shop() => shop::render(f, app, area),
         Stage::TarotHand(_) => tarot::render(f, app, area),
+        Stage::PackOpen() => pack::render(f, app, area),
         Stage::End(_) => end::render(f, app, area),
     }
 

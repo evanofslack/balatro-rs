@@ -209,6 +209,6 @@ impl Config {
 
     #[getter]
     fn get_stage_max(&self) -> usize {
-        8
+        9
     }
 }
