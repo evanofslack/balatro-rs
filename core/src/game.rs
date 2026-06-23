@@ -1635,7 +1635,10 @@ mod tests {
             .expect("pick planet");
         assert_eq!(g.stage, Stage::Shop());
         assert!(g.open_pack.is_none());
-        assert_eq!(g.planetarium.level(HandRank::OnePair).level, level_before + 1);
+        assert_eq!(
+            g.planetarium.level(HandRank::OnePair).level,
+            level_before + 1
+        );
     }
 
     #[test]
@@ -1651,7 +1654,8 @@ mod tests {
             contents: vec![PackContent::Joker(joker.clone())],
         });
         g.stage = Stage::PackOpen();
-        g.pick_pack_card(PackContent::Joker(joker)).expect("pick joker");
+        g.pick_pack_card(PackContent::Joker(joker))
+            .expect("pick joker");
         assert_eq!(g.jokers.len(), before_len + 1);
         assert_eq!(g.stage, Stage::Shop());
         assert!(g.open_pack.is_none());

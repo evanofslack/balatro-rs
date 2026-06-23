@@ -243,7 +243,9 @@ impl Game {
             .contents
             .iter()
             .filter(|c| match c {
-                PackContent::Joker(j) => joker_count < joker_slots || j.edition() == Edition::Negative,
+                PackContent::Joker(j) => {
+                    joker_count < joker_slots || j.edition() == Edition::Negative
+                }
                 _ => true,
             })
             .cloned()
@@ -571,7 +573,9 @@ impl Game {
             .iter()
             .enumerate()
             .filter(|(_, c)| match c {
-                PackContent::Joker(j) => joker_count < joker_slots || j.edition() == Edition::Negative,
+                PackContent::Joker(j) => {
+                    joker_count < joker_slots || j.edition() == Edition::Negative
+                }
                 _ => true,
             })
             .for_each(|(i, _)| {
