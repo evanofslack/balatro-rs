@@ -20,10 +20,20 @@ pub fn handle_key(app: &mut AppState, key: KeyEvent) {
 
     match key.code {
         KeyCode::Char('q') => app.should_quit = true,
-        KeyCode::Char('s') => app.open_save(),
+        KeyCode::Char('e') => app.open_save(),
         KeyCode::Char('r') => app.overlay = Some(Overlay::RunInfo),
         KeyCode::Char('?') => app.overlay = Some(Overlay::Controls),
         KeyCode::Char('i') => open_inspect(app),
+        KeyCode::Char('s') => {
+            if matches!(app.game.stage, Stage::Blind(_)) {
+                let _ = app.game.handle_action(Action::SortHand(app.sort_mode));
+                app.sort_mode = if app.sort_mode == SortBy::Rank {
+                    SortBy::Suit
+                } else {
+                    SortBy::Rank
+                };
+            }
+        }
         KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => app.tab_next(),
         KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => app.tab_prev(),
         _ => handle_key_stage(app, key),

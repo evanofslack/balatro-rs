@@ -1,4 +1,4 @@
-use balatro_rs::{card::Card, consumable::Consumable, game::Game, joker::Jokers, pack::Pack};
+use balatro_rs::{action::SortBy, card::Card, consumable::Consumable, game::Game, joker::Jokers, pack::Pack};
 use ratatui::layout::Rect;
 use std::collections::HashMap;
 
@@ -80,6 +80,7 @@ pub struct AppState {
     pub save_input: String,
     pub should_quit: bool,
     pub widget_rects: HashMap<WidgetId, Rect>,
+    pub sort_mode: SortBy,
 }
 
 impl AppState {
@@ -95,6 +96,7 @@ impl AppState {
             save_input: String::new(),
             should_quit: false,
             widget_rects: HashMap::new(),
+            sort_mode: SortBy::Rank,
         }
     }
 
