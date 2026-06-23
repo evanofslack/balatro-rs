@@ -1,4 +1,6 @@
-use balatro_rs::{action::SortBy, card::Card, consumable::Consumable, game::Game, joker::Jokers, pack::Pack};
+use balatro_rs::{
+    action::SortBy, card::Card, consumable::Consumable, game::Game, joker::Jokers, pack::Pack,
+};
 use ratatui::layout::Rect;
 use std::collections::HashMap;
 
