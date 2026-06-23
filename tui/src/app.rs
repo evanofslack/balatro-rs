@@ -49,9 +49,8 @@ pub enum InspectTarget {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeckTab {
-    InDeck,
-    InHand,
-    Discarded,
+    Remaining,
+    Full,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,7 +92,7 @@ impl AppState {
             cursor: 0,
             overlay: None,
             overlay_cursor: 0,
-            deck_tab: DeckTab::InDeck,
+            deck_tab: DeckTab::Remaining,
             run_info_tab: RunInfoTab::Deck,
             save_input: String::new(),
             should_quit: false,
