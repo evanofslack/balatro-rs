@@ -1,4 +1,5 @@
 use crate::action::{Action, MoveDirection};
+use crate::card::Edition;
 use crate::consumable::Consumable;
 use crate::game::Game;
 use crate::joker::Joker;
@@ -242,7 +243,7 @@ impl Game {
             .contents
             .iter()
             .filter(|c| match c {
-                PackContent::Joker(_) => joker_count < joker_slots,
+                PackContent::Joker(j) => joker_count < joker_slots || j.edition() == Edition::Negative,
                 _ => true,
             })
             .cloned()
@@ -570,7 +571,7 @@ impl Game {
             .iter()
             .enumerate()
             .filter(|(_, c)| match c {
-                PackContent::Joker(_) => joker_count < joker_slots,
+                PackContent::Joker(j) => joker_count < joker_slots || j.edition() == Edition::Negative,
                 _ => true,
             })
             .for_each(|(i, _)| {
