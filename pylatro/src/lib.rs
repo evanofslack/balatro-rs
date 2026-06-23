@@ -115,9 +115,24 @@ impl GameState {
         self.game.money
     }
 
+    #[getter]
+    fn seed(&self) -> u64 {
+        self.game.seed
+    }
+
+    #[getter]
+    fn seed_str(&self) -> Option<String> {
+        self.game.seed_str.clone()
+    }
+
     fn __repr__(&self) -> String {
         format!("GameState:\n{}", self.game)
     }
+}
+
+#[pyfunction]
+fn seed_from_str(s: &str) -> u64 {
+    balatro_rs::seed_from_str(s)
 }
 
 #[pymodule]
@@ -126,5 +141,6 @@ fn pylatro(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<GameEngine>()?;
     m.add_class::<GameState>()?;
     m.add_class::<Stage>()?;
+    m.add_function(wrap_pyfunction!(seed_from_str, m)?)?;
     Ok(())
 }

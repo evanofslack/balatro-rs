@@ -52,6 +52,8 @@ pub struct Config {
     pub consumable_slots: usize,
     pub deck_max: usize,
     pub discarded_max: usize,
+    pub seed: Option<u64>,
+    pub seed_str: Option<String>,
 }
 
 impl Config {
@@ -80,6 +82,8 @@ impl Config {
             consumable_slots: DEFAULT_CONSUMABLE_SLOTS,
             deck_max: DEFAULT_DECK_MAX,
             discarded_max: DEFAULT_DISCARDED_MAX,
+            seed: None,
+            seed_str: None,
         }
     }
 }
@@ -210,5 +214,25 @@ impl Config {
     #[getter]
     fn get_stage_max(&self) -> usize {
         9
+    }
+
+    #[getter]
+    fn get_seed(&self) -> Option<u64> {
+        self.seed
+    }
+
+    #[setter]
+    fn set_seed(&mut self, v: Option<u64>) {
+        self.seed = v;
+    }
+
+    #[getter]
+    fn get_seed_str(&self) -> Option<String> {
+        self.seed_str.clone()
+    }
+
+    #[setter]
+    fn set_seed_str(&mut self, v: Option<String>) {
+        self.seed_str = v;
     }
 }
