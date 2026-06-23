@@ -287,7 +287,8 @@ impl Tarot {
             Self::Judgement => {
                 if game.jokers.len() < game.config.joker_slots {
                     let prob_mult = game.prob_mult;
-                    let joker = crate::shop::JokerGenerator::new().gen_joker(prob_mult, &mut game.rng);
+                    let joker =
+                        crate::shop::JokerGenerator::new().gen_joker(prob_mult, &mut game.rng);
                     game.jokers.push(joker);
                 }
             }

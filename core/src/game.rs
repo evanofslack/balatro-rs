@@ -248,7 +248,8 @@ impl Game {
     }
 
     pub fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool {
-        self.rng.gen_ratio((numerator * self.prob_mult).min(denominator), denominator)
+        self.rng
+            .gen_ratio((numerator * self.prob_mult).min(denominator), denominator)
     }
 
     pub fn calc_score(&mut self, mut hand: MadeHand) -> usize {
@@ -1092,7 +1093,8 @@ mod tests {
         let planetarium = g.planetarium.clone();
         let consumables = g.consumables.clone();
         let prob_mult = g.prob_mult;
-        g.shop.refresh(&planetarium, &consumables, false, prob_mult, &mut g.rng);
+        g.shop
+            .refresh(&planetarium, &consumables, false, prob_mult, &mut g.rng);
 
         let j1 = g.shop.joker_from_index(0).expect("is joker");
         g.buy_joker(j1.clone()).expect("buy joker");

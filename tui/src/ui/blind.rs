@@ -167,8 +167,24 @@ fn render_buttons(f: &mut Frame, app: &mut AppState, area: Rect) {
         ]);
         f.render_widget(Paragraph::new(line).alignment(Alignment::Center), inner);
         let half = rect.width / 2;
-        app.widget_rects.insert(WidgetId::ActionButton(1), Rect { x: rect.x, y: rect.y, width: half, height: rect.height });
-        app.widget_rects.insert(WidgetId::ActionButton(2), Rect { x: rect.x + half, y: rect.y, width: rect.width - half, height: rect.height });
+        app.widget_rects.insert(
+            WidgetId::ActionButton(1),
+            Rect {
+                x: rect.x,
+                y: rect.y,
+                width: half,
+                height: rect.height,
+            },
+        );
+        app.widget_rects.insert(
+            WidgetId::ActionButton(2),
+            Rect {
+                x: rect.x + half,
+                y: rect.y,
+                width: rect.width - half,
+                height: rect.height,
+            },
+        );
     }
 
     // Discard (cursor 3)

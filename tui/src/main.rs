@@ -33,7 +33,13 @@ fn main() -> Result<()> {
         }
         None => {
             let mut config = Config::default();
-            config.seed_str = args.seed;
+            match args.seed {
+                None => {}
+                Some(s) => match s.parse::<u64>() {
+                    Ok(u) => config.seed = Some(u),
+                    Err(_) => config.seed_str = Some(s),
+                },
+            }
             let mut g = Game::new(config);
             g.start();
             g

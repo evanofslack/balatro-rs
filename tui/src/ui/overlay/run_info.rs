@@ -1,7 +1,7 @@
 use crate::app::{AppState, RunInfoTab};
 use crate::ui::overlay::{centered_rect, deck, poker_hands};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
@@ -85,11 +85,26 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
         }
     }
 
+    let seed_label = app
+        .game
+        .seed_str
+        .as_deref()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| app.game.seed.to_string());
     f.render_widget(
         Paragraph::new(Span::styled(
             "  Tab next  ←/→ deck view  Esc / r close",
             Style::default().fg(Color::DarkGray),
         )),
+        chunks[3],
+    );
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("Seed: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(seed_label, Style::default().fg(Color::White)),
+            Span::raw("  "),
+        ]))
+        .alignment(Alignment::Right),
         chunks[3],
     );
 }
