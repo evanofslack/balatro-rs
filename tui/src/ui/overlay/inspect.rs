@@ -126,7 +126,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
         }
         InspectTarget::Pack(pack) => {
             let title = format!(" {} ", pack.name());
-            let category = match pack.category {
+            let category = match &pack.category {
                 PackCategory::Arcana => "Arcana",
                 PackCategory::Buffoon => "Buffoon",
                 PackCategory::Celestial => "Celestial",
