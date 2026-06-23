@@ -79,12 +79,7 @@ fn render_description(f: &mut Frame, description: &str, area: Rect) {
     f.render_widget(para, area);
 }
 
-fn render_contents(
-    f: &mut Frame,
-    app: &mut AppState,
-    contents: &[PackContent],
-    area: Rect,
-) {
+fn render_contents(f: &mut Frame, app: &mut AppState, contents: &[PackContent], area: Rect) {
     let focused = app.focus == FocusZone::PackContents;
     let total_w = contents.len() as u16 * cards::SLOT_W;
     let x_offset = area.x + area.width.saturating_sub(total_w) / 2;
@@ -165,11 +160,19 @@ fn render_skip_button(f: &mut Frame, app: &mut AppState, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(border_type)
-        .border_style(Style::default().fg(if focused { Color::Yellow } else { Color::DarkGray }));
+        .border_style(Style::default().fg(if focused {
+            Color::Yellow
+        } else {
+            Color::DarkGray
+        }));
     let para = Paragraph::new(Line::from(Span::styled(
         "Skip",
         Style::default()
-            .fg(if focused { Color::Yellow } else { Color::DarkGray })
+            .fg(if focused {
+                Color::Yellow
+            } else {
+                Color::DarkGray
+            })
             .add_modifier(Modifier::BOLD),
     )))
     .block(block)
@@ -177,7 +180,6 @@ fn render_skip_button(f: &mut Frame, app: &mut AppState, area: Rect) {
     f.render_widget(para, btn_rect);
     app.widget_rects.insert(WidgetId::SkipPackButton, btn_rect);
 }
-
 
 fn render_drawn_hand(f: &mut Frame, app: &mut AppState, area: Rect) {
     let all_cards = app.game.available.cards();
@@ -221,7 +223,14 @@ fn render_drawn_hand(f: &mut Frame, app: &mut AppState, area: Rect) {
         height: cards_area.height,
     };
 
-    cards::render_hand(f, app, card_area, &cards_and_selected, usize::MAX, WidgetId::Card);
+    cards::render_hand(
+        f,
+        app,
+        card_area,
+        &cards_and_selected,
+        usize::MAX,
+        WidgetId::Card,
+    );
 }
 
 fn content_color(content: &PackContent) -> Color {

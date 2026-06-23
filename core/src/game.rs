@@ -482,7 +482,10 @@ impl Game {
             if let Some(ref mut state) = self.open_pack {
                 state.picks_remaining = state.picks_remaining.saturating_sub(1);
             }
-            let done = self.open_pack.as_ref().map_or(false, |s| s.picks_remaining == 0);
+            let done = self
+                .open_pack
+                .as_ref()
+                .map_or(false, |s| s.picks_remaining == 0);
             if done {
                 self.finish_pack();
             }
@@ -568,7 +571,10 @@ impl Game {
             state.picks_remaining = state.picks_remaining.saturating_sub(1);
         }
 
-        let done = self.open_pack.as_ref().map_or(false, |s| s.picks_remaining == 0);
+        let done = self
+            .open_pack
+            .as_ref()
+            .map_or(false, |s| s.picks_remaining == 0);
         if done {
             self.finish_pack();
         }

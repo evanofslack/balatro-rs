@@ -159,7 +159,10 @@ impl Game {
 
     // Get use consumable actions
     fn gen_actions_use_consumable(&self) -> Option<impl Iterator<Item = Action>> {
-        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_) | Stage::PackOpen()) {
+        if matches!(
+            self.stage,
+            Stage::End(_) | Stage::TarotHand(_) | Stage::PackOpen()
+        ) {
             return None;
         }
         if self.consumables.is_empty() {

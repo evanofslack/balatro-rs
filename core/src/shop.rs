@@ -58,7 +58,9 @@ impl Shop {
 
         let p1 = self.pack_gen.gen_pack(planetarium, prob_mult, None);
         let exclude = (&p1.category, &p1.size);
-        let p2 = self.pack_gen.gen_pack(planetarium, prob_mult, Some(exclude));
+        let p2 = self
+            .pack_gen
+            .gen_pack(planetarium, prob_mult, Some(exclude));
         self.packs = vec![p1, p2];
     }
 
@@ -322,9 +324,7 @@ impl PackGenerator {
 
         let choices: Vec<&(PackCategory, PackSize, u32)> = all_choices
             .iter()
-            .filter(|(cat, sz, _)| {
-                exclude.map_or(true, |(ec, es)| cat != ec || sz != es)
-            })
+            .filter(|(cat, sz, _)| exclude.map_or(true, |(ec, es)| cat != ec || sz != es))
             .collect();
 
         let weights: Vec<u32> = choices.iter().map(|(_, _, w)| *w).collect();
