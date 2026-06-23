@@ -15,6 +15,14 @@ pub enum MoveDirection {
     Right,
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "python", pyclass(eq))]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum SortBy {
+    Rank,
+    Suit,
+}
+
 impl fmt::Display for MoveDirection {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -50,6 +58,7 @@ pub enum Action {
     BuyPack(Pack),
     PickPackCard(PackContent),
     SkipPack(),
+    SortHand(SortBy),
 }
 
 impl fmt::Display for Action {
@@ -94,6 +103,16 @@ impl fmt::Display for Action {
             Self::BuyPack(pack) => write!(f, "BuyPack: {}", pack.name()),
             Self::PickPackCard(content) => write!(f, "PickPackCard: {}", content.name()),
             Self::SkipPack() => write!(f, "SkipPack"),
+            Self::SortHand(sort_by) => write!(f, "SortHand: {}", sort_by),
+        }
+    }
+}
+
+impl fmt::Display for SortBy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Rank => write!(f, "rank"),
+            Self::Suit => write!(f, "suit"),
         }
     }
 }

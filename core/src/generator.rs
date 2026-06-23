@@ -1,4 +1,4 @@
-use crate::action::{Action, MoveDirection};
+use crate::action::{Action, MoveDirection, SortBy};
 use crate::card::Edition;
 use crate::consumable::Consumable;
 use crate::game::Game;
@@ -73,6 +73,19 @@ impl Game {
         }
         let combos = vec![Action::Discard()].into_iter();
         Some(combos)
+    }
+
+    fn gen_actions_sort_hand(&self) -> Option<impl Iterator<Item = Action>> {
+        if !self.stage.is_blind() {
+            return None;
+        }
+        Some(
+            vec![
+                Action::SortHand(SortBy::Rank),
+                Action::SortHand(SortBy::Suit),
+            ]
+            .into_iter(),
+        )
     }
 
     // Get all legal move card actions
@@ -338,6 +351,7 @@ impl Game {
         let plays = self.gen_actions_play();
         let discards = self.gen_actions_discard();
         let move_cards = self.gen_actions_move_card();
+        let sort_hands = self.gen_actions_sort_hand();
         let cash_outs = self.gen_actions_cash_out();
         let next_rounds = self.gen_actions_next_round();
         let select_blinds = self.gen_actions_select_blind();
@@ -358,6 +372,7 @@ impl Game {
             .chain(plays.into_iter().flatten())
             .chain(discards.into_iter().flatten())
             .chain(move_cards.into_iter().flatten())
+            .chain(sort_hands.into_iter().flatten())
             .chain(cash_outs.into_iter().flatten())
             .chain(next_rounds.into_iter().flatten())
             .chain(select_blinds.into_iter().flatten())
@@ -592,6 +607,18 @@ impl Game {
         space.unmask_skip_pack();
     }
 
+    fn unmask_action_space_sort_hand(&self, space: &mut ActionSpace) {
+        if !self.stage.is_blind() {
+            return;
+        }
+        space
+            .unmask_sort_hand(0)
+            .expect("valid index for sort rank");
+        space
+            .unmask_sort_hand(1)
+            .expect("valid index for sort suit");
+    }
+
     fn unmask_action_space_tarot_hand(&self, space: &mut ActionSpace) {
         let Stage::TarotHand(t) = self.stage else {
             return;
@@ -656,6 +683,7 @@ impl Game {
         self.unmask_action_space_buy_pack(&mut space);
         self.unmask_action_space_pick_pack_card(&mut space);
         self.unmask_action_space_skip_pack(&mut space);
+        self.unmask_action_space_sort_hand(&mut space);
         space
     }
 }

@@ -42,13 +42,13 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
         ]),
         Line::from(""),
         Line::from(Span::styled(
-            "  Type to edit, Enter to save, Esc to cancel",
+            "  Type to edit, Enter to export, Esc to cancel",
             Style::default().fg(Color::DarkGray),
         )),
         Line::from(""),
         Line::from(vec![
             Span::styled(
-                "         [ Save ]",
+                "        [ Export ]",
                 Style::default()
                     .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
@@ -60,7 +60,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
 
     let block = Block::default()
         .title(Span::styled(
-            " Save Game ",
+            " Export Game ",
             Style::default()
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),

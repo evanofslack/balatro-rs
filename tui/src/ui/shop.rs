@@ -297,7 +297,7 @@ fn render_next_round(f: &mut Frame, app: &mut AppState, area: Rect) {
 }
 
 fn render_hints(f: &mut Frame, area: Rect) {
-    let hints = "i inspect  ? controls";
+    let hints = "? controls";
     let para = Paragraph::new(Span::styled(hints, Style::default().fg(Color::DarkGray)))
         .alignment(Alignment::Center);
     f.render_widget(para, area);
