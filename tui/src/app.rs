@@ -11,12 +11,14 @@ pub enum WidgetId {
     JokerSlot(usize),
     ConsumableSlot(usize),
     ShopJoker(usize),
+    ShopConsumable(usize),
     ShopPack(usize),
     PackContent(usize),
     SkipPackButton,
     BlindOption(usize),
     CashOutButton,
     NextRoundButton,
+    RerollButton,
     TarotButton(usize),
     OverlayButton(usize),
     DeckTab(usize),
@@ -30,6 +32,7 @@ pub enum FocusZone {
     ConsumableStrip,
     ShopJokers,
     ShopPacks,
+    ShopReroll,
     ShopNextRound,
     BlindSelect,
     PackContents,
@@ -193,7 +196,8 @@ impl AppState {
             }
             (Stage::PostBlind(), FocusZone::ConsumableStrip) => FocusZone::CashOutButton,
             (Stage::Shop(), FocusZone::ShopJokers) => FocusZone::ShopPacks,
-            (Stage::Shop(), FocusZone::ShopPacks) => FocusZone::ShopNextRound,
+            (Stage::Shop(), FocusZone::ShopPacks) => FocusZone::ShopReroll,
+            (Stage::Shop(), FocusZone::ShopReroll) => FocusZone::ShopNextRound,
             (Stage::Shop(), FocusZone::ShopNextRound) => {
                 if has_jokers {
                     FocusZone::JokerStrip
@@ -286,7 +290,8 @@ impl AppState {
                 }
             }
             (Stage::Shop(), FocusZone::ShopPacks) => FocusZone::ShopJokers,
-            (Stage::Shop(), FocusZone::ShopNextRound) => FocusZone::ShopPacks,
+            (Stage::Shop(), FocusZone::ShopReroll) => FocusZone::ShopPacks,
+            (Stage::Shop(), FocusZone::ShopNextRound) => FocusZone::ShopReroll,
             (Stage::Shop(), FocusZone::JokerStrip) => FocusZone::ShopNextRound,
             (Stage::Shop(), FocusZone::ConsumableStrip) => {
                 if has_jokers {

@@ -25,6 +25,10 @@ fn default_rng() -> ChaCha8Rng {
     ChaCha8Rng::from_entropy()
 }
 
+fn default_reroll_cost() -> usize {
+    5
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub struct Game {
@@ -66,6 +70,8 @@ pub struct Game {
     pub last_consumable_used: Option<Consumable>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub last_score: usize,
+    #[cfg_attr(feature = "serde", serde(default = "default_reroll_cost"))]
+    pub reroll_cost: usize,
 
     #[cfg_attr(feature = "serde", serde(default))]
     pub seed: u64,
@@ -122,6 +128,7 @@ impl Game {
             prob_mult: 1,
             last_consumable_used: None,
             last_score: 0,
+            reroll_cost: default_reroll_cost(),
             tarot_prev_stage: None,
             open_pack: None,
             seed,
@@ -362,11 +369,43 @@ impl Game {
     fn cashout(&mut self) -> Result<(), GameError> {
         self.money += self.reward;
         self.reward = 0;
+        self.reroll_cost = default_reroll_cost();
         self.stage = Stage::Shop();
         let planetarium = self.planetarium.clone();
-        let held = self.consumables.clone();
-        self.shop
-            .refresh(&planetarium, &held, false, self.prob_mult, &mut self.rng);
+        let held_consumables = self.consumables.clone();
+        let held_jokers = self.jokers.clone();
+        self.shop.refresh(
+            &planetarium,
+            &held_consumables,
+            false,
+            self.prob_mult,
+            &held_jokers,
+            &mut self.rng,
+        );
+        Ok(())
+    }
+
+    pub(crate) fn reroll(&mut self) -> Result<(), GameError> {
+        if self.stage != Stage::Shop() {
+            return Err(GameError::InvalidStage);
+        }
+        if self.money < self.reroll_cost {
+            return Err(GameError::InvalidBalance);
+        }
+        self.money -= self.reroll_cost;
+        self.reroll_cost += 1;
+        let planetarium = self.planetarium.clone();
+        let mut held = self.consumables.clone();
+        held.extend(self.shop.consumables.clone());
+        let mut held_jokers = self.jokers.clone();
+        held_jokers.extend(self.shop.jokers.clone());
+        self.shop.refresh_cards(
+            &planetarium,
+            &held,
+            self.prob_mult,
+            &held_jokers,
+            &mut self.rng,
+        );
         Ok(())
     }
 
@@ -787,6 +826,10 @@ impl Game {
                 Stage::PackOpen() => self.skip_pack(),
                 _ => Err(GameError::InvalidStage),
             },
+            Action::Reroll() => match self.stage {
+                Stage::Shop() => self.reroll(),
+                _ => Err(GameError::InvalidAction),
+            },
         }
     }
 
@@ -1092,13 +1135,8 @@ mod tests {
         g.start();
         g.stage = Stage::Shop();
         g.money = 10;
-        let planetarium = g.planetarium.clone();
-        let consumables = g.consumables.clone();
-        let prob_mult = g.prob_mult;
-        g.shop
-            .refresh(&planetarium, &consumables, false, prob_mult, &mut g.rng);
-
-        let j1 = g.shop.joker_from_index(0).expect("is joker");
+        let j1 = Jokers::by_rarity(crate::joker::Rarity::Common)[0].clone();
+        g.shop.jokers = vec![j1.clone()];
         g.buy_joker(j1.clone()).expect("buy joker");
         assert_eq!(g.money, 10 - j1.cost());
         assert_eq!(g.jokers.len(), 1);
@@ -1757,5 +1795,64 @@ mod tests {
         assert_eq!(g.tarot_prev_stage, Some(Stage::PackOpen()));
         // picks_remaining decremented later in apply_tarot, not here
         assert_eq!(g.open_pack.as_ref().unwrap().picks_remaining, 1);
+    }
+
+    #[test]
+    fn test_reroll_invalid_outside_shop() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        let res = g.reroll();
+        assert!(matches!(res, Err(GameError::InvalidStage)));
+    }
+
+    #[test]
+    fn test_reroll_insufficient_balance() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.money = 0;
+        let res = g.reroll();
+        assert!(matches!(res, Err(GameError::InvalidBalance)));
+    }
+
+    #[test]
+    fn test_reroll_deducts_cost() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.money = 10;
+        g.reroll().expect("reroll");
+        assert_eq!(g.money, 5);
+    }
+
+    #[test]
+    fn test_reroll_increments_cost() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.money = 20;
+        g.reroll().expect("first reroll");
+        assert_eq!(g.reroll_cost, 6);
+        g.reroll().expect("second reroll");
+        assert_eq!(g.reroll_cost, 7);
+        assert_eq!(g.money, 9); // 20 - 5 - 6
+    }
+
+    #[test]
+    fn test_reroll_regenerates_shop_cards() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.money = 10;
+        let old_joker = Jokers::by_rarity(crate::joker::Rarity::Common)[0].clone();
+        g.shop.jokers = vec![old_joker.clone()];
+        g.shop.consumables = Vec::new();
+        g.reroll().expect("reroll");
+        assert_eq!(g.shop.jokers.len() + g.shop.consumables.len(), 2);
+        let still_present = g.shop.jokers.iter().any(|j| {
+            std::mem::discriminant(j) == std::mem::discriminant(&old_joker)
+        });
+        assert!(!still_present);
     }
 }
