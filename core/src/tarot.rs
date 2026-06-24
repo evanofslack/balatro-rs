@@ -276,19 +276,37 @@ impl Tarot {
             Self::Emperor => {
                 let slots = game.config.consumable_slots;
                 let gen = crate::shop::ConsumableGenerator::new();
+                let mut excl: Vec<Tarot> = game
+                    .consumables
+                    .iter()
+                    .filter_map(|c| {
+                        if let crate::consumable::Consumable::Tarot(t) = c {
+                            Some(*t)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
                 for _ in 0..2 {
                     if game.consumables.len() >= slots {
                         break;
                     }
-                    let tarot = gen.gen_tarot_consumable(&mut game.rng);
+                    let tarot = gen.gen_tarot_consumable(&excl, &mut game.rng);
+                    if let crate::consumable::Consumable::Tarot(t) = &tarot {
+                        excl.push(*t);
+                    }
                     game.consumables.push(tarot);
                 }
             }
             Self::Judgement => {
                 if game.jokers.len() < game.config.joker_slots {
                     let prob_mult = game.prob_mult;
-                    let joker =
-                        crate::shop::JokerGenerator::new().gen_joker(prob_mult, &mut game.rng);
+                    let exclude = game.jokers.clone();
+                    let joker = crate::shop::JokerGenerator::new().gen_joker(
+                        prob_mult,
+                        &exclude,
+                        &mut game.rng,
+                    );
                     game.jokers.push(joker);
                 }
             }

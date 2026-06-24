@@ -47,20 +47,73 @@ impl Shop {
         held: &[Consumable],
         allow_duplicates: bool,
         prob_mult: u32,
+        held_jokers: &[Jokers],
         rng: &mut impl Rng,
     ) {
-        let j1 = self.joker_gen.gen_joker(prob_mult, rng);
-        let j2 = self.joker_gen.gen_joker(prob_mult, rng);
-        self.jokers = vec![j1, j2];
+        let _ = allow_duplicates;
 
-        let _ = (held, allow_duplicates);
+        self.jokers = Vec::new();
         self.consumables = Vec::new();
 
-        let p1 = self.pack_gen.gen_pack(planetarium, prob_mult, None, rng);
+        let mut excl_jokers: Vec<Jokers> = held_jokers.to_vec();
+        let mut excl_tarots: Vec<Tarot> = held
+            .iter()
+            .filter_map(|c| {
+                if let Consumable::Tarot(t) = c {
+                    Some(*t)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mut excl_planets: Vec<Planets> = held
+            .iter()
+            .filter_map(|c| {
+                if let Consumable::Planet(p) = c {
+                    Some(p.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Joker=20, Tarot=4, Planet=4
+        let weights = [20u32, 4, 4];
+        let dist = WeightedIndex::new(weights).unwrap();
+
+        for _ in 0..2 {
+            match dist.sample(rng) {
+                0 => {
+                    let joker = self.joker_gen.gen_joker(prob_mult, &excl_jokers, rng);
+                    excl_jokers.push(joker.clone());
+                    self.jokers.push(joker);
+                }
+                1 => {
+                    let c = self.consumable_gen.gen_tarot_consumable(&excl_tarots, rng);
+                    if let Consumable::Tarot(t) = &c {
+                        excl_tarots.push(*t);
+                    }
+                    self.consumables.push(c);
+                }
+                _ => {
+                    let c =
+                        self.consumable_gen
+                            .gen_planet_consumable(planetarium, &excl_planets, rng);
+                    if let Consumable::Planet(p) = &c {
+                        excl_planets.push(p.clone());
+                    }
+                    self.consumables.push(c);
+                }
+            }
+        }
+
+        let p1 = self
+            .pack_gen
+            .gen_pack(planetarium, prob_mult, None, held_jokers, rng);
         let exclude = (&p1.category, &p1.size);
         let p2 = self
             .pack_gen
-            .gen_pack(planetarium, prob_mult, Some(exclude), rng);
+            .gen_pack(planetarium, prob_mult, Some(exclude), held_jokers, rng);
         self.packs = vec![p1, p2];
     }
 
@@ -226,9 +279,24 @@ impl JokerGenerator {
         // return choices[dist.sample(&mut rng)].clone();
     }
 
-    pub(crate) fn gen_joker(&self, prob_mult: u32, rng: &mut impl Rng) -> Jokers {
+    pub(crate) fn gen_joker(
+        &self,
+        prob_mult: u32,
+        exclude: &[Jokers],
+        rng: &mut impl Rng,
+    ) -> Jokers {
         let rarity = self.gen_rarity();
-        let choices = Jokers::by_rarity(rarity);
+        let all = Jokers::by_rarity(rarity);
+        let choices: Vec<_> = all
+            .iter()
+            .filter(|j| {
+                !exclude
+                    .iter()
+                    .any(|e| std::mem::discriminant(e) == std::mem::discriminant(*j))
+            })
+            .cloned()
+            .collect();
+        let choices = if choices.is_empty() { all } else { choices };
         let i = rng.gen_range(0..choices.len());
         let mut joker = choices[i].clone();
         joker.set_edition(gen_edition(prob_mult, rng));
@@ -281,12 +349,20 @@ impl ConsumableGenerator {
         Consumable::Planet(self.gen_planet(planetarium, exclude, rng))
     }
 
-    fn gen_tarot(&self, rng: &mut impl Rng) -> Tarot {
-        Tarot::random(rng)
+    fn gen_tarot(&self, exclude: &[Tarot], rng: &mut impl Rng) -> Tarot {
+        let all: Vec<Tarot> = Tarot::iter().collect();
+        let choices: Vec<_> = all.iter().filter(|t| !exclude.contains(t)).collect();
+        let choices = if choices.is_empty() {
+            all.iter().collect()
+        } else {
+            choices
+        };
+        let i = rng.gen_range(0..choices.len());
+        *choices[i]
     }
 
-    pub(crate) fn gen_tarot_consumable(&self, rng: &mut impl Rng) -> Consumable {
-        Consumable::Tarot(self.gen_tarot(rng))
+    pub(crate) fn gen_tarot_consumable(&self, exclude: &[Tarot], rng: &mut impl Rng) -> Consumable {
+        Consumable::Tarot(self.gen_tarot(exclude, rng))
     }
 }
 
@@ -304,6 +380,7 @@ impl PackGenerator {
         planetarium: &Planetarium,
         prob_mult: u32,
         exclude: Option<(&PackCategory, &PackSize)>,
+        held_jokers: &[Jokers],
         rng: &mut impl Rng,
     ) -> Pack {
         #[rustfmt::skip]
@@ -339,7 +416,7 @@ impl PackGenerator {
             _ => 5,
         };
 
-        let contents = self.gen_contents(category, count, planetarium, prob_mult, rng);
+        let contents = self.gen_contents(category, count, planetarium, prob_mult, held_jokers, rng);
 
         Pack {
             category: category.clone(),
@@ -354,6 +431,7 @@ impl PackGenerator {
         count: usize,
         planetarium: &Planetarium,
         prob_mult: u32,
+        held_jokers: &[Jokers],
         rng: &mut impl Rng,
     ) -> Vec<PackContent> {
         let joker_gen = JokerGenerator {};
@@ -373,9 +451,16 @@ impl PackGenerator {
                     })
                     .collect()
             }
-            PackCategory::Buffoon => (0..count)
-                .map(|_| PackContent::Joker(joker_gen.gen_joker(prob_mult, rng)))
-                .collect(),
+            PackCategory::Buffoon => {
+                let mut seen: Vec<Jokers> = held_jokers.to_vec();
+                (0..count)
+                    .map(|_| {
+                        let joker = joker_gen.gen_joker(prob_mult, &seen, rng);
+                        seen.push(joker.clone());
+                        PackContent::Joker(joker)
+                    })
+                    .collect()
+            }
             PackCategory::Standard => (0..count)
                 .map(|_| PackContent::PlayingCard(gen_random_playing_card(prob_mult, rng)))
                 .collect(),
@@ -394,19 +479,16 @@ mod tests {
         let planetarium = Planetarium::new();
         assert_eq!(shop.jokers.len(), 0);
         assert_eq!(shop.packs.len(), 0);
-        shop.refresh(&planetarium, &[], false, 1, &mut rand::thread_rng());
-        assert_eq!(shop.jokers.len(), 2);
+        shop.refresh(&planetarium, &[], false, 1, &[], &mut rand::thread_rng());
+        assert_eq!(shop.jokers.len() + shop.consumables.len(), 2);
         assert_eq!(shop.packs.len(), 2);
-        assert!(shop.consumables.is_empty());
     }
 
     #[test]
     fn test_shop_buy_joker() {
         let mut shop = Shop::new();
-        let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false, 1, &mut rand::thread_rng());
-        assert_eq!(shop.jokers.len(), 2);
-        let j1 = shop.jokers[0].clone();
+        let j1 = Jokers::by_rarity(Rarity::Common)[0].clone();
+        shop.jokers = vec![j1.clone()];
         assert_eq!(shop.joker_from_index(0).expect("first joker"), j1.clone());
         shop.buy_joker(&j1).expect("buy joker");
     }
@@ -414,9 +496,6 @@ mod tests {
     #[test]
     fn test_shop_buy_consumable() {
         let mut shop = Shop::new();
-        let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false, 1, &mut rand::thread_rng());
-        // Direct insert for backward compat testing
         shop.consumables = vec![Consumable::Planet(Planets::Mercury)];
         assert_eq!(shop.consumables.len(), 1);
         let c1 = shop.consumables[0].clone();
@@ -428,7 +507,7 @@ mod tests {
     fn test_shop_buy_pack() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false, 1, &mut rand::thread_rng());
+        shop.refresh(&planetarium, &[], false, 1, &[], &mut rand::thread_rng());
         assert_eq!(shop.packs.len(), 2);
         let p1 = shop.packs[0].clone();
         let bought = shop.buy_pack(&p1).expect("buy pack");
@@ -456,7 +535,7 @@ mod tests {
     fn test_gen_moves_buy_consumable_slots_full() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false, 1, &mut rand::thread_rng());
+        shop.refresh(&planetarium, &[], false, 1, &[], &mut rand::thread_rng());
         // slots full (held == consumable_slots)
         let moves = shop.gen_moves_buy_consumable(100, 2, 2);
         assert!(moves.is_none());
@@ -466,7 +545,7 @@ mod tests {
     fn test_gen_moves_buy_consumable_no_funds() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false, 1, &mut rand::thread_rng());
+        shop.refresh(&planetarium, &[], false, 1, &[], &mut rand::thread_rng());
         // 0 money can't afford any planet ($3)
         let moves: Option<Vec<Action>> =
             shop.gen_moves_buy_consumable(0, 2, 0).map(|i| i.collect());
@@ -478,7 +557,7 @@ mod tests {
         let planetarium = Planetarium::new();
         let gen = PackGenerator {};
         for _ in 0..50 {
-            let pack = gen.gen_pack(&planetarium, 1, None, &mut rand::thread_rng());
+            let pack = gen.gen_pack(&planetarium, 1, None, &[], &mut rand::thread_rng());
             let expected_count = match (&pack.category, &pack.size) {
                 (PackCategory::Buffoon, PackSize::Normal) => 2,
                 (PackCategory::Buffoon, _) => 4,

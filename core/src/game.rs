@@ -364,9 +364,16 @@ impl Game {
         self.reward = 0;
         self.stage = Stage::Shop();
         let planetarium = self.planetarium.clone();
-        let held = self.consumables.clone();
-        self.shop
-            .refresh(&planetarium, &held, false, self.prob_mult, &mut self.rng);
+        let held_consumables = self.consumables.clone();
+        let held_jokers = self.jokers.clone();
+        self.shop.refresh(
+            &planetarium,
+            &held_consumables,
+            false,
+            self.prob_mult,
+            &held_jokers,
+            &mut self.rng,
+        );
         Ok(())
     }
 
@@ -1092,13 +1099,8 @@ mod tests {
         g.start();
         g.stage = Stage::Shop();
         g.money = 10;
-        let planetarium = g.planetarium.clone();
-        let consumables = g.consumables.clone();
-        let prob_mult = g.prob_mult;
-        g.shop
-            .refresh(&planetarium, &consumables, false, prob_mult, &mut g.rng);
-
-        let j1 = g.shop.joker_from_index(0).expect("is joker");
+        let j1 = Jokers::by_rarity(crate::joker::Rarity::Common)[0].clone();
+        g.shop.jokers = vec![j1.clone()];
         g.buy_joker(j1.clone()).expect("buy joker");
         assert_eq!(g.money, 10 - j1.cost());
         assert_eq!(g.jokers.len(), 1);
