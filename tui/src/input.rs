@@ -391,6 +391,11 @@ fn handle_key_shop(app: &mut AppState, key: KeyEvent) {
     match &app.focus {
         FocusZone::ShopJokers => handle_key_shop_jokers(app, key),
         FocusZone::ShopPacks => handle_key_shop_packs(app, key),
+        FocusZone::ShopReroll => {
+            if key.code == KeyCode::Enter || key.code == KeyCode::Char(' ') {
+                let _ = app.game.handle_action(Action::Reroll());
+            }
+        }
         FocusZone::ShopNextRound => {
             if key.code == KeyCode::Enter {
                 let _ = app.game.handle_action(Action::NextRound());
@@ -478,7 +483,9 @@ fn handle_key_pack_contents(app: &mut AppState, key: KeyEvent) {
 }
 
 fn handle_key_shop_jokers(app: &mut AppState, key: KeyEvent) {
-    let count = app.game.shop.jokers.len();
+    let joker_count = app.game.shop.jokers.len();
+    let consumable_count = app.game.shop.consumables.len();
+    let count = joker_count + consumable_count;
     match key.code {
         KeyCode::Left => {
             if app.cursor > 0 {
@@ -491,9 +498,12 @@ fn handle_key_shop_jokers(app: &mut AppState, key: KeyEvent) {
             }
         }
         KeyCode::Enter => {
-            if app.cursor < count {
+            if app.cursor < joker_count {
                 let joker = app.game.shop.jokers[app.cursor].clone();
                 let _ = app.game.handle_action(Action::BuyJoker(joker));
+            } else if app.cursor < count {
+                let consumable = app.game.shop.consumables[app.cursor - joker_count].clone();
+                let _ = app.game.handle_action(Action::BuyConsumable(consumable));
             }
         }
         _ => {}
@@ -570,8 +580,16 @@ fn open_inspect(app: &mut AppState) {
             }
         }
         FocusZone::ShopJokers => {
-            if let Some(joker) = app.game.shop.jokers.get(app.cursor) {
-                app.overlay = Some(Overlay::Inspect(InspectTarget::Joker(joker.clone())));
+            let joker_count = app.game.shop.jokers.len();
+            if app.cursor < joker_count {
+                if let Some(joker) = app.game.shop.jokers.get(app.cursor) {
+                    app.overlay = Some(Overlay::Inspect(InspectTarget::Joker(joker.clone())));
+                }
+            } else {
+                let ci = app.cursor - joker_count;
+                if let Some(c) = app.game.shop.consumables.get(ci) {
+                    app.overlay = Some(Overlay::Inspect(InspectTarget::Consumable(c.clone())));
+                }
             }
         }
         FocusZone::ShopPacks => {
@@ -667,6 +685,17 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             if let Some(joker) = app.game.shop.jokers.get(idx) {
                 let _ = app.game.handle_action(Action::BuyJoker(joker.clone()));
             }
+        }
+        ShopConsumable(idx) => {
+            app.focus = FocusZone::ShopJokers;
+            app.cursor = app.game.shop.jokers.len() + idx;
+            if let Some(consumable) = app.game.shop.consumables.get(idx) {
+                let _ = app.game.handle_action(Action::BuyConsumable(consumable.clone()));
+            }
+        }
+        RerollButton => {
+            app.focus = FocusZone::ShopReroll;
+            let _ = app.game.handle_action(Action::Reroll());
         }
         ShopPack(idx) => {
             app.focus = FocusZone::ShopPacks;
