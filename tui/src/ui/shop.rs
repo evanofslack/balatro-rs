@@ -219,7 +219,8 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
 
         let para = Paragraph::new(Text::from(lines)).block(block);
         f.render_widget(para, item_rect);
-        app.widget_rects.insert(WidgetId::ShopConsumable(ci), item_rect);
+        app.widget_rects
+            .insert(WidgetId::ShopConsumable(ci), item_rect);
     }
 }
 

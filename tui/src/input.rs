@@ -690,7 +690,9 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             app.focus = FocusZone::ShopJokers;
             app.cursor = app.game.shop.jokers.len() + idx;
             if let Some(consumable) = app.game.shop.consumables.get(idx) {
-                let _ = app.game.handle_action(Action::BuyConsumable(consumable.clone()));
+                let _ = app
+                    .game
+                    .handle_action(Action::BuyConsumable(consumable.clone()));
             }
         }
         RerollButton => {

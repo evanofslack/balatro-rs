@@ -399,8 +399,13 @@ impl Game {
         held.extend(self.shop.consumables.clone());
         let mut held_jokers = self.jokers.clone();
         held_jokers.extend(self.shop.jokers.clone());
-        self.shop
-            .refresh_cards(&planetarium, &held, self.prob_mult, &held_jokers, &mut self.rng);
+        self.shop.refresh_cards(
+            &planetarium,
+            &held,
+            self.prob_mult,
+            &held_jokers,
+            &mut self.rng,
+        );
         Ok(())
     }
 
