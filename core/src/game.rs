@@ -128,7 +128,7 @@ impl Game {
             prob_mult: 1,
             last_consumable_used: None,
             last_score: 0,
-            reroll_cost: 5,
+            reroll_cost: default_reroll_cost(),
             tarot_prev_stage: None,
             open_pack: None,
             seed,
@@ -369,7 +369,7 @@ impl Game {
     fn cashout(&mut self) -> Result<(), GameError> {
         self.money += self.reward;
         self.reward = 0;
-        self.reroll_cost = 5;
+        self.reroll_cost = default_reroll_cost();
         self.stage = Stage::Shop();
         let planetarium = self.planetarium.clone();
         let held_consumables = self.consumables.clone();
@@ -1795,5 +1795,64 @@ mod tests {
         assert_eq!(g.tarot_prev_stage, Some(Stage::PackOpen()));
         // picks_remaining decremented later in apply_tarot, not here
         assert_eq!(g.open_pack.as_ref().unwrap().picks_remaining, 1);
+    }
+
+    #[test]
+    fn test_reroll_invalid_outside_shop() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        let res = g.reroll();
+        assert!(matches!(res, Err(GameError::InvalidStage)));
+    }
+
+    #[test]
+    fn test_reroll_insufficient_balance() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.money = 0;
+        let res = g.reroll();
+        assert!(matches!(res, Err(GameError::InvalidBalance)));
+    }
+
+    #[test]
+    fn test_reroll_deducts_cost() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.money = 10;
+        g.reroll().expect("reroll");
+        assert_eq!(g.money, 5);
+    }
+
+    #[test]
+    fn test_reroll_increments_cost() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.money = 20;
+        g.reroll().expect("first reroll");
+        assert_eq!(g.reroll_cost, 6);
+        g.reroll().expect("second reroll");
+        assert_eq!(g.reroll_cost, 7);
+        assert_eq!(g.money, 9); // 20 - 5 - 6
+    }
+
+    #[test]
+    fn test_reroll_regenerates_shop_cards() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.money = 10;
+        let old_joker = Jokers::by_rarity(crate::joker::Rarity::Common)[0].clone();
+        g.shop.jokers = vec![old_joker.clone()];
+        g.shop.consumables = Vec::new();
+        g.reroll().expect("reroll");
+        assert_eq!(g.shop.jokers.len() + g.shop.consumables.len(), 2);
+        let still_present = g.shop.jokers.iter().any(|j| {
+            std::mem::discriminant(j) == std::mem::discriminant(&old_joker)
+        });
+        assert!(!still_present);
     }
 }

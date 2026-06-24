@@ -49,8 +49,8 @@ impl Shop {
         held_jokers: &[Jokers],
         rng: &mut impl Rng,
     ) {
-        self.jokers = Vec::new();
-        self.consumables = Vec::new();
+        self.jokers.clear();
+        self.consumables.clear();
 
         let mut excl_jokers: Vec<Jokers> = held_jokers.to_vec();
         let mut excl_tarots: Vec<Tarot> = held
