@@ -59,6 +59,7 @@ pub enum Action {
     PickPackCard(PackContent),
     SkipPack(),
     SortHand(SortBy),
+    Reroll(),
 }
 
 impl fmt::Display for Action {
@@ -104,6 +105,7 @@ impl fmt::Display for Action {
             Self::PickPackCard(content) => write!(f, "PickPackCard: {}", content.name()),
             Self::SkipPack() => write!(f, "SkipPack"),
             Self::SortHand(sort_by) => write!(f, "SortHand: {}", sort_by),
+            Self::Reroll() => write!(f, "Reroll"),
         }
     }
 }

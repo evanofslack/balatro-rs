@@ -35,8 +35,9 @@ const PACK_CONTENTS_MAX: usize = 5;
 // 98: skip pack
 // 99: sort hand (rank)
 // 100: sort hand (suit)
+// 101: reroll
 //
-// We end up with a vector of length 101 where each index
+// We end up with a vector of length 102 where each index
 // represents a potential action.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
@@ -60,6 +61,7 @@ pub struct ActionSpace {
     pub pick_pack_card: Vec<usize>,
     pub skip_pack: Vec<usize>,
     pub sort_hand: Vec<usize>,
+    pub reroll: Vec<usize>,
 }
 
 impl ActionSpace {
@@ -82,6 +84,7 @@ impl ActionSpace {
             + self.pick_pack_card.len()
             + self.skip_pack.len()
             + self.sort_hand.len()
+            + self.reroll.len()
     }
 
     fn select_card_min(&self) -> usize {
@@ -228,6 +231,14 @@ impl ActionSpace {
         self.sort_hand_min() + self.sort_hand.len().saturating_sub(1)
     }
 
+    fn reroll_min(&self) -> usize {
+        self.sort_hand_min() + self.sort_hand.len()
+    }
+
+    fn reroll_max(&self) -> usize {
+        self.reroll_min()
+    }
+
     // Not all actions are always legal, by default all actions
     // are masked out, but provide methods to unmask valid.
     pub(crate) fn unmask_select_card(&mut self, i: usize) -> Result<(), ActionSpaceError> {
@@ -346,6 +357,10 @@ impl ActionSpace {
         Ok(())
     }
 
+    pub(crate) fn unmask_reroll(&mut self) {
+        self.reroll[0] = 1;
+    }
+
     pub fn to_action(&self, index: usize, game: &Game) -> Result<Action, ActionSpaceError> {
         let vec = self.to_vec();
         if let Some(v) = vec.get(index) {
@@ -459,6 +474,11 @@ impl ActionSpace {
                     _ => Ok(Action::SortHand(SortBy::Suit)),
                 }
             }
+            n if !self.reroll.is_empty()
+                && (self.reroll_min()..=self.reroll_max()).contains(&n) =>
+            {
+                Ok(Action::Reroll())
+            }
             _ => Err(ActionSpaceError::InvalidActionConversion),
         }
     }
@@ -483,6 +503,7 @@ impl ActionSpace {
             self.pick_pack_card.clone(),
             self.skip_pack.clone(),
             self.sort_hand.clone(),
+            self.reroll.clone(),
         ]
         .concat()
     }
@@ -515,6 +536,7 @@ impl From<Config> for ActionSpace {
             pick_pack_card: vec![0; PACK_CONTENTS_MAX],
             skip_pack: vec![0; 1],
             sort_hand: vec![0; 2],
+            reroll: vec![0; 1],
         }
     }
 }
@@ -541,6 +563,7 @@ impl From<ActionSpace> for Vec<usize> {
             a.pick_pack_card,
             a.skip_pack,
             a.sort_hand,
+            a.reroll,
         ]
         .concat()
     }
@@ -589,9 +612,9 @@ mod tests {
         // + 1 cashout + 4 buy_joker + 1 next_round + 1 select_blind
         // + 2 buy_consumable + 2 use_consumable + 1 apply_tarot
         // + 5 sell_joker + 2 sell_consumable
-        // + 2 buy_pack + 5 pick_pack_card + 1 skip_pack + 2 sort_hand = 101
-        assert_eq!(a.size(), 101);
-        assert_eq!(a.to_vec().len(), 101);
+        // + 2 buy_pack + 5 pick_pack_card + 1 skip_pack + 2 sort_hand + 1 reroll = 102
+        assert_eq!(a.size(), 102);
+        assert_eq!(a.to_vec().len(), 102);
     }
 
     #[test]

@@ -41,17 +41,14 @@ impl Default for Shop {
 }
 
 impl Shop {
-    pub(crate) fn refresh(
+    pub(crate) fn refresh_cards(
         &mut self,
         planetarium: &Planetarium,
         held: &[Consumable],
-        allow_duplicates: bool,
         prob_mult: u32,
         held_jokers: &[Jokers],
         rng: &mut impl Rng,
     ) {
-        let _ = allow_duplicates;
-
         self.jokers = Vec::new();
         self.consumables = Vec::new();
 
@@ -106,6 +103,19 @@ impl Shop {
                 }
             }
         }
+    }
+
+    pub(crate) fn refresh(
+        &mut self,
+        planetarium: &Planetarium,
+        held: &[Consumable],
+        allow_duplicates: bool,
+        prob_mult: u32,
+        held_jokers: &[Jokers],
+        rng: &mut impl Rng,
+    ) {
+        let _ = allow_duplicates;
+        self.refresh_cards(planetarium, held, prob_mult, held_jokers, rng);
 
         let p1 = self
             .pack_gen

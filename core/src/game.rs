@@ -25,6 +25,10 @@ fn default_rng() -> ChaCha8Rng {
     ChaCha8Rng::from_entropy()
 }
 
+fn default_reroll_cost() -> usize {
+    5
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub struct Game {
@@ -66,6 +70,8 @@ pub struct Game {
     pub last_consumable_used: Option<Consumable>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub last_score: usize,
+    #[cfg_attr(feature = "serde", serde(default = "default_reroll_cost"))]
+    pub reroll_cost: usize,
 
     #[cfg_attr(feature = "serde", serde(default))]
     pub seed: u64,
@@ -122,6 +128,7 @@ impl Game {
             prob_mult: 1,
             last_consumable_used: None,
             last_score: 0,
+            reroll_cost: 5,
             tarot_prev_stage: None,
             open_pack: None,
             seed,
@@ -362,6 +369,7 @@ impl Game {
     fn cashout(&mut self) -> Result<(), GameError> {
         self.money += self.reward;
         self.reward = 0;
+        self.reroll_cost = 5;
         self.stage = Stage::Shop();
         let planetarium = self.planetarium.clone();
         let held_consumables = self.consumables.clone();
@@ -374,6 +382,23 @@ impl Game {
             &held_jokers,
             &mut self.rng,
         );
+        Ok(())
+    }
+
+    pub(crate) fn reroll(&mut self) -> Result<(), GameError> {
+        if self.stage != Stage::Shop() {
+            return Err(GameError::InvalidStage);
+        }
+        if self.money < self.reroll_cost {
+            return Err(GameError::InvalidBalance);
+        }
+        self.money -= self.reroll_cost;
+        self.reroll_cost += 1;
+        let planetarium = self.planetarium.clone();
+        let held = self.consumables.clone();
+        let held_jokers = self.jokers.clone();
+        self.shop
+            .refresh_cards(&planetarium, &held, self.prob_mult, &held_jokers, &mut self.rng);
         Ok(())
     }
 
@@ -793,6 +818,10 @@ impl Game {
             Action::SkipPack() => match self.stage {
                 Stage::PackOpen() => self.skip_pack(),
                 _ => Err(GameError::InvalidStage),
+            },
+            Action::Reroll() => match self.stage {
+                Stage::Shop() => self.reroll(),
+                _ => Err(GameError::InvalidAction),
             },
         }
     }
