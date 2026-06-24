@@ -395,8 +395,10 @@ impl Game {
         self.money -= self.reroll_cost;
         self.reroll_cost += 1;
         let planetarium = self.planetarium.clone();
-        let held = self.consumables.clone();
-        let held_jokers = self.jokers.clone();
+        let mut held = self.consumables.clone();
+        held.extend(self.shop.consumables.clone());
+        let mut held_jokers = self.jokers.clone();
+        held_jokers.extend(self.shop.jokers.clone());
         self.shop
             .refresh_cards(&planetarium, &held, self.prob_mult, &held_jokers, &mut self.rng);
         Ok(())
