@@ -6,8 +6,17 @@ description = "Balatro on the command line (basic)"
 license = "MIT"
 repository ="https://github.com/evanofslack/balatro-rs"
 
+[[bin]]
+name = "balatro-cli"
+path = "src/main.rs"
+
+[[bin]]
+name = "balatro-edit"
+path = "src/bin/edit.rs"
+
 [dependencies]
 text_io = "0.1.9"
 colored = "2.2.0"
 clap = { version = "4", features = ["derive"] }
+anyhow = "1"
 balatro-rs = {path = "../core/", version = "0.0.1", features = ["colored"]}

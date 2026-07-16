@@ -34,7 +34,7 @@ impl Deck {
         self.cards.extend(other);
     }
 
-    pub(crate) fn push(&mut self, card: Card) {
+    pub fn push(&mut self, card: Card) {
         self.cards.push(card);
     }
 

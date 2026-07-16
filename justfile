@@ -26,6 +26,9 @@ bench:
 cli:
     cargo run -p balatro-cli
 
+edit *ARGS:
+    cargo run -p balatro-cli --bin balatro-edit -- {{ARGS}}
+
 tui:
     cargo run -p balatro-tui
 
