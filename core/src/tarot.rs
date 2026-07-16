@@ -1,154 +1,18 @@
 use crate::card::{Enhancement, Suit};
 use crate::error::GameError;
 use crate::game::Game;
-use crate::joker::Joker;
-#[cfg(feature = "python")]
-use pyo3::pyclass;
-use strum::{EnumIter, IntoEnumIterator};
+use rand::Rng;
+use strum::IntoEnumIterator;
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EnumIter)]
-pub enum Tarot {
-    Fool,
-    Magician,
-    HighPriestess,
-    Empress,
-    Emperor,
-    Hierophant,
-    Lovers,
-    Chariot,
-    Justice,
-    Hermit,
-    WheelOfFortune,
-    Strength,
-    HangedMan,
-    Death,
-    Temperance,
-    Devil,
-    Tower,
-    Star,
-    Moon,
-    Sun,
-    Judgement,
-    World,
+pub use balatro_types::Tarot;
+
+/// Engine behavior for `Tarot`
+pub trait TarotEffect {
+    fn apply(&self, game: &mut Game) -> Result<(), GameError>;
 }
 
-impl Tarot {
-    pub fn name(&self) -> &str {
-        match self {
-            Self::Fool => "The Fool",
-            Self::Magician => "The Magician",
-            Self::HighPriestess => "The High Priestess",
-            Self::Empress => "The Empress",
-            Self::Emperor => "The Emperor",
-            Self::Hierophant => "The Hierophant",
-            Self::Lovers => "The Lovers",
-            Self::Chariot => "The Chariot",
-            Self::Justice => "Justice",
-            Self::Hermit => "The Hermit",
-            Self::WheelOfFortune => "The Wheel of Fortune",
-            Self::Strength => "Strength",
-            Self::HangedMan => "The Hanged Man",
-            Self::Death => "Death",
-            Self::Temperance => "Temperance",
-            Self::Devil => "The Devil",
-            Self::Tower => "The Tower",
-            Self::Star => "The Star",
-            Self::Moon => "The Moon",
-            Self::Sun => "The Sun",
-            Self::Judgement => "Judgement",
-            Self::World => "The World",
-        }
-    }
-
-    pub fn description(&self) -> &str {
-        match self {
-            Self::Fool => "Creates a copy of the last Tarot used",
-            Self::Magician => "Enhances up to 2 selected cards into Lucky Cards",
-            Self::HighPriestess => "Gives 2 random Planet cards",
-            Self::Empress => "Enhances up to 2 selected cards into Mult Cards",
-            Self::Emperor => "Gives 2 random Tarot cards",
-            Self::Hierophant => "Enhances up to 2 selected cards into Bonus Cards",
-            Self::Lovers => "Enhances 1 selected card into a Wild Card",
-            Self::Chariot => "Enhances 1 selected card into a Steel Card",
-            Self::Justice => "Enhances 1 selected card into a Glass Card",
-            Self::Hermit => "Doubles your money (up to $20)",
-            Self::WheelOfFortune => "Adds a Foil, Holo or Polychrome to 1 random Joker",
-            Self::Strength => "Increases the rank of up to 2 selected cards",
-            Self::HangedMan => "Destroys up to 2 selected cards",
-            Self::Death => "Converts the left selected card into the right",
-            Self::Temperance => "Gives $1 per Joker sell value (max $50)",
-            Self::Devil => "Enhances 1 selected card into a Gold Card",
-            Self::Tower => "Enhances 1 selected card into a Stone Card",
-            Self::Star => "Converts up to 3 selected cards to Diamonds",
-            Self::Moon => "Converts up to 3 selected cards to Clubs",
-            Self::Sun => "Converts up to 3 selected cards to Hearts",
-            Self::Judgement => "Creates a random Joker card",
-            Self::World => "Converts up to 3 selected cards to Spades",
-        }
-    }
-
-    pub fn cost(&self) -> usize {
-        3
-    }
-
-    pub fn sell_value(&self) -> usize {
-        1
-    }
-
-    pub fn min_targets(&self) -> usize {
-        match self {
-            Self::Fool
-            | Self::HighPriestess
-            | Self::Emperor
-            | Self::Hermit
-            | Self::WheelOfFortune
-            | Self::Temperance
-            | Self::Judgement => 0,
-            Self::Lovers
-            | Self::Chariot
-            | Self::Justice
-            | Self::Devil
-            | Self::Tower
-            | Self::Magician
-            | Self::Empress
-            | Self::Hierophant
-            | Self::Strength
-            | Self::HangedMan
-            | Self::Star
-            | Self::Moon
-            | Self::Sun
-            | Self::World => 1,
-            Self::Death => 2,
-        }
-    }
-
-    pub fn max_targets(&self) -> usize {
-        match self {
-            Self::Fool
-            | Self::HighPriestess
-            | Self::Emperor
-            | Self::Hermit
-            | Self::WheelOfFortune
-            | Self::Temperance
-            | Self::Judgement => 0,
-            Self::Lovers | Self::Chariot | Self::Justice | Self::Devil | Self::Tower => 1,
-            Self::Magician
-            | Self::Empress
-            | Self::Hierophant
-            | Self::Strength
-            | Self::HangedMan
-            | Self::Death => 2,
-            Self::Star | Self::Moon | Self::Sun | Self::World => 3,
-        }
-    }
-
-    pub fn requires_targets(&self) -> bool {
-        self.min_targets() > 0
-    }
-
-    pub fn apply(&self, game: &mut Game) -> Result<(), GameError> {
+impl TarotEffect for Tarot {
+    fn apply(&self, game: &mut Game) -> Result<(), GameError> {
         match self {
             Self::Magician => {
                 let selected = game.available.selected();
@@ -311,7 +175,7 @@ impl Tarot {
                 }
             }
             Self::Fool => {
-                if let Some(last) = game.last_consumable_used.clone() {
+                if let Some(last) = game.last_consumable_used {
                     if game.consumables.len() < game.config.consumable_slots {
                         game.consumables.push(last);
                     }
@@ -320,12 +184,13 @@ impl Tarot {
         }
         Ok(())
     }
+}
 
-    pub fn random(rng: &mut impl rand::Rng) -> Self {
-        let all: Vec<Self> = Self::iter().collect();
-        let i = rng.gen_range(0..all.len());
-        all[i]
-    }
+/// Picks a uniformly random Tarot
+pub fn random_tarot(rng: &mut impl Rng) -> Tarot {
+    let all: Vec<Tarot> = Tarot::iter().collect();
+    let i = rng.gen_range(0..all.len());
+    all[i]
 }
 
 #[cfg(test)]

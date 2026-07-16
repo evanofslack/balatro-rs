@@ -1,6 +1,6 @@
 use crate::game::Game;
 use crate::hand::MadeHand;
-use crate::joker::{Joker, Jokers};
+use crate::joker::{JokerEffects, Jokers};
 use std::sync::{Arc, Mutex};
 
 type GameHandFn = Arc<Mutex<dyn Fn(&mut Game, MadeHand) + Send + 'static>>;

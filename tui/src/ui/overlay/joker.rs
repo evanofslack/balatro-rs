@@ -1,6 +1,5 @@
 use crate::app::{AppState, WidgetId};
 use crate::ui::overlay::centered_rect;
-use balatro_rs::joker::Joker;
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},

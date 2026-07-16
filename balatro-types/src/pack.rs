@@ -1,15 +1,31 @@
 use crate::card::Card;
 use crate::joker::Jokers;
 use crate::planet::Planets;
+use crate::spectral::Spectral;
 use crate::tarot::Tarot;
-use balatro_types::Spectral;
 #[cfg(feature = "python")]
 use pyo3::pyclass;
 
-pub use balatro_types::{PackCategory, PackSize};
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "python", pyclass(eq))]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum PackCategory {
+    Arcana,
+    Buffoon,
+    Celestial,
+    Standard,
+    Spectral,
+}
 
-// `PackContent`/`Pack` stay defined locally because `PlayingCard` needs to embed
-// this crate's own `Card` (bc dedup `id`), not `balatro_types::Card`
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "python", pyclass(eq))]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum PackSize {
+    Normal,
+    Jumbo,
+    Mega,
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -113,10 +129,35 @@ impl Pack {
     }
 }
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone)]
-pub struct OpenPackState {
-    pub contents: Vec<PackContent>,
-    pub picks_remaining: usize,
-    pub description: String,
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::card::{Suit, Value};
+
+    #[test]
+    fn test_pack_cost_by_size() {
+        let mut pack = Pack {
+            category: PackCategory::Arcana,
+            size: PackSize::Normal,
+            contents: vec![],
+        };
+        assert_eq!(pack.cost(), 4);
+        pack.size = PackSize::Jumbo;
+        assert_eq!(pack.cost(), 6);
+        pack.size = PackSize::Mega;
+        assert_eq!(pack.cost(), 8);
+    }
+
+    #[test]
+    fn test_pack_content_playing_card_name() {
+        let content = PackContent::PlayingCard(Card::new(Value::Ace, Suit::Spade));
+        assert_eq!(content.name(), "Ace of Spades");
+        assert_eq!(content.type_label(), "Card");
+    }
+
+    #[test]
+    fn test_pack_content_spectral() {
+        let content = PackContent::Spectral(Spectral::Familiar);
+        assert_eq!(content.type_label(), "Spectral");
+    }
 }

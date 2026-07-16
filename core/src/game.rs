@@ -8,13 +8,13 @@ use crate::deck::Deck;
 use crate::effect::{EffectRegistry, Effects};
 use crate::error::GameError;
 use crate::hand::{MadeHand, SelectHand};
-use crate::joker::{Joker, Jokers};
+use crate::joker::{joker_display, JokerEffects, Jokers};
 use crate::pack::{OpenPackState, Pack, PackCategory, PackContent};
 use crate::planet::Planetarium;
 use crate::rank::HandRank;
 use crate::shop::Shop;
-use crate::stage::{Blind, End, Stage};
-use crate::tarot::Tarot;
+use crate::stage::{Blind, BlindExt, End, Stage};
+use crate::tarot::{Tarot, TarotEffect};
 
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
@@ -514,6 +514,8 @@ impl Game {
                     }
                 }
             }
+            // TODO: Spectral
+            Consumable::Spectral(_) => return Err(GameError::InvalidAction),
         }
         Ok(())
     }
@@ -631,6 +633,8 @@ impl Game {
             PackContent::PlayingCard(c) => {
                 self.deck.push(c);
             }
+            // TODO: Spectral
+            PackContent::Spectral(_) => return Err(GameError::InvalidAction),
         }
 
         if let Some(ref mut state) = self.open_pack {
@@ -863,7 +867,7 @@ impl fmt::Display for Game {
         } else {
             writeln!(f, "jokers:")?;
             for j in self.jokers.clone() {
-                writeln!(f, "  {}", j)?;
+                writeln!(f, "  {}", joker_display(&j))?;
             }
         }
         if self.consumables.is_empty() {
@@ -1135,7 +1139,7 @@ mod tests {
         g.start();
         g.stage = Stage::Shop();
         g.money = 10;
-        let j1 = Jokers::by_rarity(crate::joker::Rarity::Common)[0].clone();
+        let j1 = crate::joker::jokers_by_rarity(crate::joker::Rarity::Common)[0].clone();
         g.shop.jokers = vec![j1.clone()];
         g.buy_joker(j1.clone()).expect("buy joker");
         assert_eq!(g.money, 10 - j1.cost());
@@ -1283,7 +1287,8 @@ mod tests {
 
     #[test]
     fn test_joker_edition_foil() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
 
@@ -1306,7 +1311,8 @@ mod tests {
 
     #[test]
     fn test_joker_edition_holographic() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
 
@@ -1328,7 +1334,8 @@ mod tests {
 
     #[test]
     fn test_joker_edition_polychrome() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
 
@@ -1350,7 +1357,8 @@ mod tests {
 
     #[test]
     fn test_joker_edition_negative_buy_increases_slots() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let mut g = Game::default();
         let slots_before = g.config.joker_slots;
 
@@ -1366,7 +1374,8 @@ mod tests {
 
     #[test]
     fn test_joker_edition_negative_sell_decreases_slots() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let mut g = Game::default();
         let slots_before = g.config.joker_slots;
 
@@ -1412,7 +1421,8 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn test_from_json_restores_effect_registry() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let mut g = Game::default();
         g.start();
         let joker = Jokers::TheJoker(TheJoker::default());
@@ -1515,7 +1525,8 @@ mod tests {
 
     #[test]
     fn test_sell_joker() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let mut g = Game::default();
         g.start();
         g.stage = Stage::Shop();
@@ -1541,7 +1552,8 @@ mod tests {
 
     #[test]
     fn test_sell_joker_invalid_stage() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let mut g = Game::default();
         g.start();
         g.stage = Stage::End(crate::stage::End::Win);
@@ -1552,7 +1564,8 @@ mod tests {
 
     #[test]
     fn test_sell_joker_during_blind() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let mut g = Game::default();
         g.start();
         g.stage = Stage::Blind(Blind::Small);
@@ -1606,7 +1619,8 @@ mod tests {
 
     #[test]
     fn test_sell_joker_during_tarot_hand() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let mut g = Game::default();
         g.start();
         g.stage = Stage::TarotHand(Tarot::Magician);
@@ -1639,7 +1653,8 @@ mod tests {
 
     #[test]
     fn test_sell_joker_removes_effects() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let mut g = Game::default();
         g.start();
         g.stage = Stage::Shop();
@@ -1715,7 +1730,8 @@ mod tests {
 
     #[test]
     fn test_pick_pack_card_joker() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let mut g = Game::default();
         g.start();
         let joker = Jokers::TheJoker(TheJoker::default());
@@ -1735,7 +1751,8 @@ mod tests {
 
     #[test]
     fn test_pick_pack_card_joker_slots_full() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let mut g = Game::default();
         g.start();
         let slots = g.config.joker_slots;
@@ -1755,7 +1772,8 @@ mod tests {
 
     #[test]
     fn test_negative_joker_from_pack_expands_slots() {
-        use crate::joker::{Jokers, TheJoker};
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
         let mut g = Game::default();
         g.start();
         let slots = g.config.joker_slots;
@@ -1845,14 +1863,16 @@ mod tests {
         g.start();
         g.stage = Stage::Shop();
         g.money = 10;
-        let old_joker = Jokers::by_rarity(crate::joker::Rarity::Common)[0].clone();
+        let old_joker = crate::joker::jokers_by_rarity(crate::joker::Rarity::Common)[0].clone();
         g.shop.jokers = vec![old_joker.clone()];
         g.shop.consumables = Vec::new();
         g.reroll().expect("reroll");
         assert_eq!(g.shop.jokers.len() + g.shop.consumables.len(), 2);
-        let still_present = g.shop.jokers.iter().any(|j| {
-            std::mem::discriminant(j) == std::mem::discriminant(&old_joker)
-        });
+        let still_present = g
+            .shop
+            .jokers
+            .iter()
+            .any(|j| std::mem::discriminant(j) == std::mem::discriminant(&old_joker));
         assert!(!still_present);
     }
 }

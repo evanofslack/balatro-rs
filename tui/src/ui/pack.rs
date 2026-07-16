@@ -239,6 +239,7 @@ fn content_color(content: &PackContent) -> Color {
         PackContent::Planet(_) => Color::Blue,
         PackContent::Joker(_) => Color::Yellow,
         PackContent::PlayingCard(_) => Color::White,
+        PackContent::Spectral(_) => Color::Cyan,
     }
 }
 
@@ -251,8 +252,11 @@ pub fn inspect_target_for_cursor(app: &AppState) -> Option<InspectTarget> {
             InspectTarget::Consumable(balatro_rs::consumable::Consumable::Tarot(*t))
         }
         PackContent::Planet(p) => {
-            InspectTarget::Consumable(balatro_rs::consumable::Consumable::Planet(p.clone()))
+            InspectTarget::Consumable(balatro_rs::consumable::Consumable::Planet(*p))
         }
         PackContent::PlayingCard(c) => InspectTarget::Card(*c),
+        PackContent::Spectral(s) => {
+            InspectTarget::Consumable(balatro_rs::consumable::Consumable::Spectral(*s))
+        }
     })
 }

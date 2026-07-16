@@ -1,5 +1,6 @@
 use crate::app::{AppState, WidgetId};
 use crate::ui::{joker_strip, sidebar};
+use balatro_rs::stage::BlindExt;
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},

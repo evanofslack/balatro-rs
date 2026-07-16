@@ -2,10 +2,9 @@ use crate::action::{Action, MoveDirection, SortBy};
 use crate::card::Edition;
 use crate::consumable::Consumable;
 use crate::game::Game;
-use crate::joker::Joker;
 use crate::pack::PackContent;
 use crate::space::ActionSpace;
-use crate::stage::{Blind, Stage};
+use crate::stage::{Blind, BlindExt, Stage};
 
 impl Game {
     // Get all legal SelectCard actions that can be executed given current state
@@ -201,6 +200,8 @@ impl Game {
                         true
                     }
                 }
+                // TODO: Spectral
+                Consumable::Spectral(_) => false,
             })
             .cloned()
             .map(Action::UseConsumable)
@@ -541,6 +542,8 @@ impl Game {
                         true
                     }
                 }
+                // TODO: Spectral
+                Consumable::Spectral(_) => false,
             };
             if valid {
                 space

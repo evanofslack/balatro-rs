@@ -9,165 +9,7 @@ use std::{
 
 // Useful balatro docs: https://balatrogame.fandom.com/wiki/Card_Ranks
 
-/// Card rank or value.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Copy, Hash)]
-pub enum Value {
-    Two = 0,
-    Three = 1,
-    Four = 2,
-    Five = 3,
-    Six = 4,
-    Seven = 5,
-    Eight = 6,
-    Nine = 7,
-    Ten = 8,
-    Jack = 9,
-    Queen = 10,
-    King = 11,
-    Ace = 12,
-}
-
-/// Constant of all the values.
-/// This is what `Value::values()` returns
-const VALUES: [Value; 13] = [
-    Value::Two,
-    Value::Three,
-    Value::Four,
-    Value::Five,
-    Value::Six,
-    Value::Seven,
-    Value::Eight,
-    Value::Nine,
-    Value::Ten,
-    Value::Jack,
-    Value::Queen,
-    Value::King,
-    Value::Ace,
-];
-
-impl Value {
-    pub const fn values() -> [Self; 13] {
-        VALUES
-    }
-
-    pub fn next(self) -> Self {
-        match self {
-            Value::Two => Value::Three,
-            Value::Three => Value::Four,
-            Value::Four => Value::Five,
-            Value::Five => Value::Six,
-            Value::Six => Value::Seven,
-            Value::Seven => Value::Eight,
-            Value::Eight => Value::Nine,
-            Value::Nine => Value::Ten,
-            Value::Ten => Value::Jack,
-            Value::Jack => Value::Queen,
-            Value::Queen => Value::King,
-            Value::King => Value::Ace,
-            Value::Ace => Value::Two,
-        }
-    }
-}
-
-impl From<Value> for char {
-    fn from(value: Value) -> Self {
-        match value {
-            Value::Two => '2',
-            Value::Three => '3',
-            Value::Four => '4',
-            Value::Five => '5',
-            Value::Six => '6',
-            Value::Seven => '7',
-            Value::Eight => '8',
-            Value::Nine => '9',
-            Value::Ten => 'T',
-            Value::Jack => 'J',
-            Value::Queen => 'Q',
-            Value::King => 'K',
-            Value::Ace => 'A',
-        }
-    }
-}
-
-/// Enum for the four different suits.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Copy, Hash)]
-pub enum Suit {
-    Spade = 0,
-    Club = 1,
-    Heart = 2,
-    Diamond = 3,
-}
-
-/// All of the `Suit`'s. This is what `Suit::suits()` returns.
-const SUITS: [Suit; 4] = [Suit::Spade, Suit::Club, Suit::Heart, Suit::Diamond];
-
-impl Suit {
-    pub const fn suits() -> [Self; 4] {
-        SUITS
-    }
-    pub fn unicode(&self) -> &str {
-        match self {
-            Self::Spade => "♤",
-            Self::Club => "♧",
-            Self::Heart => "♡",
-            Self::Diamond => "♢",
-        }
-    }
-}
-
-impl From<Suit> for char {
-    fn from(value: Suit) -> Self {
-        match value {
-            Suit::Spade => 's',
-            Suit::Club => 'c',
-            Suit::Heart => 'h',
-            Suit::Diamond => 'd',
-        }
-    }
-}
-
-/// Enum for card  enhancements
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Copy, Hash)]
-pub enum Enhancement {
-    Bonus,
-    Mult,
-    Wild,
-    Glass,
-    Steel,
-    Stone,
-    Gold,
-    Lucky,
-}
-
-/// Enum for card  editions
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Copy, Hash, Default)]
-pub enum Edition {
-    #[default]
-    Base,
-    Foil,
-    Holographic,
-    Polychrome,
-    Negative,
-}
-
-/// Enum for card seals
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Copy, Hash)]
-pub enum Seal {
-    Gold,
-    Red,
-    Blue,
-    Purple,
-}
+pub use balatro_types::{Edition, Enhancement, Seal, Suit, Value};
 
 // Each card gets a unique id. Not sure this is strictly
 // necessary but it makes identifying otherwise identical cards
@@ -343,5 +185,21 @@ mod tests {
         let king = Card::new(Value::King, Suit::Club);
         assert!(!king.is_even());
         assert!(!king.is_odd());
+    }
+
+    // Card's `id` is part of its derived Eq/Ord/Hash
+    // so two structurally-identical cards with different ids are NOT equal.
+    #[test]
+    fn test_card_equality_is_id_sensitive() {
+        let a = Card::new(Value::Ace, Suit::Spade);
+        let b = Card::new(Value::Ace, Suit::Spade);
+        assert_ne!(a.id, b.id, "Card::new must assign distinct ids");
+        assert_eq!(a.value, b.value);
+        assert_eq!(a.suit, b.suit);
+        assert_ne!(
+            a, b,
+            "cards with identical value/suit but different ids must not be equal"
+        );
+        assert_eq!(a, a, "a card must equal itself");
     }
 }

@@ -38,6 +38,7 @@ fn main() {
 This library does not implement all aspects of balatro and likely never will.
 
 The follow features are implemented (including move generation)
+
 - [x] identification and scoring of poker hands
 - [x] playing/discarding/reordering of cards
 - [x] blind pass/fail and game win/lose conditions
@@ -45,24 +46,23 @@ The follow features are implemented (including move generation)
 - [x] ante progression (up to ante 8)
 - [x] blind progression (small, big, boss)
 - [x] stage transition (pre-blind, blind, post-blind, shop)
-- [x] buying/selling/using planets (no selling yet)
-- [x] buying/selling/using jokers (very partial support)
+- [x] buying/selling/using planets
+- [x] buying/selling/using jokers (partial support)
+- [x] buying/selling/using tarots
 
 The following features are missing and may or may not be added
-- [ ] buying/selling/using tarots
+
 - [ ] buying/selling/using spectrals
 - [ ] boss blind modifiers
 - [ ] skip blind/tags
 - [ ] card enhancements, foils and seals
-- [ ] joker foils 
+- [ ] joker foils
 - [ ] alternative decks
 - [ ] alternative stakes
-
 
 ## TUI
 
 An interactive terminal client is available in [/tui](https://github.com/evanofslack/balatro-rs/tree/main/tui). Run `cargo run -p balatro-tui` to start a game, or load a saved state with `--load <file>`.
-
 
 ## Python bindings
 
