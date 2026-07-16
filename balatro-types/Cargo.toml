@@ -1,0 +1,20 @@
+[package]
+name = "balatro-types"
+version = "0.1.0"
+edition = "2024"
+description = "Neutral vocabulary of Balatro domain types (cards, jokers, tarots, planets, etc.) with no game-engine behavior"
+license = "MIT"
+
+[dependencies]
+strum = { version = "0.26", features = ["derive"] }
+serde = { version = "1", features = ["derive"], optional = true }
+pyo3 = { version = "0.23.1", optional = true }
+
+[dev-dependencies]
+# auto-initialize only affects test/example builds (dev-dependencies never
+# leak their extra features to downstream consumers of this crate).
+pyo3 = { version = "0.23.1", features = ["auto-initialize"] }
+
+[features]
+serde = ["dep:serde"]
+python = ["dep:pyo3"]
