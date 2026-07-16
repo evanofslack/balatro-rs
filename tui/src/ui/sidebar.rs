@@ -1,6 +1,6 @@
 use super::{hand_rank_name, level_color, wrap};
 use crate::app::AppState;
-use balatro_rs::stage::Stage;
+use balatro_rs::stage::{BlindExt, Stage, blind_display};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -40,7 +40,7 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         )),
         Stage::Blind(b) => Line::from(Span::styled(
-            b.to_string(),
+            blind_display(b),
             Style::default()
                 .fg(match b {
                     balatro_rs::stage::Blind::Small => Color::Cyan,

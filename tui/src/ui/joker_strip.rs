@@ -1,6 +1,5 @@
 use crate::app::{AppState, FocusZone, WidgetId};
 use crate::ui::cards::{CARD_H, CARD_W, SLOT_W};
-use balatro_rs::joker::Joker;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},

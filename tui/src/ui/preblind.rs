@@ -1,7 +1,7 @@
 use crate::app::{AppState, FocusZone, WidgetId};
 use crate::ui::sidebar;
 use balatro_rs::action::Action;
-use balatro_rs::stage::Blind;
+use balatro_rs::stage::{Blind, BlindExt, blind_display};
 
 fn blind_state(game: &balatro_rs::game::Game, blind: &Blind) -> BlindState {
     let valid = game
@@ -110,7 +110,7 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
 
         let block = Block::default()
             .title(Span::styled(
-                blind.to_string(),
+                blind_display(blind),
                 Style::default()
                     .fg(title_color)
                     .add_modifier(Modifier::BOLD),

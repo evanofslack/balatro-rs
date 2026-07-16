@@ -2,7 +2,6 @@ use crate::app::{AppState, InspectTarget, WidgetId};
 use crate::ui::cards::{rank_str, suit_char, suit_color};
 use crate::ui::overlay::centered_rect;
 use crate::ui::wrap;
-use balatro_rs::joker::Joker;
 use balatro_rs::pack::PackCategory;
 use ratatui::{
     layout::Rect,
@@ -89,7 +88,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
                 ]),
                 Line::from(""),
             ];
-            for word_line in wrap(&desc, w as usize - 4) {
+            for word_line in wrap(desc, w as usize - 4) {
                 lines.push(Line::from(Span::styled(
                     format!("  {}", word_line),
                     Style::default().fg(Color::White),

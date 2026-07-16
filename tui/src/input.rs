@@ -502,7 +502,7 @@ fn handle_key_shop_jokers(app: &mut AppState, key: KeyEvent) {
                 let joker = app.game.shop.jokers[app.cursor].clone();
                 let _ = app.game.handle_action(Action::BuyJoker(joker));
             } else if app.cursor < count {
-                let consumable = app.game.shop.consumables[app.cursor - joker_count].clone();
+                let consumable = app.game.shop.consumables[app.cursor - joker_count];
                 let _ = app.game.handle_action(Action::BuyConsumable(consumable));
             }
         }
@@ -576,7 +576,7 @@ fn open_inspect(app: &mut AppState) {
         }
         FocusZone::ConsumableStrip => {
             if let Some(c) = app.game.consumables.get(app.cursor) {
-                app.overlay = Some(Overlay::Inspect(InspectTarget::Consumable(c.clone())));
+                app.overlay = Some(Overlay::Inspect(InspectTarget::Consumable(*c)));
             }
         }
         FocusZone::ShopJokers => {
@@ -588,7 +588,7 @@ fn open_inspect(app: &mut AppState) {
             } else {
                 let ci = app.cursor - joker_count;
                 if let Some(c) = app.game.shop.consumables.get(ci) {
-                    app.overlay = Some(Overlay::Inspect(InspectTarget::Consumable(c.clone())));
+                    app.overlay = Some(Overlay::Inspect(InspectTarget::Consumable(*c)));
                 }
             }
         }
@@ -692,7 +692,7 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             if let Some(consumable) = app.game.shop.consumables.get(idx) {
                 let _ = app
                     .game
-                    .handle_action(Action::BuyConsumable(consumable.clone()));
+                    .handle_action(Action::BuyConsumable(*consumable));
             }
         }
         RerollButton => {

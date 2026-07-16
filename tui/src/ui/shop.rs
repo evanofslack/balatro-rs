@@ -1,7 +1,6 @@
 use crate::app::{AppState, FocusZone, WidgetId};
 use crate::ui::cards::{CARD_H, CARD_W, SLOT_W};
 use crate::ui::{joker_strip, sidebar};
-use balatro_rs::joker::Joker;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -316,6 +315,7 @@ fn consumable_color(consumable: &balatro_rs::consumable::Consumable) -> Color {
     match consumable {
         Consumable::Tarot(_) => Color::Cyan,
         Consumable::Planet(_) => Color::Blue,
+        Consumable::Spectral(_) => Color::Magenta,
     }
 }
 
