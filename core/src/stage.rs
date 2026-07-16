@@ -1,21 +1,18 @@
 use crate::tarot::Tarot;
+pub use balatro_types::Blind;
 #[cfg(feature = "python")]
 use pyo3::{pyclass, pymethods};
-use std::fmt;
 
-/// Types of blinds
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Copy)]
-pub enum Blind {
-    Small,
-    Big,
-    Boss,
+/// Engine behavior for `Blind`
+pub trait BlindExt {
+    /// Money earned for beating the blind.
+    fn reward(&self) -> usize;
+    // Ring around the rosie.
+    fn next(&self) -> Self;
 }
 
-impl Blind {
-    /// reward is money earned for beating the blind
-    pub fn reward(&self) -> usize {
+impl BlindExt for Blind {
+    fn reward(&self) -> usize {
         match self {
             Self::Small => 3,
             Self::Big => 4,
@@ -23,7 +20,7 @@ impl Blind {
         }
     }
 
-    pub fn next(&self) -> Self {
+    fn next(&self) -> Self {
         match self {
             Self::Small => Self::Big,
             Self::Big => Self::Boss,
@@ -32,13 +29,11 @@ impl Blind {
     }
 }
 
-impl fmt::Display for Blind {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Small => write!(f, "Small Blind"),
-            Self::Big => write!(f, "Big Blind"),
-            Self::Boss => write!(f, "Boss Blind"),
-        }
+pub fn blind_display(blind: &Blind) -> &'static str {
+    match blind {
+        Blind::Small => "Small Blind",
+        Blind::Big => "Big Blind",
+        Blind::Boss => "Boss Blind",
     }
 }
 
@@ -104,5 +99,39 @@ impl Stage {
             Self::TarotHand(_) => 8,
             Self::PackOpen() => 9,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_blind_reward() {
+        assert_eq!(Blind::Small.reward(), 3);
+        assert_eq!(Blind::Big.reward(), 4);
+        assert_eq!(Blind::Boss.reward(), 5);
+    }
+
+    #[test]
+    fn test_blind_next_cycles() {
+        assert_eq!(Blind::Small.next(), Blind::Big);
+        assert_eq!(Blind::Big.next(), Blind::Boss);
+        assert_eq!(Blind::Boss.next(), Blind::Small);
+    }
+
+    #[test]
+    fn test_blind_display() {
+        assert_eq!(blind_display(&Blind::Small), "Small Blind");
+        assert_eq!(blind_display(&Blind::Big), "Big Blind");
+        assert_eq!(blind_display(&Blind::Boss), "Boss Blind");
+    }
+
+    #[test]
+    fn test_stage_is_blind_and_is_pack_open() {
+        assert!(Stage::Blind(Blind::Small).is_blind());
+        assert!(!Stage::Shop().is_blind());
+        assert!(Stage::PackOpen().is_pack_open());
+        assert!(!Stage::Shop().is_pack_open());
     }
 }

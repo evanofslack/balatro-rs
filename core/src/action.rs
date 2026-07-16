@@ -1,8 +1,8 @@
 use crate::card::Card;
 use crate::consumable::Consumable;
-use crate::joker::Jokers;
+use crate::joker::{Jokers, joker_display};
 use crate::pack::{Pack, PackContent};
-use crate::stage::Blind;
+use crate::stage::{Blind, blind_display};
 #[cfg(feature = "python")]
 use pyo3::pyclass;
 use std::fmt;
@@ -84,7 +84,7 @@ impl fmt::Display for Action {
                 write!(f, "CashOut: {}", reward)
             }
             Self::BuyJoker(joker) => {
-                write!(f, "BuyJoker: {}", joker)
+                write!(f, "BuyJoker: {}", joker_display(joker))
             }
             Self::BuyConsumable(consumable) => {
                 write!(f, "BuyConsumable: {}", consumable.name())
@@ -96,7 +96,7 @@ impl fmt::Display for Action {
                 write!(f, "NextRound")
             }
             Self::SelectBlind(blind) => {
-                write!(f, "SelectBlind: {}", blind)
+                write!(f, "SelectBlind: {}", blind_display(blind))
             }
             Self::ApplyTarot() => write!(f, "ApplyTarot"),
             Self::SellJoker(idx) => write!(f, "SellJoker: {}", idx),

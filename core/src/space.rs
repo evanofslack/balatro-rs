@@ -2,7 +2,7 @@ use crate::action::{Action, MoveDirection, SortBy};
 use crate::config::Config;
 use crate::error::ActionSpaceError;
 use crate::game::Game;
-use crate::stage::Blind;
+use crate::stage::{Blind, BlindExt};
 #[cfg(feature = "python")]
 use pyo3::pyclass;
 

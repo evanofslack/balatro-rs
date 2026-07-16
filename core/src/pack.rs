@@ -1,30 +1,15 @@
 use crate::card::Card;
-use crate::joker::{Joker, Jokers};
+use crate::joker::Jokers;
 use crate::planet::Planets;
 use crate::tarot::Tarot;
+use balatro_types::Spectral;
 #[cfg(feature = "python")]
 use pyo3::pyclass;
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum PackCategory {
-    Arcana,
-    Buffoon,
-    Celestial,
-    Standard,
-    Spectral,
-}
+pub use balatro_types::{PackCategory, PackSize};
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum PackSize {
-    Normal,
-    Jumbo,
-    Mega,
-}
-
+// `PackContent`/`Pack` stay defined locally because `PlayingCard` needs to embed
+// this crate's own `Card` (bc dedup `id`), not `balatro_types::Card`
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -33,6 +18,7 @@ pub enum PackContent {
     Joker(Jokers),
     Planet(Planets),
     PlayingCard(Card),
+    Spectral(Spectral),
 }
 
 impl PackContent {
@@ -42,6 +28,7 @@ impl PackContent {
             Self::Joker(j) => j.name().to_string(),
             Self::Planet(p) => p.name(),
             Self::PlayingCard(c) => c.to_string(),
+            Self::Spectral(s) => s.name().to_string(),
         }
     }
 
@@ -51,6 +38,7 @@ impl PackContent {
             Self::Joker(_) => "Joker",
             Self::Planet(_) => "Planet",
             Self::PlayingCard(_) => "Card",
+            Self::Spectral(_) => "Spectral",
         }
     }
 }

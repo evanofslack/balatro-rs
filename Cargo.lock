@@ -104,6 +104,7 @@ dependencies = [
 name = "balatro-rs"
 version = "0.0.1"
 dependencies = [
+ "balatro-types",
  "colored",
  "criterion",
  "indexmap",
@@ -128,6 +129,15 @@ dependencies = [
  "clap 4.5.60",
  "crossterm",
  "ratatui",
+]
+
+[[package]]
+name = "balatro-types"
+version = "0.1.0"
+dependencies = [
+ "pyo3",
+ "serde",
+ "strum",
 ]
 
 [[package]]

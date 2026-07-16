@@ -1,5 +1,6 @@
 use crate::card::{Card, Suit, Value};
 use rand::{seq::SliceRandom, Rng};
+use strum::IntoEnumIterator;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
@@ -64,9 +65,9 @@ impl Deck {
 impl Default for Deck {
     fn default() -> Self {
         let mut cards: Vec<Card> = Vec::new();
-        for v in &Value::values() {
-            for s in &Suit::suits() {
-                let c = Card::new(*v, *s);
+        for v in Value::iter() {
+            for s in Suit::iter() {
+                let c = Card::new(v, s);
                 cards.push(c);
             }
         }
