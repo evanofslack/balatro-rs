@@ -12,6 +12,6 @@ mod pools;
 mod resolve;
 mod rng;
 
-pub use draws::ShopItem;
+pub use draws::{ShopItem, pack_info, voucher_upgrade};
 pub use instance::{InstParams, Instance};
 pub use rng::{LuaRandom, pseudohash, round13};

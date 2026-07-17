@@ -43,3 +43,6 @@ jkr *FILES:
 
 profile *ARGS:
     cargo run -p balatro-profile --bin profile -- {{ARGS}}
+
+seed *ARGS:
+    cargo run -p balatro-seed --bin explore -- {{ARGS}}

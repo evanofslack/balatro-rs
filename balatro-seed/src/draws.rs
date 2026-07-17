@@ -28,6 +28,53 @@ pub enum ShopItem {
     PlayingCard,
 }
 
+/// Given a drawn base voucher, returns its upgrade tier if one exists.
+/// `VOUCHERS` (`pools.rs`) is laid out as (base, upgrade) pairs at
+/// consecutive indices — mirrors the pairing loop in `TheSoul`'s own
+/// `index.html` demo (`Immolate.VOUCHERS`), used there to decide which
+/// voucher becomes drawable next.
+pub fn voucher_upgrade(voucher: Voucher) -> Option<Voucher> {
+    let name = voucher.name();
+    let idx = pools::VOUCHERS.iter().position(|&n| n == name)?;
+    if idx % 2 == 0 {
+        resolve::resolve_voucher(pools::VOUCHERS[idx + 1])
+    } else {
+        None
+    }
+}
+
+/// `functions.hpp::packInfo`: decodes a drawn pack name (as returned by
+/// [`Instance::next_pack`]) into its base category (e.g. "Jumbo Celestial
+/// Pack" -> "Celestial Pack") and card count. `Mega`/`Jumbo` sizes are 4/2
+/// for Buffoon and Spectral packs, 5/3 for every other category — detected
+/// by checking specific character positions, exactly as the source does,
+/// since "Spectral" and "Standard" only diverge at their second letter.
+pub fn pack_info(pack: &str) -> (&str, i32) {
+    let bytes = pack.as_bytes();
+    if bytes[0] == b'M' {
+        let size = if bytes[5] == b'B' || bytes[6] == b'p' {
+            4
+        } else {
+            5
+        };
+        (&pack[5..], size)
+    } else if bytes[0] == b'J' {
+        let size = if bytes[6] == b'B' || bytes[7] == b'p' {
+            4
+        } else {
+            5
+        };
+        (&pack[6..], size)
+    } else {
+        let size = if bytes[0] == b'B' || bytes[1] == b'p' {
+            2
+        } else {
+            3
+        };
+        (pack, size)
+    }
+}
+
 fn resolved_joker(name: &str) -> Jokers {
     resolve::resolve_joker(name)
         .unwrap_or_else(|| panic!("pool name {name:?} has no balatro_types::Jokers match"))
