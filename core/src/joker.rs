@@ -411,6 +411,48 @@ impl JokerEffects for Jokers {
                 }
                 vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
             }
+            Self::Arrowhead(_) => {
+                fn apply(g: &mut Game, hand: MadeHand) {
+                    for card in hand.hand.cards() {
+                        if card.matches_suit(Suit::Spade) {
+                            g.chips += 50;
+                        }
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::OnyxAgate(_) => {
+                fn apply(g: &mut Game, hand: MadeHand) {
+                    for card in hand.hand.cards() {
+                        if card.matches_suit(Suit::Club) {
+                            g.mult += 7;
+                        }
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::ShootTheMoon(_) => {
+                fn apply(g: &mut Game, _hand: MadeHand) {
+                    for card in g.available.not_selected() {
+                        if card.value == Value::Queen {
+                            g.mult += 13;
+                        }
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::RaisedFist(_) => {
+                fn apply(g: &mut Game, _hand: MadeHand) {
+                    // no dedicated numeric "rank" accessor exists; chips() is the
+                    // closest analog to the card's face rank
+                    // TODO: need to do this with rank ord?
+                    let lowest = g.available.not_selected().iter().map(|c| c.chips()).min();
+                    if let Some(lowest) = lowest {
+                        g.mult += lowest * 2;
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
             _ => vec![],
         }
     }
@@ -458,6 +500,10 @@ impl JokerEffects for Jokers {
                 | Self::Acrobat(_)
                 | Self::RoughGem(_)
                 | Self::Bloodstone(_)
+                | Self::Arrowhead(_)
+                | Self::OnyxAgate(_)
+                | Self::ShootTheMoon(_)
+                | Self::RaisedFist(_)
         )
     }
 }
@@ -491,9 +537,9 @@ mod tests {
     // `effects()` behavior implemented. Shop/pack generation
     // must never offer joker that silently does nothing.
     #[test]
-    fn test_exactly_40_jokers_implemented() {
+    fn test_exactly_44_jokers_implemented() {
         let count = Jokers::iter().filter(|j| j.is_implemented()).count();
-        assert_eq!(count, 40);
+        assert_eq!(count, 44);
     }
 
     #[test]
@@ -1903,6 +1949,156 @@ mod tests {
         }
         assert!(saw_increase, "Bloodstone should sometimes Xmult");
         assert!(saw_no_increase, "Bloodstone should sometimes not Xmult");
+    }
+
+    #[test]
+    fn test_arrowhead_with_spades() {
+        let ace = Card::new(Value::Ace, Suit::Spade);
+        let hand = SelectHand::new(vec![ace]);
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 ace spade): 11 chips
+        // (5 + 11) * 1 = 16
+        let before = 16;
+        // Arrowhead: +50 chips for the spade
+        // (5 + 11 + 50) * 1 = 66
+        let after = 66;
+
+        let j = Jokers::Arrowhead(Arrowhead::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_arrowhead_no_spades() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+
+        let before = 16;
+        let after = 16;
+
+        let j = Jokers::Arrowhead(Arrowhead::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_onyx_agate_with_clubs() {
+        let ace = Card::new(Value::Ace, Suit::Club);
+        let hand = SelectHand::new(vec![ace]);
+
+        let before = 16;
+        // (5 + 11) * (1 + 7) = 128
+        let after = 128;
+
+        let j = Jokers::OnyxAgate(OnyxAgate::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_onyx_agate_no_clubs() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+
+        let before = 16;
+        let after = 16;
+
+        let j = Jokers::OnyxAgate(OnyxAgate::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_shoot_the_moon_with_held_queen() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::ShootTheMoon(ShootTheMoon::default());
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.available
+            .extend(vec![Card::new(Value::Queen, Suit::Spade)]);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 ace): 11 chips
+        // Held Queen: +13 mult
+        // (5 + 11) * (1 + 13) = 224
+        assert_eq!(g.calc_score(hand.best_hand().unwrap()), 224);
+    }
+
+    #[test]
+    fn test_shoot_the_moon_no_held_queen() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::ShootTheMoon(ShootTheMoon::default());
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // No held cards -> no bonus; (5 + 11) * 1 = 16
+        assert_eq!(g.calc_score(hand.best_hand().unwrap()), 16);
+    }
+
+    #[test]
+    fn test_raised_fist_uses_lowest_held_card() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::RaisedFist(RaisedFist::default());
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.available.extend(vec![
+            Card::new(Value::Two, Suit::Club),
+            Card::new(Value::King, Suit::Spade),
+        ]);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // High card (level 1): 5 chips, 1 mult
+        // Played (1 ace): 11 chips
+        // Lowest held card: Two (2 chips) -> +4 mult
+        // (5 + 11) * (1 + 4) = 80
+        assert_eq!(g.calc_score(hand.best_hand().unwrap()), 80);
+    }
+
+    #[test]
+    fn test_raised_fist_no_held_cards() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::RaisedFist(RaisedFist::default());
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // No held cards -> no bonus; (5 + 11) * 1 = 16
+        assert_eq!(g.calc_score(hand.best_hand().unwrap()), 16);
     }
 
     #[test]
