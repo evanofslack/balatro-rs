@@ -38,7 +38,6 @@ pub struct Game {
     pub deck: Deck,
     pub available: Available,
     pub discarded: Vec<Card>,
-    pub held: Vec<Card>,
     pub blind: Option<Blind>,
     pub stage: Stage,
     pub ante_start: Ante,
@@ -107,7 +106,6 @@ impl Game {
             deck: Deck::default(),
             available: Available::default(),
             discarded: Vec::new(),
-            held: Vec::new(),
             action_history: Vec::new(),
             jokers: Vec::new(),
             effect_registry: EffectRegistry::new(),
@@ -936,7 +934,6 @@ pub fn score_hand(
     base_chips: usize,
     base_mult: usize,
     played_cards: &[Card],
-    held_cards: &[Card],
     jokers: &[Jokers],
     mut hand: MadeHand,
 ) -> usize {
@@ -946,7 +943,6 @@ pub fn score_hand(
         chips: base_chips + card_chips,
         mult: base_mult,
         jokers: jokers.to_vec(),
-        held: held_cards.to_vec(),
         ..Default::default()
     };
 
@@ -1162,13 +1158,12 @@ mod tests {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let king = Card::new(Value::King, Suit::Diamond);
         let played = vec![ace, king];
-        let held = vec![];
         let jokers = vec![];
         let hand = SelectHand::new(played.clone()).best_hand().unwrap();
         // High card (level 1): chips=5, mult=1
         // Played cards: 11 + 10 = 21 chips
         // score = (5 + 21) * 1 = 26
-        let score = score_hand(5, 1, &played, &held, &jokers, hand);
+        let score = score_hand(5, 1, &played, &jokers, hand);
         assert_eq!(score, 26);
     }
 
@@ -1178,12 +1173,11 @@ mod tests {
         use crate::joker::*;
         let ace = Card::new(Value::Ace, Suit::Heart);
         let played = vec![ace];
-        let held = vec![];
         let jokers = vec![Jokers::MysticSummit(MysticSummit::default())];
         let hand = SelectHand::new(played.clone()).best_hand().unwrap();
         // Set g.discards to 0 via the scratch Game — we need to reach into it
         // Instead, just verify the joker triggers with discards=0 and doesn't with >0
-        let score = score_hand(5, 1, &played, &held, &jokers, hand.clone());
+        let score = score_hand(5, 1, &played, &jokers, hand.clone());
         // Default Game has discards=3, so Mystic Summit does NOT fire: 16 * 1 = 16
         assert_eq!(score, 16);
 
