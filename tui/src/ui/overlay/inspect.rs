@@ -158,6 +158,20 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
             lines.push(close_line());
             (title, lines)
         }
+        InspectTarget::Tag(tag) => {
+            let title = format!(" {} ", tag.name());
+            let desc = tag.description();
+            let mut lines = vec![Line::from("")];
+            for word_line in wrap(desc, w as usize - 4) {
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", word_line),
+                    Style::default().fg(Color::White),
+                )));
+            }
+            lines.push(Line::from(""));
+            lines.push(close_line());
+            (title, lines)
+        }
     };
 
     let block = Block::default()

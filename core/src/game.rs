@@ -14,11 +14,13 @@ use crate::planet::Planetarium;
 use crate::rank::HandRank;
 use crate::shop::Shop;
 use crate::stage::{Blind, BlindExt, End, Stage};
+use crate::tag::Tag;
 use crate::tarot::{Tarot, TarotEffect};
 
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use std::fmt;
+use strum::IntoEnumIterator;
 
 #[cfg(feature = "serde")]
 fn default_rng() -> ChaCha8Rng {
@@ -38,6 +40,9 @@ pub struct Game {
     pub deck: Deck,
     pub available: Available,
     pub discarded: Vec<Card>,
+    pub tags: Vec<Tag>,
+    pub small_blind_tag: Tag,
+    pub big_blind_tag: Tag,
     pub blind: Option<Blind>,
     pub stage: Stage,
     pub ante_start: Ante,
@@ -100,12 +105,15 @@ impl Game {
                 (u, None, ChaCha8Rng::seed_from_u64(u))
             }
         };
-        Self {
+        let mut game = Self {
             shop: Shop::new(),
             planetarium: Planetarium::new(),
             deck: Deck::default(),
             available: Available::default(),
             discarded: Vec::new(),
+            tags: Vec::new(),
+            small_blind_tag: Tag::Uncommon,
+            big_blind_tag: Tag::Uncommon,
             action_history: Vec::new(),
             jokers: Vec::new(),
             effect_registry: EffectRegistry::new(),
@@ -133,7 +141,9 @@ impl Game {
             seed_str,
             rng,
             config,
-        }
+        };
+        game.draw_ante_tags();
+        game
     }
 
     pub fn start(&mut self) {
@@ -374,7 +384,39 @@ impl Game {
         Ok(reward)
     }
 
+    fn apply_tag(&mut self, tag: Tag) {
+        match tag {
+            Tag::Uncommon => {}
+            Tag::Rare => {}
+            Tag::Negative => {}
+            Tag::Foil => {}
+            Tag::Holographic => {}
+            Tag::Polychrome => {}
+            Tag::Investment => {}
+            Tag::Voucher => {}
+            Tag::Boss => {}
+            Tag::Standard => {}
+            Tag::Charm => {}
+            Tag::Meteor => {}
+            Tag::Buffoon => {}
+            Tag::Handy => {}
+            Tag::Garbage => {}
+            Tag::Ethereal => {}
+            Tag::Coupon => {}
+            Tag::Double => {}
+            Tag::Juggle => {}
+            Tag::D6 => {}
+            Tag::TopUp => {}
+            Tag::Speed => {}
+            Tag::Orbital => {}
+            Tag::Economy => {}
+        }
+    }
+
     fn cashout(&mut self) -> Result<(), GameError> {
+        for tag in std::mem::take(&mut self.tags) {
+            self.apply_tag(tag);
+        }
         self.money += self.reward;
         self.reward = 0;
         self.reroll_cost = default_reroll_cost();
@@ -702,6 +744,43 @@ impl Game {
         Ok(())
     }
 
+    fn skip_blind(&mut self, blind: Blind) -> Result<(), GameError> {
+        if self.stage != Stage::PreBlind() {
+            return Err(GameError::InvalidStage);
+        }
+        if blind == Blind::Boss {
+            return Err(GameError::InvalidBlind);
+        }
+        if let Some(current) = self.blind {
+            if blind != current.next() {
+                return Err(GameError::InvalidBlind);
+            }
+        } else if blind != Blind::Small {
+            return Err(GameError::InvalidBlind);
+        }
+        self.blind = Some(blind);
+        self.stage = Stage::PreBlind();
+        let tag = self
+            .skip_tag(blind)
+            .expect("blind is not Boss, checked above");
+        self.tags.push(tag);
+        Ok(())
+    }
+
+    fn draw_ante_tags(&mut self) {
+        let tags: Vec<Tag> = Tag::iter().collect();
+        self.small_blind_tag = *tags.choose(&mut self.rng).unwrap();
+        self.big_blind_tag = *tags.choose(&mut self.rng).unwrap();
+    }
+
+    pub fn skip_tag(&self, blind: Blind) -> Option<Tag> {
+        match blind {
+            Blind::Small => Some(self.small_blind_tag),
+            Blind::Big => Some(self.big_blind_tag),
+            Blind::Boss => None,
+        }
+    }
+
     fn next_round(&mut self) -> Result<(), GameError> {
         self.stage = Stage::PreBlind();
         self.round += 1;
@@ -743,6 +822,7 @@ impl Game {
             if let Some(ante_next) = self.ante_current.next(self.ante_end) {
                 self.ante_current = ante_next;
                 self.blind = None;
+                self.draw_ante_tags();
             } else {
                 self.stage = Stage::End(End::Win);
                 return Ok(false);
@@ -813,6 +893,10 @@ impl Game {
             },
             Action::SelectBlind(blind) => match self.stage {
                 Stage::PreBlind() => self.select_blind(blind),
+                _ => Err(GameError::InvalidAction),
+            },
+            Action::SkipBlind(blind) => match self.stage {
+                Stage::PreBlind() => self.skip_blind(blind),
                 _ => Err(GameError::InvalidAction),
             },
             Action::ApplyTarot() => self.apply_tarot(),
@@ -1708,6 +1792,110 @@ mod tests {
         g.skip_pack().expect("skip pack");
         assert_eq!(g.stage, Stage::Shop());
         assert!(g.open_pack.is_none());
+    }
+
+    #[test]
+    fn test_skip_blind_small() {
+        let mut g = Game::default();
+        g.start();
+        assert!(g.tags.is_empty());
+        g.skip_blind(Blind::Small).expect("skip small blind");
+        assert_eq!(g.blind, Some(Blind::Small));
+        assert_eq!(g.stage, Stage::PreBlind());
+        assert_eq!(g.tags.len(), 1);
+    }
+
+    #[test]
+    fn test_skip_blind_wrong_blind() {
+        let mut g = Game::default();
+        g.start();
+        // Game just started, next expected blind is Small, not Big
+        let res = g.skip_blind(Blind::Big);
+        assert!(matches!(res, Err(GameError::InvalidBlind)));
+    }
+
+    #[test]
+    fn test_skip_blind_boss_rejected() {
+        let mut g = Game::default();
+        g.start();
+        g.blind = Some(Blind::Big);
+        let res = g.skip_blind(Blind::Boss);
+        assert!(matches!(res, Err(GameError::InvalidBlind)));
+    }
+
+    #[test]
+    fn test_skip_blind_wrong_stage() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        let res = g.skip_blind(Blind::Small);
+        assert!(matches!(res, Err(GameError::InvalidStage)));
+    }
+
+    #[test]
+    fn test_skip_blind_draws_a_real_tag() {
+        let mut g = Game::default();
+        g.start();
+        let expected = g.small_blind_tag;
+        g.skip_blind(Blind::Small).expect("skip small blind");
+        assert_eq!(g.tags[0], expected);
+    }
+
+    #[test]
+    fn test_ante_tags_exist_from_game_start() {
+        let g = Game::default();
+        assert!(g.skip_tag(Blind::Small).is_some());
+        assert!(g.skip_tag(Blind::Big).is_some());
+        assert!(g.skip_tag(Blind::Boss).is_none());
+    }
+
+    #[test]
+    fn test_ante_tags_redrawn_after_boss_defeated() {
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Boss),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let ante_before = g.ante_current;
+        g.handle_score(1_000_000).expect("handle score");
+        assert_ne!(g.ante_current, ante_before);
+        assert!(Tag::iter().any(|t| t == g.small_blind_tag));
+        assert!(Tag::iter().any(|t| t == g.big_blind_tag));
+    }
+
+    #[test]
+    fn test_skip_blind_banks_the_predrawn_tag() {
+        let mut g = Game::default();
+        g.start();
+        let expected = g.small_blind_tag;
+        g.skip_blind(Blind::Small).expect("skip small blind");
+        assert_eq!(g.tags, vec![expected]);
+    }
+
+    #[test]
+    fn test_cashout_drains_and_applies_tags() {
+        let mut g = Game {
+            stage: Stage::PostBlind(),
+            ..Default::default()
+        };
+        g.tags = vec![Tag::Handy, Tag::Garbage];
+        g.cashout().expect("cashout");
+        assert!(g.tags.is_empty());
+    }
+
+    #[test]
+    fn test_finish_pack_does_not_touch_tags() {
+        let mut g = Game::default();
+        g.start();
+        g.tags = vec![Tag::Handy];
+        g.open_pack = Some(OpenPackState {
+            picks_remaining: 1,
+            description: String::new(),
+            contents: vec![],
+        });
+        g.stage = Stage::PackOpen();
+        g.skip_pack().expect("skip pack");
+        assert_eq!(g.tags, vec![Tag::Handy]);
     }
 
     #[test]

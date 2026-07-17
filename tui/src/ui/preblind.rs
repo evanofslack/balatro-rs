@@ -73,7 +73,8 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     let x_start = inner.x + inner.width.saturating_sub(total_w) / 2;
     let y_start = inner.y + (inner.height.saturating_sub(card_h)) / 2;
 
-    let focused = app.focus == FocusZone::BlindSelect;
+    let play_focused = app.focus == FocusZone::BlindSelect;
+    let skip_focused = app.focus == FocusZone::BlindSkip;
 
     for (i, blind) in blinds.iter().enumerate() {
         let x = x_start + i as u16 * (card_w + gap);
@@ -85,7 +86,9 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
         };
 
         let state = blind_state(&app.game, blind);
-        let is_cursor = focused && app.cursor == i;
+        let is_play_cursor = play_focused && app.cursor == i;
+        let is_skip_cursor = skip_focused && app.cursor == i;
+        let column_focused = is_play_cursor || is_skip_cursor;
 
         let base_color = match blind {
             Blind::Small => Color::Cyan,
@@ -97,12 +100,12 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
             BlindState::Cleared | BlindState::NotYet => (Color::DarkGray, Color::DarkGray),
         };
 
-        let border_type = if is_cursor && state == BlindState::Available {
+        let border_type = if column_focused && state == BlindState::Available {
             BorderType::Double
         } else {
             BorderType::Plain
         };
-        let border_style = if is_cursor && state == BlindState::Available {
+        let border_style = if column_focused && state == BlindState::Available {
             Style::default().fg(Color::Yellow)
         } else {
             Style::default().fg(border_color)
@@ -132,7 +135,7 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
                             .add_modifier(Modifier::BOLD),
                     ),
                 ]));
-                if is_cursor {
+                if is_play_cursor {
                     lines.push(Line::from(""));
                     lines.push(Line::from(Span::styled(
                         "  [ SELECT ]",
@@ -166,11 +169,53 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
             }
         }
 
+        // Skip is shown for Small/Big whenever it's conceptually still ahead of
+        // us (Available or NotYet) — the tag was already drawn at ante start, so
+        // there's something real to show even before it's the actionable choice.
+        // Never shown once Cleared (already played past it) or for Boss (can
+        // never be skipped).
+        let skip_line_offset = if *blind != Blind::Boss && state != BlindState::Cleared {
+            app.game.skip_tag(*blind).map(|tag| {
+                lines.push(Line::from(""));
+                let offset = lines.len();
+                let skip_style = if state == BlindState::Available {
+                    if is_skip_cursor {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::DarkGray)
+                    }
+                } else {
+                    // NotYet: visible but plainly disabled, no highlight ever
+                    Style::default().fg(Color::DarkGray)
+                };
+                lines.push(Line::from(Span::styled(
+                    format!("  Skip \u{2192} {}", tag.name()),
+                    skip_style,
+                )));
+                offset
+            })
+        } else {
+            None
+        };
+
+        let skip_rect = skip_line_offset.map(|offset| Rect {
+            x: blind_rect.x,
+            // +1 for the card's top border row
+            y: blind_rect.y + 1 + offset as u16,
+            width: blind_rect.width,
+            height: 1,
+        });
+
         let para = Paragraph::new(Text::from(lines)).block(block);
         f.render_widget(para, blind_rect);
 
         app.widget_rects
             .insert(WidgetId::BlindOption(i), blind_rect);
+        if let Some(rect) = skip_rect {
+            app.widget_rects.insert(WidgetId::BlindSkipOption(i), rect);
+        }
     }
 
     // Key hint

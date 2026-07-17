@@ -25,19 +25,20 @@ const PACK_CONTENTS_MAX: usize = 5;
 // 73-76: buy joker
 // 77: next round
 // 78: select blind
-// 79-80: buy consumable
-// 81-82: use consumable
-// 83: apply tarot
-// 84-88: sell joker
-// 89-90: sell consumable
-// 91-92: buy pack
-// 93-97: pick pack card
-// 98: skip pack
-// 99: sort hand (rank)
-// 100: sort hand (suit)
-// 101: reroll
+// 79: skip blind
+// 80-81: buy consumable
+// 82-83: use consumable
+// 84: apply tarot
+// 85-89: sell joker
+// 90-91: sell consumable
+// 92-93: buy pack
+// 94-98: pick pack card
+// 99: skip pack
+// 100: sort hand (rank)
+// 101: sort hand (suit)
+// 102: reroll
 //
-// We end up with a vector of length 102 where each index
+// We end up with a vector of length 103 where each index
 // represents a potential action.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
@@ -52,6 +53,7 @@ pub struct ActionSpace {
     pub buy_joker: Vec<usize>,
     pub next_round: Vec<usize>,
     pub select_blind: Vec<usize>,
+    pub skip_blind: Vec<usize>,
     pub buy_consumable: Vec<usize>,
     pub use_consumable: Vec<usize>,
     pub apply_tarot: Vec<usize>,
@@ -75,6 +77,7 @@ impl ActionSpace {
             + self.buy_joker.len()
             + self.next_round.len()
             + self.select_blind.len()
+            + self.skip_blind.len()
             + self.buy_consumable.len()
             + self.use_consumable.len()
             + self.apply_tarot.len()
@@ -159,8 +162,16 @@ impl ActionSpace {
         self.select_blind_min() + self.select_blind.len() - 1
     }
 
-    fn buy_consumable_min(&self) -> usize {
+    fn skip_blind_min(&self) -> usize {
         self.select_blind_max() + 1
+    }
+
+    fn skip_blind_max(&self) -> usize {
+        self.skip_blind_min() + self.skip_blind.len() - 1
+    }
+
+    fn buy_consumable_min(&self) -> usize {
+        self.skip_blind_max() + 1
     }
 
     fn buy_consumable_max(&self) -> usize {
@@ -293,6 +304,10 @@ impl ActionSpace {
         self.select_blind[0] = 1;
     }
 
+    pub(crate) fn unmask_skip_blind(&mut self) {
+        self.skip_blind[0] = 1;
+    }
+
     pub(crate) fn unmask_buy_consumable(&mut self, i: usize) -> Result<(), ActionSpaceError> {
         if i >= self.buy_consumable.len() {
             return Err(ActionSpaceError::InvalidIndex);
@@ -413,6 +428,10 @@ impl ActionSpace {
                     None => Ok(Action::SelectBlind(Blind::Small)),
                 }
             }
+            n if (self.skip_blind_min()..=self.skip_blind_max()).contains(&n) => match game.blind {
+                Some(blind) => Ok(Action::SkipBlind(blind.next())),
+                None => Ok(Action::SkipBlind(Blind::Small)),
+            },
             n if (self.buy_consumable_min()..=self.buy_consumable_max()).contains(&n) => {
                 let n_offset = n - self.buy_consumable_min();
                 game.shop
@@ -494,6 +513,7 @@ impl ActionSpace {
             self.buy_joker.clone(),
             self.next_round.clone(),
             self.select_blind.clone(),
+            self.skip_blind.clone(),
             self.buy_consumable.clone(),
             self.use_consumable.clone(),
             self.apply_tarot.clone(),
@@ -527,6 +547,7 @@ impl From<Config> for ActionSpace {
             buy_joker: vec![0; c.store_consumable_slots_max],
             next_round: vec![0; 1],
             select_blind: vec![0; 1],
+            skip_blind: vec![0; 1],
             buy_consumable: vec![0; c.consumable_slots],
             use_consumable: vec![0; c.consumable_slots],
             apply_tarot: vec![0; 1],
@@ -554,6 +575,7 @@ impl From<ActionSpace> for Vec<usize> {
             a.buy_joker,
             a.next_round,
             a.select_blind,
+            a.skip_blind,
             a.buy_consumable,
             a.use_consumable,
             a.apply_tarot,
@@ -609,12 +631,12 @@ mod tests {
         let c = Config::default();
         let a = ActionSpace::from(c.clone());
         // 24 select + 23 move_left + 23 move_right + 1 play + 1 discard
-        // + 1 cashout + 4 buy_joker + 1 next_round + 1 select_blind
+        // + 1 cashout + 4 buy_joker + 1 next_round + 1 select_blind + 1 skip_blind
         // + 2 buy_consumable + 2 use_consumable + 1 apply_tarot
         // + 5 sell_joker + 2 sell_consumable
-        // + 2 buy_pack + 5 pick_pack_card + 1 skip_pack + 2 sort_hand + 1 reroll = 102
-        assert_eq!(a.size(), 102);
-        assert_eq!(a.to_vec().len(), 102);
+        // + 2 buy_pack + 5 pick_pack_card + 1 skip_pack + 2 sort_hand + 1 reroll = 103
+        assert_eq!(a.size(), 103);
+        assert_eq!(a.to_vec().len(), 103);
     }
 
     #[test]
@@ -628,7 +650,7 @@ mod tests {
         // size() and to_vec() must not panic with empty sell vecs
         assert_eq!(a.to_vec().len(), a.size());
         // to_action on the apply_tarot index must still resolve and not panic
-        assert!(a.to_action(83, &Game::default()).is_err()); // masked, not a panic
+        assert!(a.to_action(a.apply_tarot_min(), &Game::default()).is_err()); // masked, not a panic
     }
 
     #[test]
@@ -649,6 +671,19 @@ mod tests {
         a.unmask_sell_consumable(0).unwrap();
         assert_eq!(a.sell_consumable[0], 1);
         assert!(a.unmask_sell_consumable(2).is_err());
+    }
+
+    #[test]
+    fn test_skip_blind_round_trip() {
+        let mut g = Game::default();
+        g.start();
+        let space = g.gen_action_space();
+        let index = space.skip_blind_min();
+        assert_eq!(space.to_vec()[index], 1);
+        let action = space.to_action(index, &g).expect("to action");
+        assert_eq!(action, Action::SkipBlind(Blind::Small));
+        g.handle_action(action).unwrap();
+        assert_eq!(g.tags.len(), 1);
     }
 
     #[test]
