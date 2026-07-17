@@ -256,6 +256,16 @@ impl Game {
         self.deck.mutate_card(id, f);
     }
 
+    // Every card the player owns this run, regardless of whether it's
+    // currently undrawn, in hand, or already discarded this round.
+    // `self.deck` alone is only the undrawn remainder mid-round.
+    pub(crate) fn full_deck(&self) -> Vec<Card> {
+        let mut all = self.deck.cards();
+        all.extend(self.available.cards());
+        all.extend(self.discarded.clone());
+        all
+    }
+
     pub fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool {
         self.rng
             .gen_ratio((numerator * self.prob_mult).min(denominator), denominator)
