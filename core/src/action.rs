@@ -1,8 +1,8 @@
 use crate::card::Card;
 use crate::consumable::Consumable;
-use crate::joker::{Jokers, joker_display};
+use crate::joker::{joker_display, Jokers};
 use crate::pack::{Pack, PackContent};
-use crate::stage::{Blind, blind_display};
+use crate::stage::{blind_display, Blind};
 #[cfg(feature = "python")]
 use pyo3::pyclass;
 use std::fmt;

@@ -2,7 +2,7 @@ use crate::action::Action;
 use crate::card::{Card, Edition, Enhancement, Seal, Suit, Value};
 use crate::consumable::Consumable;
 use crate::error::GameError;
-use crate::joker::{Jokers, Rarity, jokers_by_rarity};
+use crate::joker::{jokers_by_rarity, Jokers, Rarity};
 use crate::pack::{Pack, PackCategory, PackContent, PackSize};
 use crate::planet::{Planetarium, Planets};
 use crate::tarot::Tarot;
