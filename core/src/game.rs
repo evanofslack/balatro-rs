@@ -41,6 +41,8 @@ pub struct Game {
     pub available: Available,
     pub discarded: Vec<Card>,
     pub tags: Vec<Tag>,
+    pub small_blind_tag: Tag,
+    pub big_blind_tag: Tag,
     pub blind: Option<Blind>,
     pub stage: Stage,
     pub ante_start: Ante,
@@ -103,13 +105,15 @@ impl Game {
                 (u, None, ChaCha8Rng::seed_from_u64(u))
             }
         };
-        Self {
+        let mut game = Self {
             shop: Shop::new(),
             planetarium: Planetarium::new(),
             deck: Deck::default(),
             available: Available::default(),
             discarded: Vec::new(),
             tags: Vec::new(),
+            small_blind_tag: Tag::Uncommon,
+            big_blind_tag: Tag::Uncommon,
             action_history: Vec::new(),
             jokers: Vec::new(),
             effect_registry: EffectRegistry::new(),
@@ -137,7 +141,9 @@ impl Game {
             seed_str,
             rng,
             config,
-        }
+        };
+        game.draw_ante_tags();
+        game
     }
 
     pub fn start(&mut self) {
@@ -754,12 +760,25 @@ impl Game {
         }
         self.blind = Some(blind);
         self.stage = Stage::PreBlind();
-        let tag = *Tag::iter()
-            .collect::<Vec<_>>()
-            .choose(&mut self.rng)
-            .unwrap();
+        let tag = self
+            .skip_tag(blind)
+            .expect("blind is not Boss, checked above");
         self.tags.push(tag);
         Ok(())
+    }
+
+    fn draw_ante_tags(&mut self) {
+        let tags: Vec<Tag> = Tag::iter().collect();
+        self.small_blind_tag = *tags.choose(&mut self.rng).unwrap();
+        self.big_blind_tag = *tags.choose(&mut self.rng).unwrap();
+    }
+
+    pub fn skip_tag(&self, blind: Blind) -> Option<Tag> {
+        match blind {
+            Blind::Small => Some(self.small_blind_tag),
+            Blind::Big => Some(self.big_blind_tag),
+            Blind::Boss => None,
+        }
     }
 
     fn next_round(&mut self) -> Result<(), GameError> {
@@ -803,6 +822,7 @@ impl Game {
             if let Some(ante_next) = self.ante_current.next(self.ante_end) {
                 self.ante_current = ante_next;
                 self.blind = None;
+                self.draw_ante_tags();
             } else {
                 self.stage = Stage::End(End::Win);
                 return Ok(false);
@@ -1816,9 +1836,40 @@ mod tests {
     fn test_skip_blind_draws_a_real_tag() {
         let mut g = Game::default();
         g.start();
+        let expected = g.small_blind_tag;
         g.skip_blind(Blind::Small).expect("skip small blind");
-        let tag = g.tags[0];
-        assert!(Tag::iter().any(|t| t == tag));
+        assert_eq!(g.tags[0], expected);
+    }
+
+    #[test]
+    fn test_ante_tags_exist_from_game_start() {
+        let g = Game::default();
+        assert!(g.skip_tag(Blind::Small).is_some());
+        assert!(g.skip_tag(Blind::Big).is_some());
+        assert!(g.skip_tag(Blind::Boss).is_none());
+    }
+
+    #[test]
+    fn test_ante_tags_redrawn_after_boss_defeated() {
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Boss),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let ante_before = g.ante_current;
+        g.handle_score(1_000_000).expect("handle score");
+        assert_ne!(g.ante_current, ante_before);
+        assert!(Tag::iter().any(|t| t == g.small_blind_tag));
+        assert!(Tag::iter().any(|t| t == g.big_blind_tag));
+    }
+
+    #[test]
+    fn test_skip_blind_banks_the_predrawn_tag() {
+        let mut g = Game::default();
+        g.start();
+        let expected = g.small_blind_tag;
+        g.skip_blind(Blind::Small).expect("skip small blind");
+        assert_eq!(g.tags, vec![expected]);
     }
 
     #[test]
