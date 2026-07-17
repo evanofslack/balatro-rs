@@ -453,6 +453,46 @@ impl JokerEffects for Jokers {
                 }
                 vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
             }
+            Self::TheDuo(_) => {
+                fn apply(g: &mut Game, hand: MadeHand) {
+                    if hand.hand.is_pair().is_some() {
+                        g.mult *= 2;
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::TheTrio(_) => {
+                fn apply(g: &mut Game, hand: MadeHand) {
+                    if hand.hand.is_three_of_kind().is_some() {
+                        g.mult *= 3;
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::TheFamily(_) => {
+                fn apply(g: &mut Game, hand: MadeHand) {
+                    if hand.hand.is_four_of_kind().is_some() {
+                        g.mult *= 4;
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::TheOrder(_) => {
+                fn apply(g: &mut Game, hand: MadeHand) {
+                    if hand.hand.is_straight().is_some() {
+                        g.mult *= 3;
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::TheTribe(_) => {
+                fn apply(g: &mut Game, hand: MadeHand) {
+                    if hand.hand.is_flush().is_some() {
+                        g.mult *= 2;
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
             _ => vec![],
         }
     }
@@ -504,6 +544,11 @@ impl JokerEffects for Jokers {
                 | Self::OnyxAgate(_)
                 | Self::ShootTheMoon(_)
                 | Self::RaisedFist(_)
+                | Self::TheDuo(_)
+                | Self::TheTrio(_)
+                | Self::TheFamily(_)
+                | Self::TheOrder(_)
+                | Self::TheTribe(_)
         )
     }
 }
@@ -537,9 +582,9 @@ mod tests {
     // `effects()` behavior implemented. Shop/pack generation
     // must never offer joker that silently does nothing.
     #[test]
-    fn test_exactly_44_jokers_implemented() {
+    fn test_exactly_49_jokers_implemented() {
         let count = Jokers::iter().filter(|j| j.is_implemented()).count();
-        assert_eq!(count, 44);
+        assert_eq!(count, 49);
     }
 
     #[test]
@@ -816,6 +861,157 @@ mod tests {
         let after = 826;
 
         let j = Jokers::DrollJoker(DrollJoker::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_the_duo_with_pair() {
+        let ac = Card::new(Value::Ace, Suit::Club);
+        let hand = SelectHand::new(vec![ac, ac, ac, ac]);
+
+        // Score 4ok without joker
+        // 4ok (level 1) -> 60 chips, 7 mult
+        // Played cards (4 ace) -> 44 chips
+        // (60 + 44) * (7) = 728
+        let before = 728;
+        // Score 4ok with joker (contains a pair)
+        // joker w/ pair = X2 mult
+        // (60 + 44) * (7 * 2) = 1456
+        let after = 1456;
+
+        let j = Jokers::TheDuo(TheDuo::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_the_duo_no_pair() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+
+        let before = 16;
+        let after = 16;
+
+        let j = Jokers::TheDuo(TheDuo::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_the_trio_with_three_of_kind() {
+        let ac = Card::new(Value::Ace, Suit::Club);
+        let hand = SelectHand::new(vec![ac, ac, ac, ac]);
+
+        let before = 728;
+        // joker w/ three of a kind = X3 mult
+        // (60 + 44) * (7 * 3) = 2184
+        let after = 2184;
+
+        let j = Jokers::TheTrio(TheTrio::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_the_trio_no_three_of_kind() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+
+        let before = 16;
+        let after = 16;
+
+        let j = Jokers::TheTrio(TheTrio::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_the_family_with_four_of_kind() {
+        let ac = Card::new(Value::Ace, Suit::Club);
+        let hand = SelectHand::new(vec![ac, ac, ac, ac]);
+
+        let before = 728;
+        // joker w/ four of a kind = X4 mult
+        // (60 + 44) * (7 * 4) = 2912
+        let after = 2912;
+
+        let j = Jokers::TheFamily(TheFamily::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_the_family_no_four_of_kind() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+
+        let before = 16;
+        let after = 16;
+
+        let j = Jokers::TheFamily(TheFamily::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_the_order_with_straight() {
+        let two = Card::new(Value::Two, Suit::Club);
+        let three = Card::new(Value::Three, Suit::Club);
+        let four = Card::new(Value::Four, Suit::Club);
+        let five = Card::new(Value::Five, Suit::Club);
+        let six = Card::new(Value::Six, Suit::Heart);
+        let hand = SelectHand::new(vec![two, three, four, five, six]);
+
+        // Score straight without joker
+        // straight (level 1) -> 30 chips, 4 mult
+        // Played cards (2, 3, 4, 5, 6) -> 20 chips
+        // (20 + 30) * (4) = 200
+        let before = 200;
+        // joker w/ straight = X3 mult
+        // (20 + 30) * (4 * 3) = 600
+        let after = 600;
+
+        let j = Jokers::TheOrder(TheOrder::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_the_order_no_straight() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+
+        let before = 16;
+        let after = 16;
+
+        let j = Jokers::TheOrder(TheOrder::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_the_tribe_with_flush() {
+        let two = Card::new(Value::Two, Suit::Club);
+        let three = Card::new(Value::Three, Suit::Club);
+        let four = Card::new(Value::Four, Suit::Club);
+        let five = Card::new(Value::Five, Suit::Club);
+        let ten = Card::new(Value::Ten, Suit::Club);
+        let hand = SelectHand::new(vec![two, three, four, five, ten]);
+
+        // Score flush without joker
+        // flush (level 1) -> 35 chips, 4 mult
+        // Played cards (2, 3, 4, 5, 10) -> 24 chips
+        // (24 + 35) * (4) = 236
+        let before = 236;
+        // joker w/ flush = X2 mult
+        // (24 + 35) * (4 * 2) = 472
+        let after = 472;
+
+        let j = Jokers::TheTribe(TheTribe::default());
+        score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_the_tribe_no_flush() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+
+        let before = 16;
+        let after = 16;
+
+        let j = Jokers::TheTribe(TheTribe::default());
         score_before_after_joker(j, hand, before, after);
     }
 
