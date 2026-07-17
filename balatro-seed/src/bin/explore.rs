@@ -1,15 +1,18 @@
 //! Prints a seed's expected ante-by-ante contents in the same text format
 //! as `TheSoul`'s website output, for direct manual diffing against it.
 //!
-//! Usage: `explore SEED [--ante N] [--cards-per-ante 15,50,50,50,50,50,50,50]`
+//! Usage: `explore SEED [--ante N] [--cards-per-ante 15,50,50,50,50,50,50,50]
+//! [--vouchers bought|offered] [--fresh-profile]`
 //!
 //! Deliberately mirrors quirks of the website's own reference JS rather
 //! than "fixing" them, since the goal is a byte-diffable match:
 //! - `init_locks` is called once for ante 1 before the loop, `init_unlocks`
 //!   once per ante inside it — not symmetric per-ante calls.
-//! - A drawn voucher is locked (and its upgrade tier unlocked) but never
-//!   *activated* — so voucher-driven rate effects (Hone, Tarot Tycoon, ...)
-//!   never kick in, matching the site's own demo loop, not a live run.
+//! - `--vouchers bought` (default) locks a drawn voucher (and unlocks its
+//!   upgrade tier) but never *activates* it — so voucher-driven rate effects
+//!   (Hone, Tarot Tycoon, ...) never kick in, matching the site's own demo
+//!   loop, not a live run. `--vouchers offered` skips the lock entirely, so
+//!   an unbought voucher can resurface in a later ante.
 
 use balatro_seed::{Instance, ShopItem, pack_info, voucher_upgrade};
 use balatro_types::{Card, Edition, Enhancement, Seal};
@@ -122,6 +125,8 @@ fn main() {
     let mut seed: Option<String> = None;
     let mut max_ante: i32 = 8;
     let mut cards_per_ante: Vec<i32> = vec![15, 50, 50, 50, 50, 50, 50, 50];
+    let mut vouchers_bought = true;
+    let mut fresh_profile = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -137,6 +142,15 @@ fn main() {
                     .map(|n| n.trim().parse().expect("cards-per-ante expects integers"))
                     .collect();
             }
+            "--vouchers" => {
+                i += 1;
+                vouchers_bought = match args[i].as_str() {
+                    "bought" => true,
+                    "offered" => false,
+                    other => panic!("--vouchers expects bought|offered, got {other}"),
+                };
+            }
+            "--fresh-profile" => fresh_profile = true,
             other if seed.is_none() => seed = Some(other.to_string()),
             other => panic!("unrecognized argument: {other}"),
         }
@@ -145,20 +159,24 @@ fn main() {
 
     let seed = seed
         .unwrap_or_else(|| {
-            eprintln!("usage: explore SEED [--ante N] [--cards-per-ante 15,50,...]");
+            eprintln!(
+                "usage: explore SEED [--ante N] [--cards-per-ante 15,50,...] \
+                 [--vouchers bought|offered] [--fresh-profile]"
+            );
             std::process::exit(1);
         })
         .to_uppercase()
         .replace('0', "O");
 
     let mut inst = Instance::new(&seed);
-    // Fresh-run, not fresh-profile: the site's own default demo assumes an
-    // experienced profile (permanent achievement unlocks like Swashbuckler,
-    // Onyx Agate, Cartomancer, Astronomer are already available) but a
-    // brand-new run (in-run-gated items — Cavendish, Planet X/Ceres/Eris,
-    // Stone/Steel/Glass Joker, voucher upgrade tiers — start locked since
-    // their trigger hasn't happened yet this run).
-    inst.init_locks(1, false, true);
+    // fresh_run is always true: Cavendish, Planet X/Ceres/Eris, Stone/Steel/
+    // Glass Joker and the voucher upgrade tiers reset every run regardless
+    // of profile, so there's no static (non-simulated) analysis where
+    // treating them as available makes sense. fresh_profile defaults to
+    // false (an experienced profile — Swashbuckler, Onyx Agate, Cartomancer,
+    // Astronomer, etc. already unlocked), matching the site's own default
+    // demo; pass --fresh-profile to simulate a brand-new save instead.
+    inst.init_locks(1, fresh_profile, true);
 
     for ante in 1..=max_ante {
         inst.init_unlocks(ante, false);
@@ -170,9 +188,17 @@ fn main() {
 
         let voucher = inst.next_voucher(ante);
         println!("Voucher: {}", voucher.name());
-        inst.lock(voucher.name());
-        if let Some(upgrade) = voucher_upgrade(voucher) {
-            inst.unlock(upgrade.name());
+        // --vouchers bought (default): assume every offered voucher gets
+        // bought, matching the site's own analysis — an unbought voucher
+        // can't resurface in a later ante. --vouchers offered skips the
+        // lock, so a voucher you haven't confirmed as purchased stays
+        // eligible to reappear (closer to how the real game actually
+        // gates vouchers: on purchase, not on mere appearance).
+        if vouchers_bought {
+            inst.lock(voucher.name());
+            if let Some(upgrade) = voucher_upgrade(voucher) {
+                inst.unlock(upgrade.name());
+            }
         }
 
         let tag1 = inst.next_tag(ante);
