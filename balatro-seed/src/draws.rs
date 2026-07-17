@@ -12,10 +12,11 @@
 //!   implements this branch either ("Todo: Magic Trick support" in the
 //!   source), so there's no reference to verify against. Standard *packs*
 //!   are implemented (`next_standard_card`/`next_standard_pack`).
-//! - `initLocks`/`initUnlocks`'s `freshProfile`/`freshRun` blocks (locking
-//!   every not-yet-unlocked item on a brand new save) — Phase 2's job is to
-//!   seed the lock table from a real `Profile.unlocked` set instead of
-//!   hardcoding one.
+//! - `initLocks`'s `freshProfile`/`freshRun` blocks are ported and callable
+//!   (`Instance::init_locks`'s two bools), but callers still hardcode both
+//!   to `true` (assume nothing ever discovered) — seeding `fresh_profile`'s
+//!   lock list from a real `Profile.unlocked`/`discovered` set instead is a
+//!   later follow-up, not done here.
 //! - Pre-10099-version joker pool variants (see `pools.rs`).
 
 use crate::instance::Instance;
@@ -82,9 +83,15 @@ fn resolved_joker(name: &str) -> Jokers {
 }
 
 impl Instance {
-    /// Ante-gated permanent locks (`functions.hpp::initLocks`, ante-based
-    /// portion only — see module docs for the freshProfile/freshRun cut).
-    pub fn init_locks(&mut self, ante: i32) {
+    /// Full port of `functions.hpp::initLocks`. `fresh_profile` gates
+    /// permanent, profile-level achievement locks (things a real save's
+    /// `Profile.unlocked` would eventually override — see draws.rs module
+    /// docs); `fresh_run` gates locks that reset every run regardless of
+    /// profile, because the requirement is inherently in-run (Gros Michel
+    /// destroyed this run for Cavendish, a secret hand played this run for
+    /// Planet X/Ceres/Eris, ...) and can't be satisfied by profile state
+    /// alone.
+    pub fn init_locks(&mut self, ante: i32, fresh_profile: bool, fresh_run: bool) {
         if ante < 2 {
             for name in [
                 "The Mouth",
@@ -122,6 +129,107 @@ impl Instance {
         }
         if ante < 6 {
             self.lock("The Ox");
+        }
+        if fresh_profile {
+            for name in [
+                "Negative Tag",
+                "Foil Tag",
+                "Holographic Tag",
+                "Polychrome Tag",
+                "Rare Tag",
+                "Golden Ticket",
+                "Mr. Bones",
+                "Acrobat",
+                "Sock and Buskin",
+                "Swashbuckler",
+                "Troubadour",
+                "Certificate",
+                "Smeared Joker",
+                "Throwback",
+                "Hanging Chad",
+                "Rough Gem",
+                "Bloodstone",
+                "Arrowhead",
+                "Onyx Agate",
+                "Glass Joker",
+                "Showman",
+                "Flower Pot",
+                "Blueprint",
+                "Wee Joker",
+                "Merry Andy",
+                "Oops! All 6s",
+                "The Idol",
+                "Seeing Double",
+                "Matador",
+                "Hit the Road",
+                "The Duo",
+                "The Trio",
+                "The Family",
+                "The Order",
+                "The Tribe",
+                "Stuntman",
+                "Invisible Joker",
+                "Brainstorm",
+                "Satellite",
+                "Shoot the Moon",
+                "Driver's License",
+                "Cartomancer",
+                "Astronomer",
+                "Burnt Joker",
+                "Bootstraps",
+                "Overstock Plus",
+                "Liquidation",
+                "Glow Up",
+                "Reroll Glut",
+                "Omen Globe",
+                "Observatory",
+                "Nacho Tong",
+                "Recyclomancy",
+                "Tarot Tycoon",
+                "Planet Tycoon",
+                "Money Tree",
+                "Antimatter",
+                "Illusion",
+                "Petroglyph",
+                "Retcon",
+                "Palette",
+            ] {
+                self.lock(name);
+            }
+        }
+        if fresh_run {
+            for name in [
+                "Planet X",
+                "Ceres",
+                "Eris",
+                "Five of a Kind",
+                "Flush House",
+                "Flush Five",
+                "Stone Joker",
+                "Steel Joker",
+                "Glass Joker",
+                "Golden Ticket",
+                "Lucky Cat",
+                "Cavendish",
+                "Overstock Plus",
+                "Liquidation",
+                "Glow Up",
+                "Reroll Glut",
+                "Omen Globe",
+                "Observatory",
+                "Nacho Tong",
+                "Recyclomancy",
+                "Tarot Tycoon",
+                "Planet Tycoon",
+                "Money Tree",
+                "Antimatter",
+                "Illusion",
+                "Petroglyph",
+                "Retcon",
+                "Palette",
+            ] {
+                self.lock(name);
+            }
         }
     }
 
@@ -285,7 +393,15 @@ impl Instance {
         joker
     }
 
-    /// `functions.hpp::nextVoucher`.
+    /// `functions.hpp::nextVoucher`. Deliberately doesn't lock the returned
+    /// voucher itself — that's a caller decision, not this method's. Callers
+    /// wanting a TheSoul-style "assume every offered voucher gets bought"
+    /// preview (what `explore.rs` does, to stay diffable against the
+    /// reference site) should lock it themselves right after calling this.
+    /// A future save-state-aware caller should instead lock only on
+    /// confirmed purchase (from real run/profile data), since an unbought
+    /// voucher can legitimately reappear in a later ante in the real game —
+    /// don't copy `explore.rs`'s lock-on-draw loop verbatim for that case.
     pub fn next_voucher(&mut self, ante: i32) -> Voucher {
         let name = self.randchoice(&format!("Voucher{ante}"), pools::VOUCHERS);
         resolve::resolve_voucher(name)
@@ -527,7 +643,7 @@ mod tests {
     fn ante_one_smoke_test_is_stable() {
         fn run() -> (String, String, Vec<String>) {
             let mut inst = Instance::new("TESTSEED");
-            inst.init_locks(1);
+            inst.init_locks(1, false, true);
             inst.init_unlocks(1, false);
 
             let boss = format!("{:?}", inst.next_boss(1));

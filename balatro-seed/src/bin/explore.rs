@@ -152,32 +152,13 @@ fn main() {
         .replace('0', "O");
 
     let mut inst = Instance::new(&seed);
-    inst.init_locks(1);
-    // Every voucher upgrade tier starts locked until its base voucher is
-    // owned — the site hardcodes this list in `index.html` unconditionally
-    // (separate from Instance::init_locks/the freshProfile block), since a
-    // fresh analysis has no way to know which vouchers a real profile has
-    // actually purchased.
-    for upgrade in [
-        "Overstock Plus",
-        "Liquidation",
-        "Glow Up",
-        "Reroll Glut",
-        "Omen Globe",
-        "Observatory",
-        "Nacho Tong",
-        "Recyclomancy",
-        "Tarot Tycoon",
-        "Planet Tycoon",
-        "Money Tree",
-        "Antimatter",
-        "Illusion",
-        "Petroglyph",
-        "Retcon",
-        "Palette",
-    ] {
-        inst.lock(upgrade);
-    }
+    // Fresh-run, not fresh-profile: the site's own default demo assumes an
+    // experienced profile (permanent achievement unlocks like Swashbuckler,
+    // Onyx Agate, Cartomancer, Astronomer are already available) but a
+    // brand-new run (in-run-gated items — Cavendish, Planet X/Ceres/Eris,
+    // Stone/Steel/Glass Joker, voucher upgrade tiers — start locked since
+    // their trigger hasn't happened yet this run).
+    inst.init_locks(1, false, true);
 
     for ante in 1..=max_ante {
         inst.init_unlocks(ante, false);
