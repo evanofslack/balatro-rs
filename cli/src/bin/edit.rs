@@ -88,9 +88,7 @@ enum Command {
 
 fn load_game(load: &Option<String>) -> Result<Game> {
     let contents = match load {
-        Some(path) => {
-            fs::read_to_string(path).with_context(|| format!("failed to read {path}"))?
-        }
+        Some(path) => fs::read_to_string(path).with_context(|| format!("failed to read {path}"))?,
         None => {
             let mut buf = String::new();
             io::stdin()

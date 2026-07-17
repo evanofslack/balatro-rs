@@ -1,6 +1,6 @@
 use super::{hand_rank_name, level_color, wrap};
 use crate::app::AppState;
-use balatro_rs::stage::{BlindExt, Stage, blind_display};
+use balatro_rs::stage::{blind_display, BlindExt, Stage};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},

@@ -75,13 +75,22 @@ mod tests {
 
     #[test]
     fn test_format_number_scientific() {
-        assert_eq!(format_number(1_500_000_000_000_000), "1,500,000,000,000,000 (1.5e15)");
-        assert_eq!(format_number(15_000_000_000_000_000), "15,000,000,000,000,000 (1.5e16)");
+        assert_eq!(
+            format_number(1_500_000_000_000_000),
+            "1,500,000,000,000,000 (1.5e15)"
+        );
+        assert_eq!(
+            format_number(15_000_000_000_000_000),
+            "15,000,000,000,000,000 (1.5e16)"
+        );
     }
 
     #[test]
     fn test_format_number_scientific_rounding_carries_exponent() {
         // 9.996e12 rounds to 10.0e12 at 1dp, must renormalize to 1.0e13.
-        assert_eq!(format_number(9_996_000_000_000), "9,996,000,000,000 (1.0e13)");
+        assert_eq!(
+            format_number(9_996_000_000_000),
+            "9,996,000,000,000 (1.0e13)"
+        );
     }
 }

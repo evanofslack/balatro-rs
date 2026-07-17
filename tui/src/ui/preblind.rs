@@ -1,7 +1,7 @@
 use crate::app::{AppState, FocusZone, WidgetId};
 use crate::ui::sidebar;
 use balatro_rs::action::Action;
-use balatro_rs::stage::{Blind, BlindExt, blind_display};
+use balatro_rs::stage::{blind_display, Blind, BlindExt};
 
 fn blind_state(game: &balatro_rs::game::Game, blind: &Blind) -> BlindState {
     let valid = game
