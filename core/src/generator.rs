@@ -145,6 +145,18 @@ impl Game {
         }
     }
 
+    // Get skip blind action (never offered for Boss)
+    fn gen_actions_skip_blind(&self) -> Option<impl Iterator<Item = Action>> {
+        if self.stage != Stage::PreBlind() {
+            return None;
+        }
+        let next_blind = self.blind.map(|b| b.next()).unwrap_or(Blind::Small);
+        if next_blind == Blind::Boss {
+            return None;
+        }
+        Some(vec![Action::SkipBlind(next_blind)].into_iter())
+    }
+
     // Get buy joker actions
     fn gen_actions_buy_joker(&self) -> Option<impl Iterator<Item = Action>> {
         // If stage is not shop, cannot buy
@@ -366,6 +378,7 @@ impl Game {
         let cash_outs = self.gen_actions_cash_out();
         let next_rounds = self.gen_actions_next_round();
         let select_blinds = self.gen_actions_select_blind();
+        let skip_blinds = self.gen_actions_skip_blind();
         let buy_jokers = self.gen_actions_buy_joker();
         let buy_consumables = self.gen_actions_buy_consumable();
         let use_consumables = self.gen_actions_use_consumable();
@@ -388,6 +401,7 @@ impl Game {
             .chain(cash_outs.into_iter().flatten())
             .chain(next_rounds.into_iter().flatten())
             .chain(select_blinds.into_iter().flatten())
+            .chain(skip_blinds.into_iter().flatten())
             .chain(buy_jokers.into_iter().flatten())
             .chain(buy_consumables.into_iter().flatten())
             .chain(use_consumables.into_iter().flatten())
@@ -488,6 +502,17 @@ impl Game {
             return;
         }
         space.unmask_select_blind();
+    }
+
+    fn unmask_action_space_skip_blind(&self, space: &mut ActionSpace) {
+        if self.stage != Stage::PreBlind() {
+            return;
+        }
+        let next_blind = self.blind.map(|b| b.next()).unwrap_or(Blind::Small);
+        if next_blind == Blind::Boss {
+            return;
+        }
+        space.unmask_skip_blind();
     }
 
     fn unmask_action_space_buy_joker(&self, space: &mut ActionSpace) {
@@ -699,6 +724,7 @@ impl Game {
         self.unmask_action_space_cash_out(&mut space);
         self.unmask_action_space_next_round(&mut space);
         self.unmask_action_space_select_blind(&mut space);
+        self.unmask_action_space_skip_blind(&mut space);
         self.unmask_action_space_buy_joker(&mut space);
         self.unmask_action_space_buy_consumable(&mut space);
         self.unmask_action_space_use_consumable(&mut space);
@@ -893,5 +919,38 @@ mod tests {
         for i in 0..available - 1 {
             assert!(space.move_card_right[i] == 1);
         }
+    }
+
+    #[test]
+    fn test_skip_blind_offered_when_next_is_small_or_big() {
+        let mut g = Game::default();
+        g.start();
+
+        // Fresh game: next blind is Small, skip should be offered by both APIs
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(actions.contains(&Action::SkipBlind(Blind::Small)));
+        let space = g.gen_action_space();
+        assert!(space.skip_blind[0] == 1);
+
+        // Skip Small: next blind is Big, still offerable
+        g.handle_action(Action::SkipBlind(Blind::Small))
+            .expect("skip small blind");
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(actions.contains(&Action::SkipBlind(Blind::Big)));
+        let space = g.gen_action_space();
+        assert!(space.skip_blind[0] == 1);
+    }
+
+    #[test]
+    fn test_skip_blind_never_offered_for_boss() {
+        let mut g = Game::default();
+        g.start();
+        g.blind = Some(Blind::Big);
+
+        // Next blind is Boss: neither API should offer SkipBlind
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(!actions.iter().any(|a| matches!(a, Action::SkipBlind(_))));
+        let space = g.gen_action_space();
+        assert!(space.skip_blind[0] == 0);
     }
 }

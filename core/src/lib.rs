@@ -26,6 +26,7 @@ pub mod rank;
 pub mod shop;
 pub mod space;
 pub mod stage;
+pub mod tag;
 pub mod tarot;
 
 #[cfg(test)]
