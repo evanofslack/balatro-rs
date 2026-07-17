@@ -180,14 +180,22 @@ mod tests {
     use super::*;
     use std::fs;
 
-    fn fixture(name: &str) -> LuaValue {
-        let bytes = fs::read(format!("tests/fixtures/real/{name}")).expect("fixture file present");
-        balatro_jkr::decode(&bytes).expect("valid jkr")
+    /// Real save fixtures are gitignored (personal data) and won't exist
+    /// on a fresh checkout (e.g. CI) — `None` there, not a failure.
+    fn fixture(name: &str) -> Option<LuaValue> {
+        let path = format!("tests/fixtures/real/{name}");
+        match fs::read(&path) {
+            Ok(bytes) => Some(balatro_jkr::decode(&bytes).expect("valid jkr")),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => panic!("{path}: {e}"),
+        }
     }
 
     #[test]
     fn test_parses_real_1_save_white_red() {
-        let save = fixture("1-save.jkr");
+        let Some(save) = fixture("1-save.jkr") else {
+            return;
+        };
         let s = SaveSnapshot::from_lua(&save).expect("parses");
         assert_eq!(s.stake, Stake::White);
         assert_eq!(s.deck, DeckVariant::Red);
@@ -197,7 +205,9 @@ mod tests {
 
     #[test]
     fn test_parses_real_yellow_deck_red_stake() {
-        let save = fixture("save-yellowdeck-redstake.jkr");
+        let Some(save) = fixture("save-yellowdeck-redstake.jkr") else {
+            return;
+        };
         let s = SaveSnapshot::from_lua(&save).expect("parses");
         assert_eq!(s.stake, Stake::Red);
         assert_eq!(s.deck, DeckVariant::Yellow);
@@ -205,7 +215,9 @@ mod tests {
 
     #[test]
     fn test_parses_real_red_deck_orange_stake() {
-        let save = fixture("save-reddeck-orangestake.jkr");
+        let Some(save) = fixture("save-reddeck-orangestake.jkr") else {
+            return;
+        };
         let s = SaveSnapshot::from_lua(&save).expect("parses");
         assert_eq!(s.stake, Stake::Orange);
         assert_eq!(s.deck, DeckVariant::Red);

@@ -601,15 +601,22 @@ mod tests {
     use super::*;
     use std::fs;
 
-    fn fixture(name: &str) -> LuaValue {
-        let bytes = fs::read(format!("tests/fixtures/real/{name}")).expect("fixture file present");
-        balatro_jkr::decode(&bytes).expect("valid jkr")
+    /// Real save fixtures are gitignored (personal data) and won't exist
+    /// on a fresh checkout (e.g. CI) — `None` there, not a failure.
+    fn fixture(name: &str) -> Option<LuaValue> {
+        let path = format!("tests/fixtures/real/{name}");
+        match fs::read(&path) {
+            Ok(bytes) => Some(balatro_jkr::decode(&bytes).expect("valid jkr")),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => panic!("{path}: {e}"),
+        }
     }
 
     #[test]
     fn test_parses_real_1_profile() {
-        let meta = fixture("1-meta.jkr");
-        let profile = fixture("1-profile.jkr");
+        let (Some(meta), Some(profile)) = (fixture("1-meta.jkr"), fixture("1-profile.jkr")) else {
+            return;
+        };
         let p = Profile::from_lua(&meta, &profile).expect("parses");
         assert_eq!(p.name, "EVAN");
         assert!(!p.unlocked.is_empty());
@@ -634,8 +641,12 @@ mod tests {
     #[test]
     fn test_parses_real_2_and_3_profiles() {
         for n in [2, 3] {
-            let meta = fixture(&format!("{n}-meta.jkr"));
-            let profile = fixture(&format!("{n}-profile.jkr"));
+            let (Some(meta), Some(profile)) = (
+                fixture(&format!("{n}-meta.jkr")),
+                fixture(&format!("{n}-profile.jkr")),
+            ) else {
+                continue;
+            };
             let p = Profile::from_lua(&meta, &profile).expect("parses");
             assert!(!p.name.is_empty());
             assert_eq!(p.last_played.stake, Stake::White);
