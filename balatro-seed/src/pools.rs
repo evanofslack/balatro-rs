@@ -226,6 +226,20 @@ pub const RARE_JOKERS: &[&str] = &[
 
 pub const LEGENDARY_JOKERS: &[&str] = &["Canio", "Triboulet", "Yorick", "Chicot", "Perkeo"];
 
+pub const ENHANCEMENTS: &[&str] = &[
+    "Bonus", "Mult", "Wild", "Glass", "Steel", "Stone", "Gold", "Lucky",
+];
+
+/// `{suit}_{rank}`. Order within each suit is 2-9, Ace, Jack, King, Queen,
+/// Ten — not the usual 2..10,J,Q,K,A ordering. Draw order is positional,
+/// so this must stay exactly as `items.hpp` has it.
+pub const CARDS: &[&str] = &[
+    "C_2", "C_3", "C_4", "C_5", "C_6", "C_7", "C_8", "C_9", "C_A", "C_J", "C_K", "C_Q", "C_T",
+    "D_2", "D_3", "D_4", "D_5", "D_6", "D_7", "D_8", "D_9", "D_A", "D_J", "D_K", "D_Q", "D_T",
+    "H_2", "H_3", "H_4", "H_5", "H_6", "H_7", "H_8", "H_9", "H_A", "H_J", "H_K", "H_Q", "H_T",
+    "S_2", "S_3", "S_4", "S_5", "S_6", "S_7", "S_8", "S_9", "S_A", "S_J", "S_K", "S_Q", "S_T",
+];
+
 pub const VOUCHERS: &[&str] = &[
     "Overstock",
     "Overstock Plus",

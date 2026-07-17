@@ -12,7 +12,7 @@
 //!   never kick in, matching the site's own demo loop, not a live run.
 
 use balatro_seed::{Instance, ShopItem, pack_info, voucher_upgrade};
-use balatro_types::Edition;
+use balatro_types::{Card, Edition, Enhancement, Seal};
 
 fn edition_prefix(e: Edition) -> &'static str {
     match e {
@@ -22,6 +22,55 @@ fn edition_prefix(e: Edition) -> &'static str {
         Edition::Polychrome => "Polychrome ",
         Edition::Negative => "Negative ",
     }
+}
+
+fn enhancement_name(e: Enhancement) -> &'static str {
+    match e {
+        Enhancement::Bonus => "Bonus",
+        Enhancement::Mult => "Mult",
+        Enhancement::Wild => "Wild",
+        Enhancement::Glass => "Glass",
+        Enhancement::Steel => "Steel",
+        Enhancement::Stone => "Stone",
+        Enhancement::Gold => "Gold",
+        Enhancement::Lucky => "Lucky",
+    }
+}
+
+fn seal_name(s: Seal) -> &'static str {
+    match s {
+        Seal::Gold => "Gold",
+        Seal::Red => "Red",
+        Seal::Blue => "Blue",
+        Seal::Purple => "Purple",
+    }
+}
+
+fn value_text(v: balatro_types::Value) -> String {
+    match char::from(v) {
+        'T' => "10".to_string(),
+        'J' => "Jack".to_string(),
+        'Q' => "Queen".to_string(),
+        'K' => "King".to_string(),
+        'A' => "Ace".to_string(),
+        c => c.to_string(),
+    }
+}
+
+fn render_card(card: &Card) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(seal) = card.seal {
+        parts.push(format!("{} Seal", seal_name(seal)));
+    }
+    let edition = edition_prefix(card.edition);
+    if !edition.is_empty() {
+        parts.push(edition.trim().to_string());
+    }
+    if let Some(enh) = card.enhancement {
+        parts.push(enhancement_name(enh).to_string());
+    }
+    parts.push(format!("{} of {}", value_text(card.value), card.suit));
+    parts.join(" ")
 }
 
 fn render_shop_item(item: ShopItem) -> String {
@@ -58,7 +107,12 @@ fn render_pack_contents(inst: &mut Instance, category: &str, size: i32, ante: i3
             .map(|j| format!("{}{}", edition_prefix(j.edition()), j.name()))
             .collect::<Vec<_>>()
             .join(", "),
-        "Standard Pack" => "[standard pack: not implemented]".to_string(),
+        "Standard Pack" => inst
+            .next_standard_pack(size, ante)
+            .iter()
+            .map(render_card)
+            .collect::<Vec<_>>()
+            .join(", "),
         other => format!("[unknown pack category: {other}]"),
     }
 }

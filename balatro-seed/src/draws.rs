@@ -7,10 +7,11 @@
 //!
 //! Scope cuts from the full Immolate port, tracked as follow-ups:
 //! - Joker stickers (eternal/perishable/rental) — stake-gated, not ported.
-//! - Playing-card shop items / Standard packs — needs a Card/Rank/Suit
-//!   mapping layer not built yet; `ShopItem::PlayingCard` is a placeholder,
-//!   matching Immolate's own `nextShopItem`, which never implements this
-//!   branch either ("Todo: Magic Trick support" in the source).
+//! - Playing-card shop items (Magic Trick voucher) — `ShopItem::PlayingCard`
+//!   stays a placeholder deliberately: Immolate's own `nextShopItem` never
+//!   implements this branch either ("Todo: Magic Trick support" in the
+//!   source), so there's no reference to verify against. Standard *packs*
+//!   are implemented (`next_standard_card`/`next_standard_pack`).
 //! - `initLocks`/`initUnlocks`'s `freshProfile`/`freshRun` blocks (locking
 //!   every not-yet-unlocked item on a brand new save) — Phase 2's job is to
 //!   seed the lock table from a real `Profile.unlocked` set instead of
@@ -20,7 +21,7 @@
 use crate::instance::Instance;
 use crate::pools;
 use crate::resolve;
-use balatro_types::{BossBlind, Consumable, Edition, Jokers, Spectral, Tag, Voucher};
+use balatro_types::{BossBlind, Card, Consumable, Edition, Jokers, Seal, Spectral, Tag, Voucher};
 
 pub enum ShopItem {
     Joker(Jokers),
@@ -409,6 +410,60 @@ impl Instance {
             self.unlock(joker.name());
         }
         pack
+    }
+
+    /// `functions.hpp::nextStandardCard`.
+    pub fn next_standard_card(&mut self, ante: i32) -> Card {
+        let ante_str = ante.to_string();
+
+        let enhancement = if self.random(&format!("stdset{ante_str}")) <= 0.6 {
+            None
+        } else {
+            let name = self.randchoice(&format!("Enhancedsta{ante_str}"), pools::ENHANCEMENTS);
+            Some(resolve::resolve_enhancement(name).unwrap_or_else(|| {
+                panic!("pool name {name:?} has no balatro_types::Enhancement match")
+            }))
+        };
+
+        let base = self.randchoice(&format!("frontsta{ante_str}"), pools::CARDS);
+        let mut card = resolve::resolve_card_base(base)
+            .unwrap_or_else(|| panic!("pool base {base:?} has no balatro_types::Card mapping"));
+        card.enhancement = enhancement;
+
+        let edition_poll = self.random(&format!("standard_edition{ante_str}"));
+        card.edition = if edition_poll > 0.988 {
+            Edition::Polychrome
+        } else if edition_poll > 0.96 {
+            Edition::Holographic
+        } else if edition_poll > 0.92 {
+            Edition::Foil
+        } else {
+            Edition::Base
+        };
+
+        card.seal = if self.random(&format!("stdseal{ante_str}")) <= 0.8 {
+            None
+        } else {
+            let seal_poll = self.random(&format!("stdsealtype{ante_str}"));
+            Some(if seal_poll > 0.75 {
+                Seal::Red
+            } else if seal_poll > 0.5 {
+                Seal::Blue
+            } else if seal_poll > 0.25 {
+                Seal::Gold
+            } else {
+                Seal::Purple
+            })
+        };
+
+        card
+    }
+
+    /// `functions.hpp::nextStandardPack`. Unlike every other pack-content
+    /// method, the source never locks cards as they're drawn — duplicate
+    /// cards within one Standard Pack are expected, not a bug.
+    pub fn next_standard_pack(&mut self, size: i32, ante: i32) -> Vec<Card> {
+        (0..size).map(|_| self.next_standard_card(ante)).collect()
     }
 
     /// `functions.hpp::nextShopItem` (via `getShopInstance` inlined). The
