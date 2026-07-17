@@ -1,5 +1,6 @@
 use balatro_rs::{
     action::SortBy, card::Card, consumable::Consumable, game::Game, joker::Jokers, pack::Pack,
+    tag::Tag,
 };
 use ratatui::layout::Rect;
 use std::collections::HashMap;
@@ -16,6 +17,7 @@ pub enum WidgetId {
     PackContent(usize),
     SkipPackButton,
     BlindOption(usize),
+    BlindSkipOption(usize),
     CashOutButton,
     NextRoundButton,
     RerollButton,
@@ -35,6 +37,7 @@ pub enum FocusZone {
     ShopReroll,
     ShopNextRound,
     BlindSelect,
+    BlindSkip,
     PackContents,
     PackSkip,
     CashOutButton,
@@ -48,6 +51,7 @@ pub enum InspectTarget {
     Joker(Jokers),
     Consumable(Consumable),
     Pack(Pack),
+    Tag(Tag),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,7 +163,15 @@ impl AppState {
         use balatro_rs::stage::Stage;
         let has_jokers = !self.game.jokers.is_empty();
         let has_consumables = !self.game.consumables.is_empty();
+        // BlindSelect/BlindSkip share cursor semantics (which blind column) —
+        // toggling between them must never disturb it, unlike other zone pairs
+        // where cursor 0 is a sensible fresh start.
+        let preserve_cursor = matches!(
+            (&self.game.stage, &self.focus),
+            (Stage::PreBlind(), FocusZone::BlindSelect) | (Stage::PreBlind(), FocusZone::BlindSkip)
+        );
         self.focus = match (&self.game.stage, &self.focus) {
+            (Stage::PreBlind(), FocusZone::BlindSelect) => FocusZone::BlindSkip,
             (Stage::Blind(_), FocusZone::Cards) => FocusZone::ActionButtons,
             (Stage::Blind(_), FocusZone::ActionButtons) => {
                 if has_jokers {
@@ -237,14 +249,21 @@ impl AppState {
             (Stage::TarotHand(_), FocusZone::ConsumableStrip) => FocusZone::TarotCards,
             _ => self.focus.clone(),
         };
-        self.cursor = 0;
+        if !preserve_cursor {
+            self.cursor = 0;
+        }
     }
 
     pub fn tab_prev(&mut self) {
         use balatro_rs::stage::Stage;
         let has_jokers = !self.game.jokers.is_empty();
         let has_consumables = !self.game.consumables.is_empty();
+        let preserve_cursor = matches!(
+            (&self.game.stage, &self.focus),
+            (Stage::PreBlind(), FocusZone::BlindSelect) | (Stage::PreBlind(), FocusZone::BlindSkip)
+        );
         self.focus = match (&self.game.stage, &self.focus) {
+            (Stage::PreBlind(), FocusZone::BlindSkip) => FocusZone::BlindSelect,
             (Stage::Blind(_), FocusZone::Cards) => {
                 if has_consumables {
                     FocusZone::ConsumableStrip
@@ -322,6 +341,8 @@ impl AppState {
             }
             _ => self.focus.clone(),
         };
-        self.cursor = 0;
+        if !preserve_cursor {
+            self.cursor = 0;
+        }
     }
 }

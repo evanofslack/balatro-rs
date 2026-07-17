@@ -175,6 +175,7 @@ fn handle_key_run_info(app: &mut AppState, key: KeyEvent) {
 
 fn handle_key_stage(app: &mut AppState, key: KeyEvent) {
     let prev_stage = app.game.stage;
+    let prev_blind = app.game.blind;
 
     // Normalize vim motion keys to arrow keys for all zone handlers
     let key = match key.code {
@@ -203,7 +204,7 @@ fn handle_key_stage(app: &mut AppState, key: KeyEvent) {
         }
     }
 
-    if app.game.stage != prev_stage {
+    if app.game.stage != prev_stage || app.game.blind != prev_blind {
         app.sync_focus_to_stage();
     }
 }
@@ -213,17 +214,25 @@ fn handle_key_preblind(app: &mut AppState, key: KeyEvent) {
 
     let blinds = [Blind::Small, Blind::Big, Blind::Boss];
 
+    let is_valid: fn(&AppState, Blind) -> bool = match app.focus {
+        FocusZone::BlindSkip => |app, b| {
+            app.game
+                .gen_actions()
+                .any(|a| matches!(a, Action::SkipBlind(x) if x == b))
+        },
+        _ => |app, b| {
+            app.game
+                .gen_actions()
+                .any(|a| matches!(a, Action::SelectBlind(x) if x == b))
+        },
+    };
+
     match key.code {
         KeyCode::Left => {
             let mut c = app.cursor;
             while c > 0 {
                 c -= 1;
-                let b = blinds[c];
-                if app
-                    .game
-                    .gen_actions()
-                    .any(|a| matches!(a, Action::SelectBlind(x) if x == b))
-                {
+                if is_valid(app, blinds[c]) {
                     app.cursor = c;
                     break;
                 }
@@ -233,12 +242,7 @@ fn handle_key_preblind(app: &mut AppState, key: KeyEvent) {
             let mut c = app.cursor;
             while c + 1 < blinds.len() {
                 c += 1;
-                let b = blinds[c];
-                if app
-                    .game
-                    .gen_actions()
-                    .any(|a| matches!(a, Action::SelectBlind(x) if x == b))
-                {
+                if is_valid(app, blinds[c]) {
                     app.cursor = c;
                     break;
                 }
@@ -246,7 +250,12 @@ fn handle_key_preblind(app: &mut AppState, key: KeyEvent) {
         }
         KeyCode::Enter | KeyCode::Char(' ') => {
             let blind = blinds[app.cursor.min(2)];
-            let _ = app.game.handle_action(Action::SelectBlind(blind));
+            let action = if app.focus == FocusZone::BlindSkip {
+                Action::SkipBlind(blind)
+            } else {
+                Action::SelectBlind(blind)
+            };
+            let _ = app.game.handle_action(action);
         }
         _ => {}
     }
@@ -602,6 +611,15 @@ fn open_inspect(app: &mut AppState) {
                 app.overlay = Some(Overlay::Inspect(target));
             }
         }
+        FocusZone::BlindSkip => {
+            use balatro_rs::stage::Blind;
+            let blinds = [Blind::Small, Blind::Big, Blind::Boss];
+            if let Some(blind) = blinds.get(app.cursor) {
+                if let Some(tag) = app.game.skip_tag(*blind) {
+                    app.overlay = Some(Overlay::Inspect(InspectTarget::Tag(tag)));
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -641,6 +659,7 @@ pub fn handle_mouse(app: &mut AppState, event: MouseEvent) {
 fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
     use crate::app::WidgetId::*;
     let prev_stage = app.game.stage;
+    let prev_blind = app.game.blind;
 
     match id {
         Card(idx) => {
@@ -730,6 +749,16 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             };
             let _ = app.game.handle_action(Action::SelectBlind(blind));
         }
+        BlindSkipOption(idx) => {
+            use balatro_rs::stage::Blind;
+            app.focus = FocusZone::BlindSkip;
+            app.cursor = idx;
+            let blind = match idx {
+                0 => Blind::Small,
+                _ => Blind::Big,
+            };
+            let _ = app.game.handle_action(Action::SkipBlind(blind));
+        }
         CashOutButton => {
             if matches!(app.game.stage, Stage::End(_)) {
                 app.should_quit = true;
@@ -786,7 +815,7 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
         }
     }
 
-    if app.game.stage != prev_stage {
+    if app.game.stage != prev_stage || app.game.blind != prev_blind {
         app.sync_focus_to_stage();
     }
 }
