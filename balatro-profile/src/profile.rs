@@ -327,68 +327,15 @@ impl fmt::Display for ProfileSummary<'_> {
         let p = self.0;
         let cs = &p.career_stats;
 
-        writeln!(f, "Profile: {}", p.name)?;
+        writeln!(f, "{}", p.name)?;
         writeln!(
             f,
             "Last played: {}, {:?} Stake",
             p.last_played.deck.name(),
             p.last_played.stake
         )?;
+        writeln!(f)?;
 
-        let jokers_unlocked = p
-            .unlocked
-            .iter()
-            .filter(|i| matches!(i, ItemId::Joker(_)))
-            .count();
-        let vouchers_unlocked = p
-            .unlocked
-            .iter()
-            .filter(|i| matches!(i, ItemId::Voucher(_)))
-            .count();
-        // Consumables aren't lockable, only discoverable.
-        let consumables_discovered = p
-            .discovered
-            .iter()
-            .filter(|i| matches!(i, ItemId::Consumable(_)))
-            .count();
-        let decks_unlocked = p
-            .unlocked
-            .iter()
-            .filter(|i| matches!(i, ItemId::Deck(_)))
-            .count();
-        writeln!(
-            f,
-            "Jokers unlocked: {jokers_unlocked}/{}",
-            Jokers::iter().count()
-        )?;
-        writeln!(
-            f,
-            "Vouchers unlocked: {vouchers_unlocked}/{}",
-            Voucher::iter().count()
-        )?;
-        writeln!(
-            f,
-            "Consumables discovered: {consumables_discovered}/{}",
-            Tarot::iter().count() + Planets::iter().count() + Spectral::iter().count()
-        )?;
-        writeln!(
-            f,
-            "Decks unlocked: {decks_unlocked}/{}",
-            DeckVariant::iter().count()
-        )?;
-
-        writeln!(
-            f,
-            "Wins: {} / Rounds: {}",
-            format_number(cs.wins as i64),
-            format_number(cs.rounds as i64)
-        )?;
-        writeln!(f, "Hands played: {}", format_number(cs.hands_played as i64))?;
-        writeln!(
-            f,
-            "Most money ever: {}",
-            format_number(p.high_scores.most_money.amount as i64)
-        )?;
         writeln!(
             f,
             "Best hand score: {}",
@@ -399,14 +346,112 @@ impl fmt::Display for ProfileSummary<'_> {
             "Furthest ante: {}",
             format_number(p.high_scores.furthest_ante.amount as i64)
         )?;
-        write!(
+        let win_rate = if cs.wins + cs.losses > 0 {
+            cs.wins * 100 / (cs.wins + cs.losses)
+        } else {
+            0
+        };
+        writeln!(
+            f,
+            "Wins: {} / Rounds: {} ({win_rate}%)",
+            format_number(cs.wins as i64),
+            format_number(cs.rounds as i64)
+        )?;
+        writeln!(
             f,
             "Best win streak: {}",
             format_number(p.high_scores.win_streak.amount as i64)
         )?;
+        writeln!(f, "Hands played: {}", format_number(cs.hands_played as i64))?;
+        writeln!(f, "Top hands: {}", top_n_line(&self.hand_counts(), 3))?;
+        writeln!(
+            f,
+            "Most money: ${} (earned ${}, spent ${})",
+            format_number(p.high_scores.most_money.amount as i64),
+            format_number(cs.dollars_earned as i64),
+            format_number(cs.shop_dollars_spent as i64)
+        )?;
+        writeln!(f)?;
+
+        let jokers_unlocked = p
+            .unlocked
+            .iter()
+            .filter(|i| matches!(i, ItemId::Joker(_)))
+            .count();
+        let jokers_bought: u64 = p.joker_usage.values().map(|u| u.count).sum();
+        writeln!(
+            f,
+            "Jokers: {jokers_unlocked} unlocked, {} played, {} bought, {} sold",
+            p.joker_usage.len(),
+            format_number(jokers_bought as i64),
+            format_number(cs.jokers_sold as i64)
+        )?;
+        let top_jokers: Vec<(String, u64)> =
+            sorted_by_count(&p.joker_usage, |j| j.name().to_string(), |u| u.count)
+                .into_iter()
+                .map(|(j, u)| (j.name().to_string(), u.count))
+                .collect();
+        writeln!(f, "Top jokers: {}", top_n_line(&top_jokers, 3))?;
+
+        let consumables_discovered = p
+            .discovered
+            .iter()
+            .filter(|i| matches!(i, ItemId::Consumable(_)))
+            .count();
+        let consumables_used: u64 = p.consumable_usage.values().map(|u| u.count).sum();
+        writeln!(
+            f,
+            "Consumables: {consumables_discovered}/{} discovered, {} used",
+            Tarot::iter().count() + Planets::iter().count() + Spectral::iter().count(),
+            format_number(consumables_used as i64)
+        )?;
+        writeln!(f)?;
+
+        let vouchers_unlocked = p
+            .unlocked
+            .iter()
+            .filter(|i| matches!(i, ItemId::Voucher(_)))
+            .count();
+        let decks_unlocked = p
+            .unlocked
+            .iter()
+            .filter(|i| matches!(i, ItemId::Deck(_)))
+            .count();
+        writeln!(
+            f,
+            "Vouchers unlocked: {vouchers_unlocked}/{}",
+            Voucher::iter().count()
+        )?;
+        write!(
+            f,
+            "Decks unlocked: {decks_unlocked}/{}",
+            DeckVariant::iter().count()
+        )?;
 
         Ok(())
     }
+}
+
+impl ProfileSummary<'_> {
+    fn hand_counts(&self) -> Vec<(String, u64)> {
+        self.0
+            .hand_usage
+            .iter()
+            .map(|(h, count)| (format!("{h:?}"), *count))
+            .collect()
+    }
+}
+
+/// Formats the top `n` entries by count as `"Name (Nx), Name (Nx), ..."`.
+fn top_n_line(entries: &[(String, u64)], n: usize) -> String {
+    let mut sorted: Vec<_> = entries.iter().collect();
+    sorted.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    sorted
+        .into_iter()
+        .take(n)
+        .map(|(name, count)| format!("{name} ({}x)", format_number(*count as i64)))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Builds an `ItemId` set, skipping `c_base` and `e_base`.
