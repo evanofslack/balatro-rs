@@ -10,6 +10,7 @@ use std::collections::{HashMap, HashSet};
 /// Mirrors Immolate's `InstParams`. `version` gates which pool variant a
 /// draw uses (see `pools.rs`); `showman` disables the lock-triggered
 /// resample entirely (Jokers::Showman's real effect).
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub struct InstParams {
     pub showman: bool,
@@ -29,6 +30,8 @@ impl Default for InstParams {
     }
 }
 
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone)]
 pub struct Instance {
     seed: String,
     hashed_seed: f64,

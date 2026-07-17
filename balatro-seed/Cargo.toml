@@ -8,3 +8,7 @@ license = "MIT"
 [dependencies]
 balatro-types = { path = "../balatro-types" }
 strum = "0.26"
+serde = { version = "1", features = ["derive"], optional = true }
+
+[features]
+serde = ["dep:serde"]

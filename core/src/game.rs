@@ -2,7 +2,7 @@ use crate::action::{Action, MoveDirection};
 use crate::ante::Ante;
 use crate::available::Available;
 use crate::card::{Card, Edition, Enhancement};
-use crate::config::Config;
+use crate::config::{Config, RngMode};
 use crate::consumable::Consumable;
 use crate::deck::Deck;
 use crate::effect::{EffectRegistry, Effects};
@@ -12,6 +12,7 @@ use crate::joker::{joker_display, JokerEffects, Jokers};
 use crate::pack::{OpenPackState, Pack, PackCategory, PackContent};
 use crate::planet::Planetarium;
 use crate::rank::HandRank;
+use crate::rng::{Backend, FastBackend, RealBackend, RngBackend};
 use crate::shop::Shop;
 use crate::stage::{Blind, BlindExt, End, Stage};
 use crate::tag::Tag;
@@ -25,6 +26,11 @@ use strum::IntoEnumIterator;
 #[cfg(feature = "serde")]
 fn default_rng() -> ChaCha8Rng {
     ChaCha8Rng::from_entropy()
+}
+
+#[cfg(feature = "serde")]
+fn default_backend() -> Backend {
+    Backend::Fast(FastBackend::new(ChaCha8Rng::from_entropy()))
 }
 
 fn default_reroll_cost() -> usize {
@@ -83,6 +89,11 @@ pub struct Game {
     pub seed_str: Option<String>,
     #[cfg_attr(feature = "serde", serde(default = "default_rng"))]
     pub(crate) rng: ChaCha8Rng,
+    // shop/pack generation backend (Fast/Real, per config.rng_mode) — does
+    // not affect deck shuffling, prob_roll, or tag draws, which stay on
+    // `rng` above regardless of RngMode.
+    #[cfg_attr(feature = "serde", serde(default = "default_backend"))]
+    pub(crate) backend: Backend,
     // track stage so we can come back to it after temp tarot stage
     pub(crate) tarot_prev_stage: Option<Stage>,
 
@@ -103,6 +114,17 @@ impl Game {
             (None, None) => {
                 let u: u64 = thread_rng().gen();
                 (u, None, ChaCha8Rng::seed_from_u64(u))
+            }
+        };
+        let backend = match config.rng_mode {
+            RngMode::Fast => Backend::Fast(FastBackend::new(ChaCha8Rng::seed_from_u64(seed))),
+            RngMode::Real => {
+                // Real mode needs a Balatro-format seed *string*; fall back
+                // to the numeric seed's decimal representation if only
+                // `config.seed` (no `seed_str`) was given — deterministic,
+                // but not a real Balatro seed shape in that fallback case.
+                let seed_string = seed_str.clone().unwrap_or_else(|| seed.to_string());
+                Backend::Real(RealBackend::new(&seed_string))
             }
         };
         let mut game = Self {
@@ -140,6 +162,7 @@ impl Game {
             seed,
             seed_str,
             rng,
+            backend,
             config,
         };
         game.draw_ante_tags();
@@ -430,7 +453,8 @@ impl Game {
             false,
             self.prob_mult,
             &held_jokers,
-            &mut self.rng,
+            self.ante_current as i32,
+            &mut self.backend,
         );
         Ok(())
     }
@@ -454,7 +478,8 @@ impl Game {
             &held,
             self.prob_mult,
             &held_jokers,
-            &mut self.rng,
+            self.ante_current as i32,
+            &mut self.backend,
         );
         Ok(())
     }
@@ -470,6 +495,17 @@ impl Game {
         let sold = self.jokers.remove(idx);
         if sold.edition() == Edition::Negative {
             self.config.joker_slots = self.config.joker_slots.saturating_sub(1);
+        }
+        // Only unlock if this was the last owned copy (Showman is the only
+        // way to own more than one) — a discriminant compare, matching
+        // shop.rs's own exclude-list comparisons, since Jokers' derived
+        // Eq also compares edition/stickers, not just "which joker".
+        let still_owned = self
+            .jokers
+            .iter()
+            .any(|j| std::mem::discriminant(j) == std::mem::discriminant(&sold));
+        if !still_owned {
+            self.backend.on_joker_sold(&sold);
         }
         self.effect_registry
             .register_jokers(self.jokers.clone(), &self.clone());
@@ -504,6 +540,7 @@ impl Game {
         }
         self.shop.buy_joker(&joker)?;
         self.money -= joker.cost();
+        self.backend.on_joker_bought(&joker);
         self.jokers.push(joker);
         self.effect_registry
             .register_jokers(self.jokers.clone(), &self.clone());
@@ -1059,6 +1096,45 @@ pub fn score_hand(
 mod tests {
     use super::*;
     use crate::card::{Suit, Value};
+
+    // Cross-checked by hand against `explore`'s output for seed "TEST"
+    // (which itself matched the reference site's published ante-1 output
+    // exactly — see ARCHITECTURE.md). `Shop::refresh` only fills 2
+    // joker/consumable slots and 2 packs per call (real Balatro's actual
+    // per-visit shop size), so this checks the *first two* of the
+    // reference's longer simulated sequence, not all 15/4.
+    #[test]
+    fn test_real_rng_mode_matches_balatro_seed_reference() {
+        use crate::pack::PackSize;
+
+        let config = Config {
+            rng_mode: RngMode::Real,
+            seed_str: Some("TEST".to_string()),
+            ..Config::default()
+        };
+        let mut g = Game::new(config);
+
+        let planetarium = g.planetarium.clone();
+        g.shop
+            .refresh(&planetarium, &[], false, 1, &[], 1, &mut g.backend);
+
+        assert_eq!(g.shop.jokers.len(), 1);
+        assert_eq!(g.shop.jokers[0].name(), "Ice Cream");
+        assert_eq!(g.shop.consumables.len(), 1);
+        assert_eq!(g.shop.consumables[0].name(), "Strength");
+
+        assert_eq!(g.shop.packs.len(), 2);
+
+        assert_eq!(g.shop.packs[0].category, PackCategory::Buffoon);
+        assert_eq!(g.shop.packs[0].size, PackSize::Normal);
+        let p1_contents: Vec<String> = g.shop.packs[0].contents.iter().map(|c| c.name()).collect();
+        assert_eq!(p1_contents, vec!["Baseball Card", "Drunkard"]);
+
+        assert_eq!(g.shop.packs[1].category, PackCategory::Spectral);
+        assert_eq!(g.shop.packs[1].size, PackSize::Normal);
+        let p2_contents: Vec<String> = g.shop.packs[1].contents.iter().map(|c| c.name()).collect();
+        assert_eq!(p2_contents, vec!["Medium", "Wraith"]);
+    }
 
     #[test]
     fn test_constructor() {

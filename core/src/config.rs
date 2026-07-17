@@ -25,6 +25,20 @@ const DEFAULT_DISCARDED_MAX: usize = 100;
 const DEFAULT_SELECTED_MAX: usize = 5;
 const DEFAULT_CONSUMABLE_SLOTS: usize = 2;
 
+/// Which RNG backend `Shop` generation uses. `Fast` is `core`'s original
+/// `rand_chacha`-based generation (unchanged). `Real` is a byte-accurate
+/// port of the real Balatro seed algorithm (`balatro-seed`), producing the
+/// same shop/pack contents the real game would for a given seed. Only
+/// affects shop-item/pack generation — deck shuffling, probability rolls,
+/// and the skip-blind tag draw are unaffected either way.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RngMode {
+    #[default]
+    Fast,
+    Real,
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass)]
 #[derive(Debug, Clone)]
@@ -54,6 +68,7 @@ pub struct Config {
     pub discarded_max: usize,
     pub seed: Option<u64>,
     pub seed_str: Option<String>,
+    pub rng_mode: RngMode,
 }
 
 impl Config {
@@ -84,6 +99,7 @@ impl Config {
             discarded_max: DEFAULT_DISCARDED_MAX,
             seed: None,
             seed_str: None,
+            rng_mode: RngMode::default(),
         }
     }
 }
