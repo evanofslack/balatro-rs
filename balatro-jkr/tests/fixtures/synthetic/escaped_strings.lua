@@ -1,0 +1,1 @@
+return {["quote"]="a\"b\\c",}

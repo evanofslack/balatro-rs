@@ -1,0 +1,10 @@
+[package]
+name = "balatro-jkr"
+version = "0.1.0"
+edition = "2024"
+description = "Codec for Balatro's .jkr save/profile/meta file format (raw-deflate-compressed Lua table literals)"
+license = "MIT"
+
+[dependencies]
+miniz_oxide = "0.8"
+thiserror = "2"
