@@ -79,6 +79,83 @@ impl Voucher {
         }
     }
 
+    /// Save-file id for this voucher.
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Overstock => "v_overstock_norm",
+            Self::OverstockPlus => "v_overstock_plus",
+            Self::ClearanceSale => "v_clearance_sale",
+            Self::Liquidation => "v_liquidation",
+            Self::Hone => "v_hone",
+            Self::GlowUp => "v_glow_up",
+            Self::RerollSurplus => "v_reroll_surplus",
+            Self::RerollGlut => "v_reroll_glut",
+            Self::CrystalBall => "v_crystal_ball",
+            Self::OmenGlobe => "v_omen_globe",
+            Self::Telescope => "v_telescope",
+            Self::Observatory => "v_observatory",
+            Self::Grabber => "v_grabber",
+            Self::NachoTong => "v_nacho_tong",
+            Self::Wasteful => "v_wasteful",
+            Self::Recyclomancy => "v_recyclomancy",
+            Self::TarotMerchant => "v_tarot_merchant",
+            Self::TarotTycoon => "v_tarot_tycoon",
+            Self::PlanetMerchant => "v_planet_merchant",
+            Self::PlanetTycoon => "v_planet_tycoon",
+            Self::SeedMoney => "v_seed_money",
+            Self::MoneyTree => "v_money_tree",
+            Self::Blank => "v_blank",
+            Self::Antimatter => "v_antimatter",
+            Self::MagicTrick => "v_magic_trick",
+            Self::Illusion => "v_illusion",
+            Self::Hieroglyph => "v_hieroglyph",
+            Self::Petroglyph => "v_petroglyph",
+            Self::DirectorsCut => "v_directors_cut",
+            Self::Retcon => "v_retcon",
+            Self::PaintBrush => "v_paint_brush",
+            Self::Palette => "v_palette",
+        }
+    }
+
+    /// Parses a save-file id back into a `Voucher`.
+    pub fn from_id(s: &str) -> Option<Self> {
+        match s {
+            "v_overstock_norm" => Some(Self::Overstock),
+            "v_overstock_plus" => Some(Self::OverstockPlus),
+            "v_clearance_sale" => Some(Self::ClearanceSale),
+            "v_liquidation" => Some(Self::Liquidation),
+            "v_hone" => Some(Self::Hone),
+            "v_glow_up" => Some(Self::GlowUp),
+            "v_reroll_surplus" => Some(Self::RerollSurplus),
+            "v_reroll_glut" => Some(Self::RerollGlut),
+            "v_crystal_ball" => Some(Self::CrystalBall),
+            "v_omen_globe" => Some(Self::OmenGlobe),
+            "v_telescope" => Some(Self::Telescope),
+            "v_observatory" => Some(Self::Observatory),
+            "v_grabber" => Some(Self::Grabber),
+            "v_nacho_tong" => Some(Self::NachoTong),
+            "v_wasteful" => Some(Self::Wasteful),
+            "v_recyclomancy" => Some(Self::Recyclomancy),
+            "v_tarot_merchant" => Some(Self::TarotMerchant),
+            "v_tarot_tycoon" => Some(Self::TarotTycoon),
+            "v_planet_merchant" => Some(Self::PlanetMerchant),
+            "v_planet_tycoon" => Some(Self::PlanetTycoon),
+            "v_seed_money" => Some(Self::SeedMoney),
+            "v_money_tree" => Some(Self::MoneyTree),
+            "v_blank" => Some(Self::Blank),
+            "v_antimatter" => Some(Self::Antimatter),
+            "v_magic_trick" => Some(Self::MagicTrick),
+            "v_illusion" => Some(Self::Illusion),
+            "v_hieroglyph" => Some(Self::Hieroglyph),
+            "v_petroglyph" => Some(Self::Petroglyph),
+            "v_directors_cut" => Some(Self::DirectorsCut),
+            "v_retcon" => Some(Self::Retcon),
+            "v_paint_brush" => Some(Self::PaintBrush),
+            "v_palette" => Some(Self::Palette),
+            _ => None,
+        }
+    }
+
     pub fn description(&self) -> &str {
         match self {
             Self::Overstock => "+1 card slot available in shop",
@@ -154,6 +231,13 @@ impl Voucher {
 mod tests {
     use super::*;
     use strum::IntoEnumIterator;
+
+    #[test]
+    fn test_voucher_id_round_trip() {
+        for v in Voucher::iter() {
+            assert_eq!(Voucher::from_id(v.id()), Some(v));
+        }
+    }
 
     #[test]
     fn test_voucher_count() {

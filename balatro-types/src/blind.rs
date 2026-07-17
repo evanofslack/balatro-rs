@@ -84,6 +84,75 @@ impl BossBlind {
         }
     }
 
+    /// Save-file id for this boss blind.
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Arm => "bl_arm",
+            Self::Club => "bl_club",
+            Self::Eye => "bl_eye",
+            Self::Fish => "bl_fish",
+            Self::Flint => "bl_flint",
+            Self::Goad => "bl_goad",
+            Self::Head => "bl_head",
+            Self::Hook => "bl_hook",
+            Self::House => "bl_house",
+            Self::Manacle => "bl_manacle",
+            Self::Mark => "bl_mark",
+            Self::Mouth => "bl_mouth",
+            Self::Needle => "bl_needle",
+            Self::Ox => "bl_ox",
+            Self::Pillar => "bl_pillar",
+            Self::Plant => "bl_plant",
+            Self::Psychic => "bl_psychic",
+            Self::Serpent => "bl_serpent",
+            Self::Tooth => "bl_tooth",
+            Self::Wall => "bl_wall",
+            Self::Water => "bl_water",
+            Self::Wheel => "bl_wheel",
+            Self::Window => "bl_window",
+            Self::AmberAcorn => "bl_final_acorn",
+            Self::CeruleanBell => "bl_final_bell",
+            Self::CrimsonHeart => "bl_final_heart",
+            Self::VerdantLeaf => "bl_final_leaf",
+            Self::VioletVessel => "bl_final_vessel",
+        }
+    }
+
+    /// Parses a save-file id back into a `BossBlind`.
+    pub fn from_id(s: &str) -> Option<Self> {
+        match s {
+            "bl_arm" => Some(Self::Arm),
+            "bl_club" => Some(Self::Club),
+            "bl_eye" => Some(Self::Eye),
+            "bl_fish" => Some(Self::Fish),
+            "bl_flint" => Some(Self::Flint),
+            "bl_goad" => Some(Self::Goad),
+            "bl_head" => Some(Self::Head),
+            "bl_hook" => Some(Self::Hook),
+            "bl_house" => Some(Self::House),
+            "bl_manacle" => Some(Self::Manacle),
+            "bl_mark" => Some(Self::Mark),
+            "bl_mouth" => Some(Self::Mouth),
+            "bl_needle" => Some(Self::Needle),
+            "bl_ox" => Some(Self::Ox),
+            "bl_pillar" => Some(Self::Pillar),
+            "bl_plant" => Some(Self::Plant),
+            "bl_psychic" => Some(Self::Psychic),
+            "bl_serpent" => Some(Self::Serpent),
+            "bl_tooth" => Some(Self::Tooth),
+            "bl_wall" => Some(Self::Wall),
+            "bl_water" => Some(Self::Water),
+            "bl_wheel" => Some(Self::Wheel),
+            "bl_window" => Some(Self::Window),
+            "bl_final_acorn" => Some(Self::AmberAcorn),
+            "bl_final_bell" => Some(Self::CeruleanBell),
+            "bl_final_heart" => Some(Self::CrimsonHeart),
+            "bl_final_leaf" => Some(Self::VerdantLeaf),
+            "bl_final_vessel" => Some(Self::VioletVessel),
+            _ => None,
+        }
+    }
+
     pub fn description(&self) -> &str {
         match self {
             Self::Arm => "Delevels the poker hand played to level 1",
@@ -134,6 +203,13 @@ impl BossBlind {
 mod tests {
     use super::*;
     use strum::IntoEnumIterator;
+
+    #[test]
+    fn test_boss_blind_id_round_trip() {
+        for b in BossBlind::iter() {
+            assert_eq!(BossBlind::from_id(b.id()), Some(b));
+        }
+    }
 
     #[test]
     fn test_blind_count() {
