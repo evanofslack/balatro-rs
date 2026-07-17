@@ -1,5 +1,5 @@
 [workspace]
 resolver = "2"
 
-members = ["core", "pylatro", "cli", "tui", "balatro-types", "balatro-jkr"]
+members = ["core", "pylatro", "cli", "tui", "balatro-types", "balatro-jkr", "balatro-profile"]
 

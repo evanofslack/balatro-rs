@@ -43,6 +43,49 @@ impl DeckVariant {
         }
     }
 
+    /// Save-file id for this deck.
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Red => "b_red",
+            Self::Blue => "b_blue",
+            Self::Yellow => "b_yellow",
+            Self::Green => "b_green",
+            Self::Black => "b_black",
+            Self::Magic => "b_magic",
+            Self::Nebula => "b_nebula",
+            Self::Ghost => "b_ghost",
+            Self::Abandoned => "b_abandoned",
+            Self::Checkered => "b_checkered",
+            Self::Zodiac => "b_zodiac",
+            Self::Painted => "b_painted",
+            Self::Anaglyph => "b_anaglyph",
+            Self::Plasma => "b_plasma",
+            Self::Erratic => "b_erratic",
+        }
+    }
+
+    /// Parses a save-file id back into a `DeckVariant`.
+    pub fn from_id(s: &str) -> Option<Self> {
+        match s {
+            "b_red" => Some(Self::Red),
+            "b_blue" => Some(Self::Blue),
+            "b_yellow" => Some(Self::Yellow),
+            "b_green" => Some(Self::Green),
+            "b_black" => Some(Self::Black),
+            "b_magic" => Some(Self::Magic),
+            "b_nebula" => Some(Self::Nebula),
+            "b_ghost" => Some(Self::Ghost),
+            "b_abandoned" => Some(Self::Abandoned),
+            "b_checkered" => Some(Self::Checkered),
+            "b_zodiac" => Some(Self::Zodiac),
+            "b_painted" => Some(Self::Painted),
+            "b_anaglyph" => Some(Self::Anaglyph),
+            "b_plasma" => Some(Self::Plasma),
+            "b_erratic" => Some(Self::Erratic),
+            _ => None,
+        }
+    }
+
     pub fn description(&self) -> &str {
         match self {
             Self::Red => "+1 discard every round",
@@ -72,6 +115,13 @@ impl DeckVariant {
 mod tests {
     use super::*;
     use strum::IntoEnumIterator;
+
+    #[test]
+    fn test_deck_variant_id_round_trip() {
+        for d in DeckVariant::iter() {
+            assert_eq!(DeckVariant::from_id(d.id()), Some(d));
+        }
+    }
 
     #[test]
     fn test_deck_variant_count() {

@@ -37,3 +37,9 @@ tui-load FILE:
 
 tui-seed SEED:
     cargo run -p balatro-tui -- --seed {{SEED}}
+
+jkr *FILES:
+    cargo run -p balatro-jkr --bin jkr -- {{FILES}}
+
+profile *ARGS:
+    cargo run -p balatro-profile --bin profile -- {{ARGS}}

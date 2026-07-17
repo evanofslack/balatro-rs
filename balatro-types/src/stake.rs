@@ -55,6 +55,26 @@ impl Stake {
             Self::Gold => 7,
         }
     }
+
+    /// Save-file integer for this stake.
+    pub fn id(&self) -> u8 {
+        self.ordinal() as u8 + 1
+    }
+
+    /// Parses a save-file stake integer (1-8) back into a `Stake`.
+    pub fn from_id(n: u8) -> Option<Self> {
+        match n {
+            1 => Some(Self::White),
+            2 => Some(Self::Red),
+            3 => Some(Self::Green),
+            4 => Some(Self::Black),
+            5 => Some(Self::Blue),
+            6 => Some(Self::Purple),
+            7 => Some(Self::Orange),
+            8 => Some(Self::Gold),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -72,5 +92,20 @@ mod tests {
         assert!(Stake::White < Stake::Gold);
         assert_eq!(Stake::White.ordinal(), 0);
         assert_eq!(Stake::Gold.ordinal(), 7);
+    }
+
+    #[test]
+    fn test_stake_id_round_trip() {
+        for s in Stake::iter() {
+            assert_eq!(Stake::from_id(s.id()), Some(s));
+        }
+    }
+
+    #[test]
+    fn test_stake_id_confirmed_ground_truth() {
+        // Confirmed against real save files with known ground truth.
+        assert_eq!(Stake::White.id(), 1);
+        assert_eq!(Stake::Red.id(), 2);
+        assert_eq!(Stake::Orange.id(), 7);
     }
 }

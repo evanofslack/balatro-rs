@@ -116,6 +116,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "balatro-profile"
+version = "0.1.0"
+dependencies = [
+ "balatro-jkr",
+ "balatro-types",
+ "strum",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "balatro-rs"
 version = "0.0.1"
 dependencies = [

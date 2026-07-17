@@ -66,6 +66,43 @@ impl Planets {
         }
     }
 
+    /// Save-file id for this planet card.
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Pluto => "c_pluto",
+            Self::Mercury => "c_mercury",
+            Self::Uranus => "c_uranus",
+            Self::Venus => "c_venus",
+            Self::Saturn => "c_saturn",
+            Self::Jupiter => "c_jupiter",
+            Self::Earth => "c_earth",
+            Self::Mars => "c_mars",
+            Self::Neptune => "c_neptune",
+            Self::PlanetX => "c_planet_x",
+            Self::Ceres => "c_ceres",
+            Self::Eris => "c_eris",
+        }
+    }
+
+    /// Parses a save-file id back into a `Planets`.
+    pub fn from_id(s: &str) -> Option<Self> {
+        match s {
+            "c_pluto" => Some(Self::Pluto),
+            "c_mercury" => Some(Self::Mercury),
+            "c_uranus" => Some(Self::Uranus),
+            "c_venus" => Some(Self::Venus),
+            "c_saturn" => Some(Self::Saturn),
+            "c_jupiter" => Some(Self::Jupiter),
+            "c_earth" => Some(Self::Earth),
+            "c_mars" => Some(Self::Mars),
+            "c_neptune" => Some(Self::Neptune),
+            "c_planet_x" => Some(Self::PlanetX),
+            "c_ceres" => Some(Self::Ceres),
+            "c_eris" => Some(Self::Eris),
+            _ => None,
+        }
+    }
+
     pub fn desc(&self) -> String {
         format!("Levels up {}", self.hand_rank_name())
     }
@@ -337,6 +374,13 @@ impl fmt::Display for Planetarium {
 mod tests {
     use super::*;
     use strum::IntoEnumIterator;
+
+    #[test]
+    fn test_planets_id_round_trip() {
+        for p in Planets::iter() {
+            assert_eq!(Planets::from_id(p.id()), Some(p));
+        }
+    }
 
     #[test]
     fn test_planet_count() {

@@ -1,0 +1,12 @@
+[package]
+name = "balatro-profile"
+version = "0.1.0"
+edition = "2024"
+description = "Typed Balatro save data (Profile, SaveSnapshot) parsed from .jkr LuaValue, expressed in balatro-types vocabulary"
+license = "MIT"
+
+[dependencies]
+balatro-types = { path = "../balatro-types" }
+balatro-jkr = { path = "../balatro-jkr" }
+thiserror = "2"
+strum = { version = "0.26", features = ["derive"] }

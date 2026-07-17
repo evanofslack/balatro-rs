@@ -59,6 +59,64 @@ impl Tarot {
         }
     }
 
+    /// Save-file id for this tarot card. Hierophant's is misspelled
+    /// (`heirophant`) in the real data.
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Fool => "c_fool",
+            Self::Magician => "c_magician",
+            Self::HighPriestess => "c_high_priestess",
+            Self::Empress => "c_empress",
+            Self::Emperor => "c_emperor",
+            Self::Hierophant => "c_heirophant",
+            Self::Lovers => "c_lovers",
+            Self::Chariot => "c_chariot",
+            Self::Justice => "c_justice",
+            Self::Hermit => "c_hermit",
+            Self::WheelOfFortune => "c_wheel_of_fortune",
+            Self::Strength => "c_strength",
+            Self::HangedMan => "c_hanged_man",
+            Self::Death => "c_death",
+            Self::Temperance => "c_temperance",
+            Self::Devil => "c_devil",
+            Self::Tower => "c_tower",
+            Self::Star => "c_star",
+            Self::Moon => "c_moon",
+            Self::Sun => "c_sun",
+            Self::Judgement => "c_judgement",
+            Self::World => "c_world",
+        }
+    }
+
+    /// Parses a save-file id back into a `Tarot`.
+    pub fn from_id(s: &str) -> Option<Self> {
+        match s {
+            "c_fool" => Some(Self::Fool),
+            "c_magician" => Some(Self::Magician),
+            "c_high_priestess" => Some(Self::HighPriestess),
+            "c_empress" => Some(Self::Empress),
+            "c_emperor" => Some(Self::Emperor),
+            "c_heirophant" => Some(Self::Hierophant),
+            "c_lovers" => Some(Self::Lovers),
+            "c_chariot" => Some(Self::Chariot),
+            "c_justice" => Some(Self::Justice),
+            "c_hermit" => Some(Self::Hermit),
+            "c_wheel_of_fortune" => Some(Self::WheelOfFortune),
+            "c_strength" => Some(Self::Strength),
+            "c_hanged_man" => Some(Self::HangedMan),
+            "c_death" => Some(Self::Death),
+            "c_temperance" => Some(Self::Temperance),
+            "c_devil" => Some(Self::Devil),
+            "c_tower" => Some(Self::Tower),
+            "c_star" => Some(Self::Star),
+            "c_moon" => Some(Self::Moon),
+            "c_sun" => Some(Self::Sun),
+            "c_judgement" => Some(Self::Judgement),
+            "c_world" => Some(Self::World),
+            _ => None,
+        }
+    }
+
     pub fn description(&self) -> &str {
         match self {
             Self::Fool => "Creates a copy of the last Tarot used",
@@ -150,6 +208,18 @@ impl Tarot {
 mod tests {
     use super::*;
     use strum::IntoEnumIterator;
+
+    #[test]
+    fn test_tarot_id_round_trip() {
+        for t in Tarot::iter() {
+            assert_eq!(Tarot::from_id(t.id()), Some(t));
+        }
+    }
+
+    #[test]
+    fn test_hierophant_id_has_real_typo() {
+        assert_eq!(Tarot::Hierophant.id(), "c_heirophant");
+    }
 
     #[test]
     fn test_tarot_count() {

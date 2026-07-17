@@ -17,6 +17,31 @@ pub enum PackCategory {
     Spectral,
 }
 
+impl PackCategory {
+    /// Save-file id fragment for this pack category (the `"arcana"` in
+    /// `"p_arcana_jumbo_1"`).
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Arcana => "arcana",
+            Self::Buffoon => "buffoon",
+            Self::Celestial => "celestial",
+            Self::Standard => "standard",
+            Self::Spectral => "spectral",
+        }
+    }
+
+    pub fn from_id(s: &str) -> Option<Self> {
+        match s {
+            "arcana" => Some(Self::Arcana),
+            "buffoon" => Some(Self::Buffoon),
+            "celestial" => Some(Self::Celestial),
+            "standard" => Some(Self::Standard),
+            "spectral" => Some(Self::Spectral),
+            _ => None,
+        }
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -24,6 +49,27 @@ pub enum PackSize {
     Normal,
     Jumbo,
     Mega,
+}
+
+impl PackSize {
+    /// Save-file id fragment for this pack size (the `"jumbo"` in
+    /// `"p_arcana_jumbo_1"`).
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Jumbo => "jumbo",
+            Self::Mega => "mega",
+        }
+    }
+
+    pub fn from_id(s: &str) -> Option<Self> {
+        match s {
+            "normal" => Some(Self::Normal),
+            "jumbo" => Some(Self::Jumbo),
+            "mega" => Some(Self::Mega),
+            _ => None,
+        }
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -133,6 +179,26 @@ impl Pack {
 mod tests {
     use super::*;
     use crate::card::{Suit, Value};
+
+    #[test]
+    fn test_pack_category_size_id_round_trip() {
+        let categories = [
+            PackCategory::Arcana,
+            PackCategory::Buffoon,
+            PackCategory::Celestial,
+            PackCategory::Standard,
+            PackCategory::Spectral,
+        ];
+        for c in categories {
+            assert_eq!(PackCategory::from_id(c.id()), Some(c));
+        }
+        let sizes = [PackSize::Normal, PackSize::Jumbo, PackSize::Mega];
+        for s in sizes {
+            assert_eq!(PackSize::from_id(s.id()), Some(s));
+        }
+        assert_eq!(PackCategory::Arcana.id(), "arcana");
+        assert_eq!(PackSize::Jumbo.id(), "jumbo");
+    }
 
     #[test]
     fn test_pack_cost_by_size() {

@@ -61,6 +61,67 @@ impl Tag {
         }
     }
 
+    /// Save-file id for this tag.
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Uncommon => "tag_uncommon",
+            Self::Rare => "tag_rare",
+            Self::Negative => "tag_negative",
+            Self::Foil => "tag_foil",
+            Self::Holographic => "tag_holo",
+            Self::Polychrome => "tag_polychrome",
+            Self::Investment => "tag_investment",
+            Self::Voucher => "tag_voucher",
+            Self::Boss => "tag_boss",
+            Self::Standard => "tag_standard",
+            Self::Charm => "tag_charm",
+            Self::Meteor => "tag_meteor",
+            Self::Buffoon => "tag_buffoon",
+            Self::Handy => "tag_handy",
+            Self::Garbage => "tag_garbage",
+            Self::Ethereal => "tag_ethereal",
+            Self::Coupon => "tag_coupon",
+            Self::Double => "tag_double",
+            Self::Juggle => "tag_juggle",
+            Self::D6 => "tag_d_six",
+            Self::TopUp => "tag_top_up",
+            Self::Speed => "tag_skip",
+            Self::Orbital => "tag_orbital",
+            Self::Economy => "tag_economy",
+        }
+    }
+
+    /// Parses a save-file id back into a `Tag`.
+    pub fn from_id(s: &str) -> Option<Self> {
+        match s {
+            "tag_uncommon" => Some(Self::Uncommon),
+            "tag_rare" => Some(Self::Rare),
+            "tag_negative" => Some(Self::Negative),
+            "tag_foil" => Some(Self::Foil),
+            "tag_holo" => Some(Self::Holographic),
+            "tag_polychrome" => Some(Self::Polychrome),
+            "tag_investment" => Some(Self::Investment),
+            "tag_voucher" => Some(Self::Voucher),
+            "tag_boss" => Some(Self::Boss),
+            "tag_standard" => Some(Self::Standard),
+            "tag_charm" => Some(Self::Charm),
+            "tag_meteor" => Some(Self::Meteor),
+            "tag_buffoon" => Some(Self::Buffoon),
+            "tag_handy" => Some(Self::Handy),
+            "tag_garbage" => Some(Self::Garbage),
+            "tag_ethereal" => Some(Self::Ethereal),
+            "tag_coupon" => Some(Self::Coupon),
+            "tag_double" => Some(Self::Double),
+            "tag_juggle" => Some(Self::Juggle),
+            "tag_d_six" => Some(Self::D6),
+            "tag_top_up" => Some(Self::TopUp),
+            "tag_skip" => Some(Self::Speed),
+            "tag_orbital" => Some(Self::Orbital),
+            "tag_economy" => Some(Self::Economy),
+            _ => None,
+        }
+    }
+
     pub fn description(&self) -> &str {
         match self {
             Self::Uncommon => "Next shop guarantees an Uncommon Joker",
@@ -69,7 +130,9 @@ impl Tag {
             Self::Foil => "Next base edition Joker in shop is free and becomes Foil",
             Self::Holographic => "Next base edition Joker in shop is free and becomes Holographic",
             Self::Polychrome => "Next base edition Joker in shop is free and becomes Polychrome",
-            Self::Investment => "Jokers, Consumables, and Booster Packs in next shop's initial stock are free",
+            Self::Investment => {
+                "Jokers, Consumables, and Booster Packs in next shop's initial stock are free"
+            }
             Self::Voucher => "Next shop has an additional Voucher available",
             Self::Boss => "Rerolls the upcoming Boss Blind",
             Self::Standard => "Gives a free Mega Standard Pack",
@@ -95,6 +158,13 @@ impl Tag {
 mod tests {
     use super::*;
     use strum::IntoEnumIterator;
+
+    #[test]
+    fn test_tag_id_round_trip() {
+        for t in Tag::iter() {
+            assert_eq!(Tag::from_id(t.id()), Some(t));
+        }
+    }
 
     #[test]
     fn test_tag_count() {

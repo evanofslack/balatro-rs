@@ -53,6 +53,23 @@ impl Consumable {
             Self::Spectral(s) => s.sell_value(),
         }
     }
+
+    /// Save-file id for this consumable.
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Planet(p) => p.id(),
+            Self::Tarot(t) => t.id(),
+            Self::Spectral(s) => s.id(),
+        }
+    }
+
+    /// Parses a save-file id into a `Consumable`.
+    pub fn from_id(s: &str) -> Option<Self> {
+        Planets::from_id(s)
+            .map(Self::Planet)
+            .or_else(|| Tarot::from_id(s).map(Self::Tarot))
+            .or_else(|| Spectral::from_id(s).map(Self::Spectral))
+    }
 }
 
 #[cfg(test)]
@@ -63,6 +80,20 @@ mod tests {
     fn test_consumable_planet_cost() {
         let c = Consumable::Planet(Planets::Mercury);
         assert_eq!(c.cost(), 3);
+    }
+
+    #[test]
+    fn test_consumable_id_round_trip() {
+        let cases = [
+            Consumable::Planet(Planets::Saturn),
+            Consumable::Tarot(Tarot::Hierophant),
+            Consumable::Spectral(Spectral::Familiar),
+        ];
+        for c in cases {
+            assert_eq!(Consumable::from_id(c.id()), Some(c));
+        }
+        assert_eq!(Consumable::Planet(Planets::Saturn).id(), "c_saturn");
+        assert_eq!(Consumable::from_id("not_a_real_id"), None);
     }
 
     #[test]

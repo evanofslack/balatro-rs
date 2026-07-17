@@ -162,7 +162,9 @@ pub enum Seal {
 /// Enum for card/joker/consumable editions.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Copy, Hash, Default, EnumIter, EnumString)]
+#[derive(
+    PartialEq, PartialOrd, Eq, Ord, Debug, Clone, Copy, Hash, Default, EnumIter, EnumString,
+)]
 #[strum(ascii_case_insensitive)]
 pub enum Edition {
     #[default]
@@ -188,6 +190,30 @@ impl Edition {
     /// (+1 consumable slot), not Foil/Holographic/Polychrome.
     pub fn valid_for_consumable(&self) -> bool {
         matches!(self, Edition::Base | Edition::Negative)
+    }
+
+    /// Save-file id for this edition.
+    pub fn id(&self) -> &'static str {
+        match self {
+            Self::Base => "e_base",
+            Self::Foil => "e_foil",
+            Self::Holographic => "e_holo",
+            Self::Polychrome => "e_polychrome",
+            Self::Negative => "e_negative",
+        }
+    }
+
+    /// Parses a save-file id into an `Edition`. `e_negative_consumable`
+    /// also maps to `Negative`.
+    pub fn from_id(s: &str) -> Option<Self> {
+        match s {
+            "e_base" => Some(Self::Base),
+            "e_foil" => Some(Self::Foil),
+            "e_holo" => Some(Self::Holographic),
+            "e_polychrome" => Some(Self::Polychrome),
+            "e_negative" | "e_negative_consumable" => Some(Self::Negative),
+            _ => None,
+        }
     }
 }
 
@@ -282,6 +308,21 @@ mod tests {
     #[test]
     fn test_edition_count() {
         assert_eq!(Edition::iter().count(), 5);
+    }
+
+    #[test]
+    fn test_edition_id_round_trip() {
+        for e in Edition::iter() {
+            assert_eq!(Edition::from_id(e.id()), Some(e));
+        }
+    }
+
+    #[test]
+    fn test_edition_negative_consumable_alias() {
+        assert_eq!(
+            Edition::from_id("e_negative_consumable"),
+            Some(Edition::Negative)
+        );
     }
 
     #[test]
