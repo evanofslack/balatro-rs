@@ -1,0 +1,10 @@
+[package]
+name = "balatro-seed"
+version = "0.1.0"
+edition = "2024"
+description = "Byte-accurate port of Balatro's real seed/RNG algorithm (pseudohash + LuaRandom node-hash generation), for reproducing what a given seed generates in the real game"
+license = "MIT"
+
+[dependencies]
+balatro-types = { path = "../balatro-types" }
+strum = "0.26"
