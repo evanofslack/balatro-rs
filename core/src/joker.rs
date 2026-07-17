@@ -287,7 +287,12 @@ impl JokerEffects for Jokers {
             }
             Self::Baron(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    let kings = g.held.iter().filter(|c| c.value == Value::King).count();
+                    let kings = g
+                        .available
+                        .not_selected()
+                        .iter()
+                        .filter(|c| c.value == Value::King)
+                        .count();
                     for _ in 0..kings {
                         g.mult = (g.mult as f64 * 1.5) as usize;
                     }
@@ -325,7 +330,7 @@ impl JokerEffects for Jokers {
             }
             Self::ReservedParking(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    for card in &g.held.clone() {
+                    for card in g.available.not_selected() {
                         if card.is_face_card() && g.prob_roll(1, 2) {
                             g.money += 1;
                         }
@@ -1881,10 +1886,10 @@ mod tests {
             stage: Stage::Blind(Blind::Small),
             ..Default::default()
         };
-        g.held = vec![
+        g.available.extend(vec![
             Card::new(Value::King, Suit::Club),
             Card::new(Value::King, Suit::Spade),
-        ];
+        ]);
         let best = hand.best_hand().unwrap();
 
         // Pair (level 1): 10 chips, 2 mult
@@ -1913,10 +1918,10 @@ mod tests {
             stage: Stage::Blind(Blind::Small),
             ..Default::default()
         };
-        g.held = vec![
+        g.available.extend(vec![
             Card::new(Value::Queen, Suit::Club),
             Card::new(Value::Jack, Suit::Spade),
-        ];
+        ]);
         let best = hand.best_hand().unwrap();
 
         // Pair (level 1): 10 chips, 2 mult
@@ -1993,11 +1998,11 @@ mod tests {
             stage: Stage::Blind(Blind::Small),
             ..Default::default()
         };
-        g.held = vec![
+        g.available.extend(vec![
             Card::new(Value::King, Suit::Club),
             Card::new(Value::Queen, Suit::Spade),
             Card::new(Value::Jack, Suit::Heart),
-        ];
+        ]);
         let best = hand.best_hand().unwrap();
         g.calc_score(best.clone());
 
@@ -2029,10 +2034,10 @@ mod tests {
             stage: Stage::Blind(Blind::Small),
             ..Default::default()
         };
-        g.held = vec![
+        g.available.extend(vec![
             Card::new(Value::Ace, Suit::Club),
             Card::new(Value::Two, Suit::Spade),
-        ];
+        ]);
         let best = hand.best_hand().unwrap();
         g.calc_score(best.clone());
 
