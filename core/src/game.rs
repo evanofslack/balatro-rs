@@ -359,7 +359,7 @@ impl Game {
         self.mult += level.mult;
         self.record_step(
             &mut trace,
-            ScoreSource::HandLevel,
+            ScoreSource::HandLevel(hand.rank),
             chips_before,
             mult_before,
             false,
@@ -1400,7 +1400,10 @@ mod tests {
 
         assert_eq!(trace.0.len(), 2);
 
-        assert_eq!(trace.0[0].source, ScoreSource::HandLevel);
+        assert_eq!(
+            trace.0[0].source,
+            ScoreSource::HandLevel(HandRank::HighCard)
+        );
         assert_eq!(trace.0[0].chips_before, 0);
         assert_eq!(trace.0[0].chips_after, 5);
         assert_eq!(trace.0[0].mult_before, 0);
