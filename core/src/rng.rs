@@ -1,14 +1,8 @@
 //! Two backends for shop/pack generation, switched by `Config::rng_mode`:
-//! `FastBackend` (today's `rand_chacha`-based generation, unchanged) and
-//! `RealBackend` (a byte-accurate port of the real Balatro seed algorithm,
-//! `balatro-seed`). Named `rng` rather than `generator` to avoid colliding
-//! with the existing `generator.rs` (unrelated legal-move/action-space
-//! generation) and `shop.rs`'s `JokerGenerator`/`ConsumableGenerator`/
-//! `PackGenerator` struct names.
-//!
-//! Only shop-item and pack generation go through this — deck shuffling,
-//! `prob_roll` (Lucky/Glass), and the skip-blind tag draw keep using
-//! `Game.rng` directly, untouched by `RngMode`.
+//! `FastBackend` (`rand_chacha`-based) and `RealBackend` (byte-accurate
+//! port of the real Balatro seed algorithm, `balatro-seed`). Only
+//! shop-item and pack generation go through this — deck shuffling,
+//! `prob_roll`, and the skip-blind tag draw stay on `Game.rng` directly.
 
 use crate::card::Card;
 use crate::consumable::Consumable;
@@ -22,12 +16,9 @@ use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 
-/// What a single shop-item generation call produced. Not a bare `Jokers`/
-/// `Consumable` split at the call site, because that split (joker vs.
-/// tarot vs. planet vs. ...) has to happen *inside* the backend: `Real`
-/// mode's category roll is bundled into one `Instance::next_shop_item`
-/// call, not separable into "pick a category, then call a type-specific
-/// generator" the way `Fast` mode's `WeightedIndex` roll is.
+/// What a single shop-item generation call produced. The joker/consumable
+/// split has to happen inside the backend, since `Real` mode's category
+/// roll is bundled into one `Instance::next_shop_item` call.
 pub(crate) enum GeneratedItem {
     Joker(Jokers),
     Consumable(Consumable),
@@ -54,14 +45,10 @@ pub(crate) trait RngBackend {
     ) -> Pack;
 
     /// Owned-joker dedup hook: called on buy/sell so `Real` mode's lock
-    /// table stays accurate. No-op for `Fast` mode, whose `exclude_*`/
-    /// `held_jokers` parameters above already carry this fresh each call.
+    /// table stays accurate. No-op for `Fast` mode.
     fn on_joker_bought(&mut self, joker: &Jokers);
     fn on_joker_sold(&mut self, joker: &Jokers);
-    /// Jokers::Showman's real effect: disables duplicate-avoidance
-    /// entirely. No-op for `Fast` mode until it grows an equivalent flag.
-    /// No call site yet — wiring this up is `Jokers::Showman` getting real
-    /// `effects()` logic (tracked in `jokers.md`), not part of this phase.
+    /// Jokers::Showman's real effect. No call site yet — see `jokers.md`.
     #[allow(dead_code)]
     fn set_showman(&mut self, owned: bool);
 }
@@ -96,8 +83,7 @@ impl RngBackend for FastBackend {
         exclude_tarots: &[Tarot],
         exclude_planets: &[Planets],
     ) -> GeneratedItem {
-        // Joker=20, Tarot=4, Planet=4 — same weights as the old inline
-        // roll in `Shop::refresh_cards`, just relocated here.
+        // Joker=20, Tarot=4, Planet=4.
         let weights = [20u32, 4, 4];
         let dist = WeightedIndex::new(weights).unwrap();
         match dist.sample(&mut self.rng) {
@@ -148,17 +134,6 @@ impl RealBackend {
         }
     }
 
-    fn map_category(name: &str) -> PackCategory {
-        match name {
-            "Arcana Pack" => PackCategory::Arcana,
-            "Celestial Pack" => PackCategory::Celestial,
-            "Buffoon Pack" => PackCategory::Buffoon,
-            "Standard Pack" => PackCategory::Standard,
-            "Spectral Pack" => PackCategory::Spectral,
-            other => panic!("balatro-seed pack category {other:?} has no PackCategory mapping"),
-        }
-    }
-
     fn gen_pack_contents(
         &mut self,
         ante: i32,
@@ -200,11 +175,8 @@ impl RealBackend {
     }
 }
 
-/// `balatro_seed`'s `Card` (`balatro_types::Card`) has no `id` — `core`'s
-/// own `Card` (`crate::card::Card`) adds one (auto-assigned, for
-/// dedup/selection tracking) but reuses the same `Value`/`Suit`/`Edition`/
-/// `Enhancement`/`Seal` types directly, so only `value`/`suit` go through
-/// the id-assigning constructor and the rest are plain field copies.
+/// `balatro_types::Card` has no `id`; `core::Card` adds one, so only
+/// `value`/`suit` go through the id-assigning constructor.
 fn seed_card_to_core_card(c: balatro_types::Card) -> Card {
     let mut card = Card::new(c.value, c.suit);
     card.edition = c.edition;
@@ -213,10 +185,9 @@ fn seed_card_to_core_card(c: balatro_types::Card) -> Card {
     card
 }
 
-/// `balatro_seed`'s `Consumable` may carry Soul/Black Hole (a Spectral)
-/// even from a nominally Tarot/Planet draw — `PackContent` already has a
-/// matching variant for each `Consumable` case, so this is a direct,
-/// lossless translation, not a lossy one.
+/// `Consumable` may carry Soul/Black Hole (a Spectral) even from a
+/// nominally Tarot/Planet draw; `PackContent` has a matching variant for
+/// each case, so this is lossless.
 fn consumable_to_pack_content(c: Consumable) -> PackContent {
     match c {
         Consumable::Tarot(t) => PackContent::Tarot(t),
@@ -226,15 +197,8 @@ fn consumable_to_pack_content(c: Consumable) -> PackContent {
 }
 
 impl RngBackend for RealBackend {
-    // NOTE: `planetarium` is accepted but unused here — `Fast` mode uses it
-    // to gate "secret" planets (Planet X/Ceres/Eris) behind their hand type
-    // having been discovered (`ConsumableGenerator::gen_planet`); this
-    // gating isn't wired into `Real` mode. `balatro-seed`'s lock table
-    // *could* carry the same rule (lock/unlock "Planet X" as discovery
-    // state changes, exactly like the joker-ownership hooks below), but
-    // that's additional wiring this phase didn't include — flagged as a
-    // known gap, same category as the `freshProfile`/`freshRun` locks
-    // already noted as out of scope in `ARCHITECTURE.md`.
+    // `planetarium` is unused: `Fast` mode uses it to gate secret planets
+    // behind discovery state, which isn't wired into `Real` mode (known gap).
     fn gen_shop_item(
         &mut self,
         ante: i32,
@@ -248,13 +212,8 @@ impl RngBackend for RealBackend {
             balatro_seed::ShopItem::Joker(j) => GeneratedItem::Joker(j),
             balatro_seed::ShopItem::Consumable(c) => GeneratedItem::Consumable(c),
             balatro_seed::ShopItem::PlayingCard => {
-                // Unreachable given core's current feature set: this only
-                // has nonzero odds when the Magic Trick voucher is active,
-                // and nothing in `core` can ever activate a voucher (no
-                // voucher-shop mechanic exists yet — see
-                // ARCHITECTURE.md's "Open / deferred decisions"). Panic
-                // rather than silently drop the slot, so this gets noticed
-                // immediately if that ever changes.
+                // Unreachable: needs Magic Trick active, and core has no
+                // voucher-shop mechanic to ever activate it.
                 panic!(
                     "balatro-seed produced a shop playing card; core has no \
                      voucher mechanic to ever enable Magic Trick's nonzero rate"
@@ -271,16 +230,8 @@ impl RngBackend for RealBackend {
         _exclude: Option<(&PackCategory, &PackSize)>,
         _held_jokers: &[Jokers],
     ) -> Pack {
-        let name = self.instance.next_pack(ante);
-        let size = if name.starts_with("Jumbo ") {
-            PackSize::Jumbo
-        } else if name.starts_with("Mega ") {
-            PackSize::Mega
-        } else {
-            PackSize::Normal
-        };
-        let (category_name, count) = balatro_seed::pack_info(name);
-        let category = Self::map_category(category_name);
+        let (category, size) = self.instance.next_pack(ante);
+        let count = balatro_seed::pack_card_count(category, size);
         let contents = self.gen_pack_contents(ante, category, count);
         Pack {
             category,
@@ -290,11 +241,11 @@ impl RngBackend for RealBackend {
     }
 
     fn on_joker_bought(&mut self, joker: &Jokers) {
-        self.instance.lock(joker.name());
+        self.instance.lock(joker);
     }
 
     fn on_joker_sold(&mut self, joker: &Jokers) {
-        self.instance.unlock(joker.name());
+        self.instance.unlock(joker);
     }
 
     fn set_showman(&mut self, owned: bool) {
@@ -372,5 +323,68 @@ impl RngBackend for Backend {
             Backend::Fast(b) => b.set_showman(owned),
             Backend::Real(b) => b.set_showman(owned),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn real_backend_set_showman_propagates() {
+        let mut backend = RealBackend::new("TESTSEED");
+        assert!(!backend.instance.params.showman);
+        backend.set_showman(true);
+        assert!(backend.instance.params.showman);
+        backend.set_showman(false);
+        assert!(!backend.instance.params.showman);
+    }
+
+    // Structural check on gen_pack's typed plumbing across many draws.
+    #[test]
+    fn real_backend_gen_pack_contents_match_category_and_count() {
+        let mut backend = RealBackend::new("TESTSEED");
+        let planetarium = Planetarium::new();
+        let mut seen_categories: std::collections::HashSet<PackCategory> =
+            std::collections::HashSet::new();
+
+        for ante in 1..=300 {
+            let pack = backend.gen_pack(ante, &planetarium, 1, None, &[]);
+            seen_categories.insert(pack.category);
+
+            let expected_count = balatro_seed::pack_card_count(pack.category, pack.size);
+            assert_eq!(
+                pack.contents.len() as i32,
+                expected_count,
+                "ante {ante}: {:?}/{:?} should hold {expected_count} cards",
+                pack.category,
+                pack.size
+            );
+
+            for content in &pack.contents {
+                let matches = match pack.category {
+                    PackCategory::Buffoon => matches!(content, PackContent::Joker(_)),
+                    PackCategory::Standard => matches!(content, PackContent::PlayingCard(_)),
+                    PackCategory::Spectral => matches!(content, PackContent::Spectral(_)),
+                    PackCategory::Arcana => {
+                        matches!(content, PackContent::Tarot(_) | PackContent::Spectral(_))
+                    }
+                    PackCategory::Celestial => {
+                        matches!(content, PackContent::Planet(_) | PackContent::Spectral(_))
+                    }
+                };
+                assert!(
+                    matches,
+                    "ante {ante}: {:?} pack produced unexpected content {content:?}",
+                    pack.category
+                );
+            }
+        }
+
+        assert_eq!(
+            seen_categories.len(),
+            5,
+            "expected all 5 pack categories across 300 draws, saw {seen_categories:?}"
+        );
     }
 }

@@ -22,11 +22,11 @@ impl Consumable {
         }
     }
 
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> &str {
         match self {
             Self::Planet(p) => p.name(),
-            Self::Tarot(t) => t.name().to_string(),
-            Self::Spectral(s) => s.name().to_string(),
+            Self::Tarot(t) => t.name(),
+            Self::Spectral(s) => s.name(),
         }
     }
 

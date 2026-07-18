@@ -166,7 +166,7 @@ fn render_consumables(f: &mut Frame, app: &mut AppState, area: Rect) {
             let truncated = if name.len() > inner_w {
                 format!("{}…", &name[..inner_w.saturating_sub(1)])
             } else {
-                name
+                name.to_string()
             };
             let lines = vec![
                 Line::from(Span::styled(

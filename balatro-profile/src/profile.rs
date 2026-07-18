@@ -183,7 +183,7 @@ impl fmt::Display for Profile {
         }
 
         writeln!(f, "\nConsumable Usage ({}):", self.consumable_usage.len())?;
-        for (c, u) in sorted_by_count(&self.consumable_usage, |c| c.name(), |u| u.count) {
+        for (c, u) in sorted_by_count(&self.consumable_usage, |c| c.name().to_string(), |u| u.count) {
             writeln!(
                 f,
                 "  {}: used {}x (discovered #{})",

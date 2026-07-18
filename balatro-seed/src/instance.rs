@@ -1,15 +1,15 @@
-//! Port of Immolate's `Instance`/`Cache` (`TheSoul/include/instance.hpp`):
-//! the per-node cache and lock table that make node-hash generation work,
-//! plus the generic `randchoice`/`randweightedchoice` draw primitives.
+//! Per-node RNG cache and lock table, plus the generic draw primitives.
 //! Balatro-specific draw methods (next_joker, next_tarot, ...) live in
-//! `draws.rs`; this file only knows about strings and locks.
+//! `draws.rs`.
 
+use crate::node_id::NodeId;
+use crate::pool::Pool;
 use crate::rng::{LuaRandom, pseudohash, round13};
+use balatro_types::Named;
 use std::collections::{HashMap, HashSet};
 
-/// Mirrors Immolate's `InstParams`. `version` gates which pool variant a
-/// draw uses (see `pools.rs`); `showman` disables the lock-triggered
-/// resample entirely (Jokers::Showman's real effect).
+/// `version` gates which pool variant a draw uses (see `pools.rs`);
+/// `showman` disables lock-triggered resample entirely.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub struct InstParams {
@@ -37,9 +37,8 @@ pub struct Instance {
     hashed_seed: f64,
     nodes: HashMap<String, f64>,
     locked: HashSet<String>,
-    /// The real game's first pack of the run is always a Buffoon pack
-    /// (`functions.hpp::nextPack`) — tracked here so `next_pack` only
-    /// special-cases it once.
+    /// The run's first pack is always Buffoon; tracked so `next_pack`
+    /// only special-cases it once.
     pub(crate) generated_first_pack: bool,
     pub params: InstParams,
 }
@@ -56,29 +55,28 @@ impl Instance {
         }
     }
 
-    pub fn lock(&mut self, item: &str) {
-        self.locked.insert(item.to_string());
+    pub fn lock(&mut self, item: &(impl Named + ?Sized)) {
+        self.locked.insert(item.name().to_string());
     }
 
-    pub fn unlock(&mut self, item: &str) {
-        self.locked.remove(item);
+    pub fn unlock(&mut self, item: &(impl Named + ?Sized)) {
+        self.locked.remove(item.name());
     }
 
-    pub fn is_locked(&self, item: &str) -> bool {
-        self.locked.contains(item)
+    pub fn is_locked(&self, item: &(impl Named + ?Sized)) -> bool {
+        self.locked.contains(item.name())
     }
 
-    pub fn is_voucher_active(&self, voucher: &str) -> bool {
-        self.params.vouchers.iter().any(|v| v == voucher)
+    pub fn is_voucher_active(&self, voucher: &(impl Named + ?Sized)) -> bool {
+        self.params.vouchers.iter().any(|v| v == voucher.name())
     }
 
-    pub fn activate_voucher(&mut self, voucher: &str) {
-        self.params.vouchers.push(voucher.to_string());
+    pub fn activate_voucher(&mut self, voucher: &(impl Named + ?Sized)) {
+        self.params.vouchers.push(voucher.name().to_string());
     }
 
-    /// Per-ID cache whose stored value mutates on every access — this is
-    /// what makes rerolling work without any explicit reroll counter:
-    /// calling the same node ID again advances its cached value one step.
+    /// Mutates its stored value on every access — this is the reroll
+    /// mechanism, not an explicit counter.
     fn get_node(&mut self, id: &str) -> f64 {
         if !self.nodes.contains_key(id) {
             let initial = pseudohash(&format!("{id}{}", self.seed));
@@ -89,22 +87,22 @@ impl Instance {
         (*entry + self.hashed_seed) / 2.0
     }
 
-    pub fn random(&mut self, id: &str) -> f64 {
-        let node = self.get_node(id);
+    pub(crate) fn random(&mut self, id: NodeId) -> f64 {
+        let node = self.get_node(&id.to_string());
         LuaRandom::new(node).random()
     }
 
-    pub fn randint(&mut self, id: &str, min: i32, max: i32) -> i32 {
-        let node = self.get_node(id);
+    #[allow(dead_code)]
+    pub(crate) fn randint(&mut self, id: NodeId, min: i32, max: i32) -> i32 {
+        let node = self.get_node(&id.to_string());
         LuaRandom::new(node).randint(min, max)
     }
 
-    /// Uniform pick with lock-triggered resample. Mirrors
-    /// `Instance::randchoice` (`instance.hpp:63-76`) exactly, including an
-    /// asymmetry preserved from the source: the resample loop's exit check
-    /// ignores `showman` even though the initial pick's trigger doesn't.
-    pub fn randchoice<'a>(&mut self, id: &str, items: &[&'a str]) -> &'a str {
-        let node = self.get_node(id);
+    /// Uniform pick with lock-triggered resample. Preserves one source
+    /// asymmetry: the resample loop's exit check ignores `showman`.
+    pub(crate) fn randchoice<'a>(&mut self, id: NodeId, items: &[&'a str]) -> &'a str {
+        let id = id.to_string();
+        let node = self.get_node(&id);
         let mut rng = LuaRandom::new(node);
         let item = items[rng.randint(0, items.len() as i32 - 1) as usize];
 
@@ -124,11 +122,14 @@ impl Instance {
         item
     }
 
-    /// Weighted pick. `items[0]` is a sentinel whose weight is the sum of
-    /// every other entry's weight — never returned itself, only used to
-    /// scale the poll (mirrors `PACKS[0]` in Immolate's `items.hpp`).
-    pub fn randweightedchoice<'a>(&mut self, id: &str, items: &[(&'a str, f64)]) -> &'a str {
-        let node = self.get_node(id);
+    /// Weighted pick. `items[0]` is a sentinel weight (sum of the rest),
+    /// never itself returned.
+    pub(crate) fn randweightedchoice<'a>(
+        &mut self,
+        id: NodeId,
+        items: &[(&'a str, f64)],
+    ) -> &'a str {
+        let node = self.get_node(&id.to_string());
         let mut rng = LuaRandom::new(node);
         let poll = rng.random() * items[0].1;
         let mut idx = 1usize;
@@ -139,6 +140,12 @@ impl Instance {
         }
         items[idx - 1].0
     }
+
+    /// [`randchoice`](Self::randchoice) plus resolution against `pool`.
+    pub(crate) fn randchoice_typed<T>(&mut self, id: NodeId, pool: &Pool<T>) -> T {
+        let name = self.randchoice(id, pool.names);
+        pool.resolve(name)
+    }
 }
 
 #[cfg(test)]
@@ -148,10 +155,8 @@ mod tests {
     #[test]
     fn get_node_advances_on_repeated_access() {
         let mut inst = Instance::new("TESTSEED");
-        let a = inst.random("cdt1");
-        let b = inst.random("cdt1");
-        // Same node ID, called twice: values differ because the cache entry
-        // mutates on each access — this is the reroll mechanism.
+        let a = inst.random(NodeId::Custom("cdt1"));
+        let b = inst.random(NodeId::Custom("cdt1"));
         assert_ne!(a, b);
     }
 
@@ -159,7 +164,10 @@ mod tests {
     fn get_node_is_deterministic_across_instances() {
         let mut a = Instance::new("TESTSEED");
         let mut b = Instance::new("TESTSEED");
-        assert_eq!(a.random("cdt1"), b.random("cdt1"));
+        assert_eq!(
+            a.random(NodeId::Custom("cdt1")),
+            b.random(NodeId::Custom("cdt1"))
+        );
     }
 
     #[test]
@@ -167,11 +175,9 @@ mod tests {
         let mut inst = Instance::new("TESTSEED");
         let items = ["A", "B"];
         inst.lock("A");
-        // With only one unlocked item in a 2-item pool, any resample must
-        // eventually land on "B" (capped at 1000 tries) if "A" is ever hit.
         for ante in 0..50 {
             let id = format!("choice{ante}");
-            let picked = inst.randchoice(&id, &items);
+            let picked = inst.randchoice(NodeId::Custom(&id), &items);
             assert_eq!(picked, "B");
         }
     }
@@ -182,12 +188,9 @@ mod tests {
         inst.params.showman = true;
         let items = ["A", "B"];
         inst.lock("A");
-        // Showman bypasses the lock gate on the initial draw; "A" should be
-        // reachable now (not asserting it's picked every time, just that the
-        // lock no longer forces every draw to "B").
         let any_a = (0..50).any(|ante| {
             let id = format!("showman_choice{ante}");
-            inst.randchoice(&id, &items) == "A"
+            inst.randchoice(NodeId::Custom(&id), &items) == "A"
         });
         assert!(any_a, "Showman should allow a locked item to be drawn");
     }
@@ -198,7 +201,7 @@ mod tests {
         let items = ["RETRY", "RETRY", "Real"];
         for ante in 0..50 {
             let id = format!("retry_choice{ante}");
-            assert_eq!(inst.randchoice(&id, &items), "Real");
+            assert_eq!(inst.randchoice(NodeId::Custom(&id), &items), "Real");
         }
     }
 
@@ -209,7 +212,7 @@ mod tests {
         let items = [("SENTINEL", 3.0), ("A", 1.0), ("B", 1.0), ("C", 1.0)];
         for ante in 0..200 {
             let id = format!("weighted{ante}");
-            let picked = inst.randweightedchoice(&id, &items);
+            let picked = inst.randweightedchoice(NodeId::Custom(&id), &items);
             assert_ne!(picked, "SENTINEL");
         }
     }

@@ -1,16 +1,11 @@
-//! Typed public draw API, mirroring `TheSoul/include/functions.hpp`'s
-//! `Instance` methods. Resolves raw pool strings (`pools.rs`) to
-//! `balatro_types` values via `resolve.rs`, panicking on any unresolved
-//! name (should be unreachable — see `resolve::tests::pool_names_all_resolve`).
-//!
-//! Scope cuts from the full Immolate port are tracked in `ARCHITECTURE.md`
-//! (joker stickers, `ShopItem::PlayingCard`, `init_locks`'s fresh-profile
-//! seeding, pre-10099 pool variants).
-
 use crate::instance::Instance;
+use crate::node_id::NodeId;
 use crate::pools;
 use crate::resolve;
-use balatro_types::{BossBlind, Card, Consumable, Edition, Jokers, Seal, Spectral, Tag, Voucher};
+use balatro_types::{
+    BossBlind, Card, Consumable, Edition, Jokers, PackCategory, PackSize, Seal, Spectral, Tag,
+    Voucher,
+};
 
 pub enum ShopItem {
     Joker(Jokers),
@@ -19,10 +14,7 @@ pub enum ShopItem {
 }
 
 /// Given a drawn base voucher, returns its upgrade tier if one exists.
-/// `VOUCHERS` (`pools.rs`) is laid out as (base, upgrade) pairs at
-/// consecutive indices — mirrors the pairing loop in `TheSoul`'s own
-/// `index.html` demo (`Immolate.VOUCHERS`), used there to decide which
-/// voucher becomes drawable next.
+/// `VOUCHERS` is laid out as (base, upgrade) pairs at consecutive indices.
 pub fn voucher_upgrade(voucher: Voucher) -> Option<Voucher> {
     let name = voucher.name();
     let idx = pools::VOUCHERS.iter().position(|&n| n == name)?;
@@ -33,48 +25,40 @@ pub fn voucher_upgrade(voucher: Voucher) -> Option<Voucher> {
     }
 }
 
-/// `functions.hpp::packInfo`: decodes a drawn pack name (as returned by
-/// [`Instance::next_pack`]) into its base category (e.g. "Jumbo Celestial
-/// Pack" -> "Celestial Pack") and card count. `Mega`/`Jumbo` sizes are 4/2
-/// for Buffoon and Spectral packs, 5/3 for every other category — detected
-/// by checking specific character positions, exactly as the source does,
-/// since "Spectral" and "Standard" only diverge at their second letter.
-pub fn pack_info(pack: &str) -> (&str, i32) {
-    let bytes = pack.as_bytes();
-    if bytes[0] == b'M' {
-        let size = if bytes[5] == b'B' || bytes[6] == b'p' {
-            4
-        } else {
-            5
-        };
-        (&pack[5..], size)
-    } else if bytes[0] == b'J' {
-        let size = if bytes[6] == b'B' || bytes[7] == b'p' {
-            4
-        } else {
-            5
-        };
-        (&pack[6..], size)
+/// Decodes a drawn pack name into its typed category and size.
+fn parse_pack_name(name: &str) -> (PackCategory, PackSize) {
+    let (category_str, size) = if let Some(rest) = name.strip_prefix("Mega ") {
+        (rest, PackSize::Mega)
+    } else if let Some(rest) = name.strip_prefix("Jumbo ") {
+        (rest, PackSize::Jumbo)
     } else {
-        let size = if bytes[0] == b'B' || bytes[1] == b'p' {
-            2
-        } else {
-            3
-        };
-        (pack, size)
+        (name, PackSize::Normal)
+    };
+    let category = match category_str {
+        "Arcana Pack" => PackCategory::Arcana,
+        "Celestial Pack" => PackCategory::Celestial,
+        "Buffoon Pack" => PackCategory::Buffoon,
+        "Standard Pack" => PackCategory::Standard,
+        "Spectral Pack" => PackCategory::Spectral,
+        other => panic!("pack name {other:?} has no balatro_types::PackCategory match"),
+    };
+    (category, size)
+}
+
+/// Card count for a pack: Buffoon/Spectral hold 2 (Normal) / 4 (else);
+/// every other category holds 3 (Normal) / 5 (else).
+pub fn pack_card_count(category: PackCategory, size: PackSize) -> i32 {
+    match (category, size) {
+        (PackCategory::Buffoon | PackCategory::Spectral, PackSize::Normal) => 2,
+        (PackCategory::Buffoon | PackCategory::Spectral, _) => 4,
+        (_, PackSize::Normal) => 3,
+        _ => 5,
     }
 }
 
-fn resolved_joker(name: &str) -> Jokers {
-    resolve::resolve_joker(name)
-        .unwrap_or_else(|| panic!("pool name {name:?} has no balatro_types::Jokers match"))
-}
-
 impl Instance {
-    /// Full port of `functions.hpp::initLocks`. `fresh_profile` gates
-    /// profile-level achievement locks; `fresh_run` gates locks whose
-    /// requirement is inherently in-run (Cavendish, Planet X/Ceres/Eris, ...)
-    /// and can't be satisfied by profile state alone.
+    /// `fresh_profile` gates profile-level achievement locks; `fresh_run`
+    /// gates locks whose requirement is inherently in-run.
     pub fn init_locks(&mut self, ante: i32, fresh_profile: bool, fresh_run: bool) {
         if ante < 2 {
             for name in [
@@ -264,48 +248,41 @@ impl Instance {
     /// `functions.hpp::nextTarot`. Can return `The Soul` (a Spectral card)
     /// instead of a real tarot — a real-game quirk, not a bug.
     pub fn next_tarot(&mut self, source: &str, ante: i32, soulable: bool) -> Consumable {
-        let ante_str = ante.to_string();
         if soulable
-            && (self.params.showman || !self.is_locked("The Soul"))
-            && self.random(&format!("soul_Tarot{ante_str}")) > 0.997
+            && (self.params.showman || !self.is_locked(&Spectral::Soul))
+            && self.random(NodeId::SoulTarot(ante)) > 0.997
         {
             return Consumable::Spectral(Spectral::Soul);
         }
-        let name = self.randchoice(&format!("Tarot{source}{ante_str}"), pools::TAROTS);
-        let tarot = resolve::resolve_tarot(name)
-            .unwrap_or_else(|| panic!("pool name {name:?} has no balatro_types::Tarot match"));
+        let tarot = self.randchoice_typed(NodeId::Tarot { source, ante }, &pools::TAROTS_POOL);
         Consumable::Tarot(tarot)
     }
 
     /// `functions.hpp::nextPlanet`. Can return `Black Hole` (a Spectral
     /// card) instead of a real planet.
     pub fn next_planet(&mut self, source: &str, ante: i32, soulable: bool) -> Consumable {
-        let ante_str = ante.to_string();
         if soulable
-            && (self.params.showman || !self.is_locked("Black Hole"))
-            && self.random(&format!("soul_Planet{ante_str}")) > 0.997
+            && (self.params.showman || !self.is_locked(&Spectral::BlackHole))
+            && self.random(NodeId::SoulPlanet(ante)) > 0.997
         {
             return Consumable::Spectral(Spectral::BlackHole);
         }
-        let name = self.randchoice(&format!("Planet{source}{ante_str}"), pools::PLANETS);
-        let planet = resolve::resolve_planet(name)
-            .unwrap_or_else(|| panic!("pool name {name:?} has no balatro_types::Planets match"));
+        let planet = self.randchoice_typed(NodeId::Planet { source, ante }, &pools::PLANETS_POOL);
         Consumable::Planet(planet)
     }
 
     /// `functions.hpp::nextSpectral`. Soul and Black Hole both draw from the
     /// same node ID; if both succeed, Black Hole wins (checked second).
     pub fn next_spectral(&mut self, source: &str, ante: i32, soulable: bool) -> Consumable {
-        let ante_str = ante.to_string();
         if soulable {
             let mut forced: Option<Spectral> = None;
-            if (self.params.showman || !self.is_locked("The Soul"))
-                && self.random(&format!("soul_Spectral{ante_str}")) > 0.997
+            if (self.params.showman || !self.is_locked(&Spectral::Soul))
+                && self.random(NodeId::SoulSpectral(ante)) > 0.997
             {
                 forced = Some(Spectral::Soul);
             }
-            if (self.params.showman || !self.is_locked("Black Hole"))
-                && self.random(&format!("soul_Spectral{ante_str}")) > 0.997
+            if (self.params.showman || !self.is_locked(&Spectral::BlackHole))
+                && self.random(NodeId::SoulSpectral(ante)) > 0.997
             {
                 forced = Some(Spectral::BlackHole);
             }
@@ -313,25 +290,20 @@ impl Instance {
                 return Consumable::Spectral(s);
             }
         }
-        let name = self.randchoice(&format!("Spectral{source}{ante_str}"), pools::SPECTRALS);
-        let spectral = resolve::resolve_spectral(name)
-            .unwrap_or_else(|| panic!("pool name {name:?} has no balatro_types::Spectral match"));
+        let spectral =
+            self.randchoice_typed(NodeId::Spectral { source, ante }, &pools::SPECTRALS_POOL);
         Consumable::Spectral(spectral)
     }
 
-    /// `functions.hpp::nextJoker`, minus sticker generation (see module
-    /// docs). `source` selects a forced rarity for a few callers
-    /// ("sou" = legendary/Soul pull, "wra"/"rta" = rare, "uta" = uncommon),
-    /// otherwise rarity is rolled.
+    /// `source` selects a forced rarity for a few callers ("sou" =
+    /// legendary, "wra"/"rta" = rare, "uta" = uncommon), else rarity is rolled.
     pub fn next_joker(&mut self, source: &str, ante: i32) -> Jokers {
-        let ante_str = ante.to_string();
-
         let rarity: &str = match source {
             "sou" => "4",
             "wra" | "rta" => "3",
             "uta" => "2",
             _ => {
-                let poll = self.random(&format!("rarity{ante_str}{source}"));
+                let poll = self.random(NodeId::Rarity { source, ante });
                 if poll > 0.95 {
                     "3"
                 } else if poll > 0.7 {
@@ -349,7 +321,7 @@ impl Instance {
         } else {
             1.0
         };
-        let edition_poll = self.random(&format!("edi{source}{ante_str}"));
+        let edition_poll = self.random(NodeId::Edition { source, ante });
         let edition = if edition_poll > 0.997 {
             Edition::Negative
         } else if edition_poll > 1.0 - 0.006 * edition_rate {
@@ -362,36 +334,31 @@ impl Instance {
             Edition::Base
         };
 
-        let name = match rarity {
-            "4" => self.randchoice("Joker4", pools::LEGENDARY_JOKERS),
-            "3" => self.randchoice(&format!("Joker3{source}{ante_str}"), pools::RARE_JOKERS),
-            "2" => self.randchoice(&format!("Joker2{source}{ante_str}"), pools::UNCOMMON_JOKERS),
-            _ => self.randchoice(&format!("Joker1{source}{ante_str}"), pools::COMMON_JOKERS),
+        let mut joker: Jokers = match rarity {
+            "4" => self.randchoice_typed(NodeId::Joker4, &pools::LEGENDARY_JOKERS_POOL),
+            "3" => self.randchoice_typed(NodeId::Joker3 { source, ante }, &pools::RARE_JOKERS_POOL),
+            "2" => self.randchoice_typed(
+                NodeId::Joker2 { source, ante },
+                &pools::UNCOMMON_JOKERS_POOL,
+            ),
+            _ => self.randchoice_typed(NodeId::Joker1 { source, ante }, &pools::COMMON_JOKERS_POOL),
         };
-
-        let mut joker = resolved_joker(name);
         joker.set_edition(edition);
         joker
     }
 
-    /// `functions.hpp::nextVoucher`. Does not lock the result — locking (on
-    /// purchase, not on draw) is the caller's responsibility.
+    /// Does not lock the result — locking on purchase is the caller's job.
     pub fn next_voucher(&mut self, ante: i32) -> Voucher {
-        let name = self.randchoice(&format!("Voucher{ante}"), pools::VOUCHERS);
-        resolve::resolve_voucher(name)
-            .unwrap_or_else(|| panic!("pool name {name:?} has no balatro_types::Voucher match"))
+        self.randchoice_typed(NodeId::Voucher(ante), &pools::VOUCHERS_POOL)
     }
 
     /// `functions.hpp::nextTag`.
     pub fn next_tag(&mut self, ante: i32) -> Tag {
-        let name = self.randchoice(&format!("Tag{ante}"), pools::TAGS);
-        resolve::resolve_tag(name)
-            .unwrap_or_else(|| panic!("pool name {name:?} has no balatro_types::Tag match"))
+        self.randchoice_typed(NodeId::Tag(ante), &pools::TAGS_POOL)
     }
 
-    /// `functions.hpp::nextBoss`. Filters to the current ante's category
-    /// (finisher on `ante % 8 == 0`, else regular), retrying with a full
-    /// unlock if that category's pool is exhausted.
+    /// Filters to the current ante's category (finisher on `ante % 8 == 0`),
+    /// retrying with a full unlock if that category's pool is exhausted.
     pub fn next_boss(&mut self, ante: i32) -> BossBlind {
         let is_finisher_ante = ante % 8 == 0;
         let matches_category = |name: &str| {
@@ -414,40 +381,40 @@ impl Instance {
             return self.next_boss(ante);
         }
 
-        let chosen = self.randchoice("boss", &pool);
+        let chosen = self.randchoice(NodeId::Boss, &pool);
         self.lock(chosen);
-        resolve::resolve_boss(chosen)
-            .unwrap_or_else(|| panic!("pool name {chosen:?} has no balatro_types::BossBlind match"))
+        pools::BOSSES_POOL.resolve(chosen)
     }
 
     /// `functions.hpp::nextPack`. The run's first pack (ante <= 2, only
     /// once) is always a Buffoon pack.
-    pub fn next_pack(&mut self, ante: i32) -> &'static str {
+    pub fn next_pack(&mut self, ante: i32) -> (PackCategory, PackSize) {
         if ante <= 2 && !self.generated_first_pack && self.params.version > 10099 {
             self.generated_first_pack = true;
-            return "Buffoon Pack";
+            return (PackCategory::Buffoon, PackSize::Normal);
         }
-        self.randweightedchoice(&format!("shop_pack{ante}"), pools::PACKS)
+        let name = self.randweightedchoice(NodeId::ShopPack(ante), pools::PACKS);
+        parse_pack_name(name)
     }
 
-    /// `functions.hpp::nextArcanaPack`. Locks each drawn card as it's
-    /// assigned so the pack can't repeat a card, then unlocks all of them
-    /// once the pack is fully drawn — bypassed entirely under `showman`.
+    /// Locks each drawn card so the pack can't repeat one, then unlocks
+    /// them all once fully drawn — bypassed under `showman`.
     pub fn next_arcana_pack(&mut self, size: i32, ante: i32) -> Vec<Consumable> {
         let mut pack: Vec<Consumable> = Vec::new();
         for _ in 0..size {
-            let item = if self.is_voucher_active("Omen Globe") && self.random("omen_globe") > 0.8 {
-                self.next_spectral("ar2", ante, true)
-            } else {
-                self.next_tarot("ar1", ante, true)
-            };
+            let item =
+                if self.is_voucher_active("Omen Globe") && self.random(NodeId::OmenGlobe) > 0.8 {
+                    self.next_spectral("ar2", ante, true)
+                } else {
+                    self.next_tarot("ar1", ante, true)
+                };
             if !self.params.showman {
-                self.lock(&item.name());
+                self.lock(&item);
             }
             pack.push(item);
         }
         for item in &pack {
-            self.unlock(&item.name());
+            self.unlock(item);
         }
         pack
     }
@@ -458,12 +425,12 @@ impl Instance {
         for _ in 0..size {
             let item = self.next_planet("pl1", ante, true);
             if !self.params.showman {
-                self.lock(&item.name());
+                self.lock(&item);
             }
             pack.push(item);
         }
         for item in &pack {
-            self.unlock(&item.name());
+            self.unlock(item);
         }
         pack
     }
@@ -474,12 +441,12 @@ impl Instance {
         for _ in 0..size {
             let item = self.next_spectral("spe", ante, true);
             if !self.params.showman {
-                self.lock(&item.name());
+                self.lock(&item);
             }
             pack.push(item);
         }
         for item in &pack {
-            self.unlock(&item.name());
+            self.unlock(item);
         }
         pack
     }
@@ -490,35 +457,28 @@ impl Instance {
         for _ in 0..size {
             let joker = self.next_joker("buf", ante);
             if !self.params.showman {
-                self.lock(joker.name());
+                self.lock(&joker);
             }
             pack.push(joker);
         }
         for joker in &pack {
-            self.unlock(joker.name());
+            self.unlock(joker);
         }
         pack
     }
 
     /// `functions.hpp::nextStandardCard`.
     pub fn next_standard_card(&mut self, ante: i32) -> Card {
-        let ante_str = ante.to_string();
-
-        let enhancement = if self.random(&format!("stdset{ante_str}")) <= 0.6 {
+        let enhancement = if self.random(NodeId::StdSet(ante)) <= 0.6 {
             None
         } else {
-            let name = self.randchoice(&format!("Enhancedsta{ante_str}"), pools::ENHANCEMENTS);
-            Some(resolve::resolve_enhancement(name).unwrap_or_else(|| {
-                panic!("pool name {name:?} has no balatro_types::Enhancement match")
-            }))
+            Some(self.randchoice_typed(NodeId::EnhancedStandard(ante), &pools::ENHANCEMENTS_POOL))
         };
 
-        let base = self.randchoice(&format!("frontsta{ante_str}"), pools::CARDS);
-        let mut card = resolve::resolve_card_base(base)
-            .unwrap_or_else(|| panic!("pool base {base:?} has no balatro_types::Card mapping"));
+        let mut card: Card = self.randchoice_typed(NodeId::FrontStandard(ante), &pools::CARDS_POOL);
         card.enhancement = enhancement;
 
-        let edition_poll = self.random(&format!("standard_edition{ante_str}"));
+        let edition_poll = self.random(NodeId::StandardEdition(ante));
         card.edition = if edition_poll > 0.988 {
             Edition::Polychrome
         } else if edition_poll > 0.96 {
@@ -529,10 +489,10 @@ impl Instance {
             Edition::Base
         };
 
-        card.seal = if self.random(&format!("stdseal{ante_str}")) <= 0.8 {
+        card.seal = if self.random(NodeId::StdSeal(ante)) <= 0.8 {
             None
         } else {
-            let seal_poll = self.random(&format!("stdsealtype{ante_str}"));
+            let seal_poll = self.random(NodeId::StdSealType(ante));
             Some(if seal_poll > 0.75 {
                 Seal::Red
             } else if seal_poll > 0.5 {
@@ -547,9 +507,8 @@ impl Instance {
         card
     }
 
-    /// `functions.hpp::nextStandardPack`. Unlike every other pack-content
-    /// method, the source never locks cards as they're drawn — duplicate
-    /// cards within one Standard Pack are expected, not a bug.
+    /// Unlike every other pack-content method, never locks drawn cards —
+    /// duplicates within one Standard Pack are expected.
     pub fn next_standard_pack(&mut self, size: i32, ante: i32) -> Vec<Card> {
         (0..size).map(|_| self.next_standard_card(ante)).collect()
     }
@@ -557,8 +516,6 @@ impl Instance {
     /// `functions.hpp::nextShopItem` (via `getShopInstance` inlined). The
     /// `PlayingCard` branch is a placeholder — see module docs.
     pub fn next_shop_item(&mut self, ante: i32) -> ShopItem {
-        let ante_str = ante.to_string();
-
         let joker_rate = 20.0f64;
         let mut tarot_rate = 4.0;
         let mut planet_rate = 4.0;
@@ -582,7 +539,7 @@ impl Instance {
         }
         let total = joker_rate + tarot_rate + planet_rate + playing_card_rate + spectral_rate;
 
-        let mut poll = self.random(&format!("cdt{ante_str}")) * total;
+        let mut poll = self.random(NodeId::Cdt(ante)) * total;
 
         if poll < joker_rate {
             return ShopItem::Joker(self.next_joker("sho", ante));
@@ -607,8 +564,7 @@ impl Instance {
 mod tests {
     use super::*;
 
-    // Smoke test only, not a correctness check against real Balatro:
-    // confirms the whole draw surface is stable and non-panicking.
+    // Smoke test: confirms the whole draw surface is stable and non-panicking.
     #[test]
     fn ante_one_smoke_test_is_stable() {
         fn run() -> (String, String, Vec<String>) {
@@ -629,13 +585,13 @@ mod tests {
                 shop_items.push(item);
             }
 
-            let pack = inst.next_pack(1);
-            match pack {
-                "Buffoon Pack" => {
-                    inst.next_buffoon_pack(2, 1);
+            let (category, size) = inst.next_pack(1);
+            match category {
+                PackCategory::Buffoon => {
+                    inst.next_buffoon_pack(pack_card_count(category, size), 1);
                 }
-                "Arcana Pack" => {
-                    inst.next_arcana_pack(3, 1);
+                PackCategory::Arcana => {
+                    inst.next_arcana_pack(pack_card_count(category, size), 1);
                 }
                 _ => {}
             }
