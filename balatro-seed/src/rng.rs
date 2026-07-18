@@ -1,12 +1,8 @@
 //! Port of Balatro's real RNG primitives (`TheSoul`/Immolate `include/util.hpp`).
 //! Pure math, no Balatro domain knowledge.
 //!
-//! The reference C++ source writes out pi/e to 18-20 decimal digits by hand
-//! at each use site rather than using a shared constant; those literals are
-//! well within one f64 ULP of `std::f64::consts::{PI,E}` (differing only
-//! past the 17th significant digit), so this port uses the standard
-//! constants uniformly instead of duplicating hand-typed literals — both
-//! round to the same nearest-representable f64.
+//! Uses `std::f64::consts::{PI,E}` instead of the source's hand-typed
+//! 18-20 digit literals — both round to the same nearest f64.
 
 use std::f64::consts::{E, PI};
 
