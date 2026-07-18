@@ -93,11 +93,9 @@ impl SelectHand {
             .collect()
     }
 
-    // Cards from the original hand matching any of the given values, in
-    // their original relative order. values_freq()'s per-value groups are
-    // themselves order-preserving, but concatenating two different groups
-    // (two pair, full house) needs this instead of appending group-by-group,
-    // or the player's arrangement gets replaced by value-descending order.
+    // Original relative order, values_freq()'s groups are order-preserving
+    // individually, but concatenating two of them (two pair, full house)
+    // isn't, without this.
     fn cards_of_values(&self, values: &[Value]) -> Vec<Card> {
         self.0
             .iter()
@@ -199,13 +197,11 @@ impl SelectHand {
             return None;
         }
 
-        // First find first pair
         let (first_val, _) = self
             .values_freq()
             .into_iter()
             .find(|(_key, val)| val.len() >= 2)?;
 
-        // Next find second pair that isn't same value as first pair
         let (second_val, _) = self
             .values_freq()
             .into_iter()
@@ -294,21 +290,17 @@ impl SelectHand {
             return None;
         }
 
-        // First find 3ok
         let (three_val, _) = self
             .values_freq()
             .into_iter()
             .find(|(_key, val)| val.len() >= 3)?;
 
-        // Next find 2ok that isn't same value as 3ok
         let (two_val, _) = self
             .values_freq()
             .into_iter()
             .find(|(key, val)| *key != three_val && val.len() >= 2)?;
 
-        Some(SelectHand::new(
-            self.cards_of_values(&[three_val, two_val]),
-        ))
+        Some(SelectHand::new(self.cards_of_values(&[three_val, two_val])))
     }
 
     pub(crate) fn is_four_of_kind(&self) -> Option<SelectHand> {
@@ -635,8 +627,7 @@ mod tests {
         let ah = Card::new(Value::Ace, Suit::Heart);
         let two = Card::new(Value::Two, Suit::Diamond);
 
-        // Kings are lower value than the ace kicker but appear later in
-        // the hand — result should follow input order, not value order.
+        // Kings arranged after the ace kicker, result follows input order.
         let hand = SelectHand::new(vec![ah, kh, two, ks]);
         let pair = hand.is_pair().unwrap();
         assert_eq!(pair.cards(), vec![kh, ks]);
@@ -689,10 +680,8 @@ mod tests {
         let kh = Card::new(Value::King, Suit::Heart);
         let ks = Card::new(Value::King, Suit::Spade);
 
-        // The lower-valued pair (twos) is arranged first, kings second.
-        // values_freq() groups by value descending internally, so the old
-        // implementation always returned the higher-valued pair first
-        // regardless of arrangement — this pins the fix.
+        // Old code always returned the higher-valued pair first regardless
+        // of arrangement, this pins the fix.
         let hand = SelectHand::new(vec![two_h, two_s, kh, ks]);
         let tp = hand.is_two_pair().unwrap();
         assert_eq!(tp.cards(), vec![two_h, two_s, kh, ks]);
@@ -870,9 +859,8 @@ mod tests {
         let ks = Card::new(Value::King, Suit::Spade);
         let kd = Card::new(Value::King, Suit::Diamond);
 
-        // Pair arranged before the trips. The old implementation always
-        // returned the three-of-a-kind group first regardless of
-        // arrangement — this pins the fix.
+        // Pair arranged before the trips, old code always returned the
+        // three-of-a-kind group first regardless of arrangement.
         let hand = SelectHand::new(vec![two_h, two_s, kh, ks, kd]);
         let is_fh = hand.is_fullhouse().unwrap();
         assert_eq!(is_fh.cards(), vec![two_h, two_s, kh, ks, kd]);

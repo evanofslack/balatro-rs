@@ -117,9 +117,7 @@ mod tests {
 
     #[test]
     fn test_describe_joker_uses_short_name() {
-        // Plain .name(), not joker_display() — the latter bakes in
-        // cost/rarity/desc for shop listings, far too verbose repeated on
-        // every trace step from the same joker.
+        // joker_display() bakes in cost/rarity/desc, too verbose per step.
         use crate::joker::{Jokers, TheJoker};
         let step = ScoreStep {
             source: ScoreSource::Joker(Jokers::TheJoker(TheJoker::default())),

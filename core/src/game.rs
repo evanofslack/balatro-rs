@@ -1356,9 +1356,7 @@ mod tests {
 
     #[test]
     fn test_calc_score_traced_matches_calc_score() {
-        // calc_score and calc_score_traced share one implementation
-        // (calc_score_inner) — this pins that invariant so the two entry
-        // points can never silently diverge.
+        // guards calc_score/calc_score_traced against silently diverging
         let ace = Card::new(Value::Ace, Suit::Heart);
         let king = Card::new(Value::King, Suit::Diamond);
         let jack = Card::new(Value::Jack, Suit::Club);
@@ -1392,8 +1390,7 @@ mod tests {
         let king = Card::new(Value::King, Suit::Diamond);
         let jack = Card::new(Value::Jack, Suit::Club);
 
-        // Same fixture as test_calc_score's first case: best hand is just
-        // the ace (high card), so the trace should be exactly two steps.
+        // Same fixture as test_calc_score's first case, best hand is the ace alone.
         let hand = SelectHand::new(vec![ace, king, jack]).best_hand().unwrap();
         let (score, trace) = g.calc_score_traced(hand);
         assert_eq!(score, 16);
@@ -1428,8 +1425,7 @@ mod tests {
         // Held, not played — g.available.extend() leaves cards unselected.
         g.available.extend(vec![steel_king]);
 
-        // Pair of aces (mult=2 baseline) so the Steel card's `mult += mult/2`
-        // has a nonzero integer result to actually observe.
+        // mult=2 baseline so Steel's `mult += mult/2` has a nonzero result.
         let hand = SelectHand::new(vec![ace, ace]).best_hand().unwrap();
         let (score, trace) = g.calc_score_traced(hand);
 
