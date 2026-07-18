@@ -24,6 +24,7 @@ pub mod pack;
 pub mod planet;
 pub mod rank;
 mod rng;
+pub mod score;
 pub mod shop;
 pub mod space;
 pub mod stage;

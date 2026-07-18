@@ -13,6 +13,7 @@ use crate::pack::{OpenPackState, Pack, PackCategory, PackContent};
 use crate::planet::Planetarium;
 use crate::rank::HandRank;
 use crate::rng::{Backend, FastBackend, RealBackend, RngBackend};
+use crate::score::{ScoreSource, ScoreStep, ScoreTrace};
 use crate::shop::Shop;
 use crate::stage::{Blind, BlindExt, End, Stage};
 use crate::tag::Tag;
@@ -302,57 +303,146 @@ impl Game {
             .gen_ratio((numerator * self.prob_mult).min(denominator), denominator)
     }
 
-    pub fn calc_score(&mut self, mut hand: MadeHand) -> usize {
+    pub fn calc_score(&mut self, hand: MadeHand) -> usize {
+        self.calc_score_inner(hand, None)
+    }
+
+    /// Same scoring pass as `calc_score`, plus an ordered `ScoreTrace` of
+    /// every chips/mult contribution along the way.
+    pub fn calc_score_traced(&mut self, hand: MadeHand) -> (usize, ScoreTrace) {
+        let mut trace = ScoreTrace::default();
+        let score = self.calc_score_inner(hand, Some(&mut trace));
+        (score, trace)
+    }
+
+    fn record_step(
+        &self,
+        trace: &mut Option<&mut ScoreTrace>,
+        source: ScoreSource,
+        chips_before: usize,
+        mult_before: usize,
+        retrigger: bool,
+    ) {
+        let Some(t) = trace else {
+            return;
+        };
+        // skip no-op checks (e.g. a Base-edition joker, a conditional
+        // effect that didn't fire)
+        if chips_before == self.chips && mult_before == self.mult {
+            return;
+        }
+        t.0.push(ScoreStep {
+            source,
+            chips_before,
+            chips_after: self.chips,
+            mult_before,
+            mult_after: self.mult,
+            retrigger,
+        });
+    }
+
+    // Extension point for retrigger jokers (Mime, Dusk, Hack, etc)
+    fn trigger_count(&self, _card: &Card) -> usize {
+        1
+    }
+
+    fn calc_score_inner(
+        &mut self,
+        mut hand: MadeHand,
+        mut trace: Option<&mut ScoreTrace>,
+    ) -> usize {
         // compute chips and mult from hand level
+        let chips_before = self.chips;
+        let mult_before = self.mult;
         let level = self.planetarium.play(hand.rank);
         self.chips += level.chips;
         self.mult += level.mult;
+        self.record_step(
+            &mut trace,
+            ScoreSource::HandLevel(hand.rank),
+            chips_before,
+            mult_before,
+            false,
+        );
 
         // per-scored-card, rank chips, enhancements, editions
         for card in hand.hand.cards() {
-            // stone has no rank, skip normal chip value
-            if card.enhancement != Some(Enhancement::Stone) {
-                self.chips += card.chips();
-            }
-            match card.enhancement {
-                Some(Enhancement::Bonus) => self.chips += 30,
-                Some(Enhancement::Mult) => self.mult += 4,
-                Some(Enhancement::Glass) => self.mult *= 2,
-                Some(Enhancement::Lucky) => {
-                    if self.prob_roll(1, 5) {
-                        self.mult += 20;
-                    }
-                    if self.prob_roll(1, 15) {
-                        self.money += 20;
-                    }
+            for i in 0..self.trigger_count(&card) {
+                let chips_before = self.chips;
+                let mult_before = self.mult;
+
+                // stone has no rank, skip normal chip value
+                if card.enhancement != Some(Enhancement::Stone) {
+                    self.chips += card.chips();
                 }
-                _ => {}
-            }
-            match card.edition {
-                Edition::Foil => self.chips += 50,
-                Edition::Holographic => self.mult += 10,
-                Edition::Polychrome => self.mult += self.mult / 2,
-                _ => {}
+                match card.enhancement {
+                    Some(Enhancement::Bonus) => self.chips += 30,
+                    Some(Enhancement::Mult) => self.mult += 4,
+                    Some(Enhancement::Glass) => self.mult *= 2,
+                    Some(Enhancement::Lucky) => {
+                        if self.prob_roll(1, 5) {
+                            self.mult += 20;
+                        }
+                        if self.prob_roll(1, 15) {
+                            self.money += 20;
+                        }
+                    }
+                    _ => {}
+                }
+                match card.edition {
+                    Edition::Foil => self.chips += 50,
+                    Edition::Holographic => self.mult += 10,
+                    Edition::Polychrome => self.mult += self.mult / 2,
+                    _ => {}
+                }
+
+                self.record_step(
+                    &mut trace,
+                    ScoreSource::PlayedCard(card),
+                    chips_before,
+                    mult_before,
+                    i > 0,
+                );
             }
         }
 
         // stone cards always score +50 chips, even as kickers
         for card in &hand.all {
             if card.enhancement == Some(Enhancement::Stone) {
+                let chips_before = self.chips;
+                let mult_before = self.mult;
                 self.chips += 50;
+                self.record_step(
+                    &mut trace,
+                    ScoreSource::StoneKicker(*card),
+                    chips_before,
+                    mult_before,
+                    false,
+                );
             }
         }
 
         // held in hand effects (cards not played this hand)
         for card in self.available.not_selected() {
-            match card.enhancement {
-                Some(Enhancement::Steel) => self.mult += self.mult / 2,
-                Some(Enhancement::Gold) => self.money += 3,
-                _ => {}
+            for i in 0..self.trigger_count(&card) {
+                let chips_before = self.chips;
+                let mult_before = self.mult;
+                match card.enhancement {
+                    Some(Enhancement::Steel) => self.mult += self.mult / 2,
+                    Some(Enhancement::Gold) => self.money += 3,
+                    _ => {}
+                }
+                self.record_step(
+                    &mut trace,
+                    ScoreSource::HeldCard(card),
+                    chips_before,
+                    mult_before,
+                    i > 0,
+                );
             }
         }
 
-        // uun hand modifiers (e.g. Pareidolia) before joker scoring effects
+        // run hand modifiers (e.g. Pareidolia) before joker scoring effects
         for e in self.effect_registry.on_modify_hand.clone() {
             if let Effects::OnModifyHand(f) = e {
                 f.lock().unwrap()(self, &mut hand)
@@ -361,18 +451,47 @@ impl Game {
 
         // apply joker effects with per-joker edition ordering
         for joker in self.jokers.clone() {
+            let chips_before = self.chips;
+            let mult_before = self.mult;
             match joker.edition() {
                 Edition::Foil => self.chips += 50,
                 Edition::Holographic => self.mult += 10,
                 _ => {}
             }
+            self.record_step(
+                &mut trace,
+                ScoreSource::Joker(joker.clone()),
+                chips_before,
+                mult_before,
+                false,
+            );
+
             for e in joker.effects(self) {
                 if let Effects::OnScore(f) = e {
-                    f.lock().unwrap()(self, hand.clone())
+                    let chips_before = self.chips;
+                    let mult_before = self.mult;
+                    f.lock().unwrap()(self, hand.clone());
+                    self.record_step(
+                        &mut trace,
+                        ScoreSource::Joker(joker.clone()),
+                        chips_before,
+                        mult_before,
+                        false,
+                    );
                 }
             }
+
             if joker.edition() == Edition::Polychrome {
+                let chips_before = self.chips;
+                let mult_before = self.mult;
                 self.mult += self.mult / 2;
+                self.record_step(
+                    &mut trace,
+                    ScoreSource::Joker(joker.clone()),
+                    chips_before,
+                    mult_before,
+                    false,
+                );
             }
         }
 
@@ -1233,6 +1352,97 @@ mod tests {
         let hand = SelectHand::new(cards).best_hand().unwrap();
         let score = g.calc_score(hand);
         assert_eq!(score, 3360);
+    }
+
+    #[test]
+    fn test_calc_score_traced_matches_calc_score() {
+        // guards calc_score/calc_score_traced against silently diverging
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let king = Card::new(Value::King, Suit::Diamond);
+        let jack = Card::new(Value::Jack, Suit::Club);
+
+        let fixtures = vec![
+            vec![ace, king, jack],
+            vec![king, king, ace],
+            vec![ace, ace, ace, king],
+            vec![king, king, king, king, ace],
+            vec![jack, jack, jack, jack, jack],
+        ];
+
+        for cards in fixtures {
+            let hand = SelectHand::new(cards).best_hand().unwrap();
+
+            let mut plain = Game::default();
+            let plain_score = plain.calc_score(hand.clone());
+
+            let mut traced = Game::default();
+            let (traced_score, trace) = traced.calc_score_traced(hand);
+
+            assert_eq!(plain_score, traced_score);
+            assert!(!trace.0.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_calc_score_traced_hand_and_played_card_steps() {
+        let mut g = Game::default();
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let king = Card::new(Value::King, Suit::Diamond);
+        let jack = Card::new(Value::Jack, Suit::Club);
+
+        // Same fixture as test_calc_score's first case, best hand is the ace alone.
+        let hand = SelectHand::new(vec![ace, king, jack]).best_hand().unwrap();
+        let (score, trace) = g.calc_score_traced(hand);
+        assert_eq!(score, 16);
+
+        assert_eq!(trace.0.len(), 2);
+
+        assert_eq!(
+            trace.0[0].source,
+            ScoreSource::HandLevel(HandRank::HighCard)
+        );
+        assert_eq!(trace.0[0].chips_before, 0);
+        assert_eq!(trace.0[0].chips_after, 5);
+        assert_eq!(trace.0[0].mult_before, 0);
+        assert_eq!(trace.0[0].mult_after, 1);
+        assert!(!trace.0[0].retrigger);
+
+        assert_eq!(trace.0[1].source, ScoreSource::PlayedCard(ace));
+        assert_eq!(trace.0[1].chips_before, 5);
+        assert_eq!(trace.0[1].chips_after, 16);
+        assert_eq!(trace.0[1].mult_before, 1);
+        assert_eq!(trace.0[1].mult_after, 1);
+        assert!(!trace.0[1].retrigger);
+    }
+
+    #[test]
+    fn test_calc_score_traced_held_card_steps() {
+        let mut g = Game::default();
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let mut steel_king = Card::new(Value::King, Suit::Diamond);
+        steel_king.enhancement = Some(Enhancement::Steel);
+
+        // Held, not played — g.available.extend() leaves cards unselected.
+        g.available.extend(vec![steel_king]);
+
+        // mult=2 baseline so Steel's `mult += mult/2` has a nonzero result.
+        let hand = SelectHand::new(vec![ace, ace]).best_hand().unwrap();
+        let (score, trace) = g.calc_score_traced(hand);
+
+        let held_steps: Vec<_> = trace
+            .0
+            .iter()
+            .filter(|s| matches!(s.source, ScoreSource::HeldCard(_)))
+            .collect();
+        assert_eq!(held_steps.len(), 1);
+        assert_eq!(held_steps[0].source, ScoreSource::HeldCard(steel_king));
+        assert_eq!(held_steps[0].mult_before, 2);
+        assert_eq!(held_steps[0].mult_after, 3);
+        assert_eq!(held_steps[0].chips_before, held_steps[0].chips_after);
+
+        // Pair (level 1): 10 chips, 2 mult. Played (2 aces): +11+11 chips.
+        // Held Steel king: mult 2 -> 3. (10 + 22) * 3 = 96.
+        assert_eq!(score, 96);
     }
 
     #[test]

@@ -46,3 +46,6 @@ profile *ARGS:
 
 seed *ARGS:
     cargo run -p balatro-seed --bin explore -- {{ARGS}}
+
+calc *ARGS:
+    cargo run -p balatro-rs --bin calc -- {{ARGS}}
