@@ -89,6 +89,8 @@ mod tests {
 
     #[test]
     fn test_describe_marks_retrigger() {
+        #[cfg(feature = "colored")]
+        colored::control::set_override(false);
         let card = Card::new(crate::card::Value::King, crate::card::Suit::Spade);
         let step = ScoreStep {
             source: ScoreSource::PlayedCard(card),
@@ -103,6 +105,8 @@ mod tests {
 
     #[test]
     fn test_describe_no_delta() {
+        #[cfg(feature = "colored")]
+        colored::control::set_override(false);
         let card = Card::new(crate::card::Value::Ace, crate::card::Suit::Heart);
         let step = ScoreStep {
             source: ScoreSource::HeldCard(card),
