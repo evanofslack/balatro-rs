@@ -93,6 +93,19 @@ impl SelectHand {
             .collect()
     }
 
+    // Cards from the original hand matching any of the given values, in
+    // their original relative order. values_freq()'s per-value groups are
+    // themselves order-preserving, but concatenating two different groups
+    // (two pair, full house) needs this instead of appending group-by-group,
+    // or the player's arrangement gets replaced by value-descending order.
+    fn cards_of_values(&self, values: &[Value]) -> Vec<Card> {
+        self.0
+            .iter()
+            .filter(|c| values.contains(&c.value))
+            .cloned()
+            .collect()
+    }
+
     /// Can play any number of cards, it is our responsibility
     /// to determine the best hand. Higher tier hands take precedence
     /// over lower tier hands regardless of their level or scoring.
@@ -163,22 +176,22 @@ impl SelectHand {
         if self.len() < 1 {
             return None;
         }
-        let (_value, cards) = self
+        let (value, _) = self
             .values_freq()
             .into_iter()
             .find(|(_key, val)| !val.is_empty())?;
-        Some(SelectHand::new(cards))
+        Some(SelectHand::new(self.cards_of_values(&[value])))
     }
 
     pub(crate) fn is_pair(&self) -> Option<SelectHand> {
         if self.len() < 2 {
             return None;
         }
-        let (_value, cards) = self
+        let (value, _) = self
             .values_freq()
             .into_iter()
             .find(|(_key, val)| val.len() >= 2)?;
-        Some(SelectHand::new(cards))
+        Some(SelectHand::new(self.cards_of_values(&[value])))
     }
 
     pub(crate) fn is_two_pair(&self) -> Option<SelectHand> {
@@ -187,38 +200,31 @@ impl SelectHand {
         }
 
         // First find first pair
-        let first = self
+        let (first_val, _) = self
             .values_freq()
             .into_iter()
             .find(|(_key, val)| val.len() >= 2)?;
-        let first_val = first
-            .1
-            .first()
-            .expect("values freq has empty Vec<card>")
-            .value;
 
         // Next find second pair that isn't same value as first pair
-        let second = self
+        let (second_val, _) = self
             .values_freq()
             .into_iter()
             .find(|(key, val)| *key != first_val && val.len() >= 2)?;
 
-        // Combine first and second pair
-        let mut cards: Vec<Card> = Vec::new();
-        cards.extend(first.1);
-        cards.extend(second.1);
-        Some(SelectHand::new(cards))
+        Some(SelectHand::new(
+            self.cards_of_values(&[first_val, second_val]),
+        ))
     }
 
     pub(crate) fn is_three_of_kind(&self) -> Option<SelectHand> {
         if self.len() < 3 {
             return None;
         }
-        let (_value, cards) = self
+        let (value, _) = self
             .values_freq()
             .into_iter()
             .find(|(_key, val)| val.len() >= 3)?;
-        Some(SelectHand::new(cards))
+        Some(SelectHand::new(self.cards_of_values(&[value])))
     }
 
     pub(crate) fn is_straight(&self) -> Option<SelectHand> {
@@ -289,38 +295,31 @@ impl SelectHand {
         }
 
         // First find 3ok
-        let three = self
+        let (three_val, _) = self
             .values_freq()
             .into_iter()
             .find(|(_key, val)| val.len() >= 3)?;
-        let three_val = three
-            .1
-            .first()
-            .expect("values freq has empty Vec<card>")
-            .value;
 
         // Next find 2ok that isn't same value as 3ok
-        let two = self
+        let (two_val, _) = self
             .values_freq()
             .into_iter()
             .find(|(key, val)| *key != three_val && val.len() >= 2)?;
 
-        // Combine 3ok and 2ok
-        let mut cards: Vec<Card> = Vec::new();
-        cards.extend(three.1);
-        cards.extend(two.1);
-        Some(SelectHand::new(cards))
+        Some(SelectHand::new(
+            self.cards_of_values(&[three_val, two_val]),
+        ))
     }
 
     pub(crate) fn is_four_of_kind(&self) -> Option<SelectHand> {
         if self.len() < 4 {
             return None;
         }
-        let (_value, cards) = self
+        let (value, _) = self
             .values_freq()
             .into_iter()
             .find(|(_key, val)| val.len() >= 4)?;
-        Some(SelectHand::new(cards))
+        Some(SelectHand::new(self.cards_of_values(&[value])))
     }
 
     pub(crate) fn is_straight_flush(&self) -> Option<SelectHand> {
@@ -349,11 +348,11 @@ impl SelectHand {
         if self.len() < 5 {
             return None;
         }
-        let (_value, cards) = self
+        let (value, _) = self
             .values_freq()
             .into_iter()
             .find(|(_key, val)| val.len() >= 5)?;
-        Some(SelectHand::new(cards))
+        Some(SelectHand::new(self.cards_of_values(&[value])))
     }
 
     pub(crate) fn is_flush_house(&self) -> Option<SelectHand> {
@@ -563,6 +562,18 @@ mod tests {
     }
 
     #[test]
+    fn test_highcard_preserves_order() {
+        let ah = Card::new(Value::Ace, Suit::Heart);
+        let as_ = Card::new(Value::Ace, Suit::Spade);
+        let two = Card::new(Value::Two, Suit::Diamond);
+
+        // Two aces tie for high card — order should follow input order.
+        let hand = SelectHand::new(vec![ah, two, as_]);
+        let hc = hand.is_highcard().unwrap();
+        assert_eq!(hc.cards(), vec![ah, as_]);
+    }
+
+    #[test]
     fn test_pair() {
         let c1 = Card::new(Value::King, Suit::Heart);
         let c2 = Card::new(Value::King, Suit::Diamond);
@@ -618,6 +629,20 @@ mod tests {
     }
 
     #[test]
+    fn test_pair_preserves_order() {
+        let kh = Card::new(Value::King, Suit::Heart);
+        let ks = Card::new(Value::King, Suit::Spade);
+        let ah = Card::new(Value::Ace, Suit::Heart);
+        let two = Card::new(Value::Two, Suit::Diamond);
+
+        // Kings are lower value than the ace kicker but appear later in
+        // the hand — result should follow input order, not value order.
+        let hand = SelectHand::new(vec![ah, kh, two, ks]);
+        let pair = hand.is_pair().unwrap();
+        assert_eq!(pair.cards(), vec![kh, ks]);
+    }
+
+    #[test]
     fn test_two_pair() {
         let c1 = Card::new(Value::King, Suit::Heart);
         let c2 = Card::new(Value::King, Suit::Spade);
@@ -655,6 +680,27 @@ mod tests {
         let hand = SelectHand::new(vec![c1, c2, c4, not1]);
         let tp = hand.is_two_pair();
         assert_eq!(tp, None);
+    }
+
+    #[test]
+    fn test_two_pair_preserves_order() {
+        let two_h = Card::new(Value::Two, Suit::Heart);
+        let two_s = Card::new(Value::Two, Suit::Spade);
+        let kh = Card::new(Value::King, Suit::Heart);
+        let ks = Card::new(Value::King, Suit::Spade);
+
+        // The lower-valued pair (twos) is arranged first, kings second.
+        // values_freq() groups by value descending internally, so the old
+        // implementation always returned the higher-valued pair first
+        // regardless of arrangement — this pins the fix.
+        let hand = SelectHand::new(vec![two_h, two_s, kh, ks]);
+        let tp = hand.is_two_pair().unwrap();
+        assert_eq!(tp.cards(), vec![two_h, two_s, kh, ks]);
+
+        // Interleaved arrangement should come out interleaved.
+        let hand = SelectHand::new(vec![two_h, kh, two_s, ks]);
+        let tp = hand.is_two_pair().unwrap();
+        assert_eq!(tp.cards(), vec![two_h, kh, two_s, ks]);
     }
 
     #[test]
@@ -699,6 +745,19 @@ mod tests {
         let hand = SelectHand::new(vec![c1, c2]);
         let is_3 = hand.is_three_of_kind();
         assert_eq!(is_3, None);
+    }
+
+    #[test]
+    fn test_three_of_kind_preserves_order() {
+        let kh = Card::new(Value::King, Suit::Heart);
+        let ks = Card::new(Value::King, Suit::Spade);
+        let kd = Card::new(Value::King, Suit::Diamond);
+        let ah = Card::new(Value::Ace, Suit::Heart);
+
+        // Kings not adjacent in the input.
+        let hand = SelectHand::new(vec![kh, ah, ks, kd]);
+        let is_3 = hand.is_three_of_kind().unwrap();
+        assert_eq!(is_3.cards(), vec![kh, ks, kd]);
     }
 
     #[test]
@@ -804,6 +863,22 @@ mod tests {
     }
 
     #[test]
+    fn test_fullhouse_preserves_order() {
+        let two_h = Card::new(Value::Two, Suit::Heart);
+        let two_s = Card::new(Value::Two, Suit::Spade);
+        let kh = Card::new(Value::King, Suit::Heart);
+        let ks = Card::new(Value::King, Suit::Spade);
+        let kd = Card::new(Value::King, Suit::Diamond);
+
+        // Pair arranged before the trips. The old implementation always
+        // returned the three-of-a-kind group first regardless of
+        // arrangement — this pins the fix.
+        let hand = SelectHand::new(vec![two_h, two_s, kh, ks, kd]);
+        let is_fh = hand.is_fullhouse().unwrap();
+        assert_eq!(is_fh.cards(), vec![two_h, two_s, kh, ks, kd]);
+    }
+
+    #[test]
     fn test_four_of_kind() {
         let c1 = Card::new(Value::King, Suit::Heart);
         let c2 = Card::new(Value::King, Suit::Spade);
@@ -830,6 +905,19 @@ mod tests {
         let hand = SelectHand::new(vec![c1, c2, c3]);
         let is_4 = hand.is_four_of_kind();
         assert_eq!(is_4, None);
+    }
+
+    #[test]
+    fn test_four_of_kind_preserves_order() {
+        let kh = Card::new(Value::King, Suit::Heart);
+        let ks = Card::new(Value::King, Suit::Spade);
+        let kd = Card::new(Value::King, Suit::Diamond);
+        let kc = Card::new(Value::King, Suit::Club);
+        let ah = Card::new(Value::Ace, Suit::Heart);
+
+        let hand = SelectHand::new(vec![kh, ah, ks, kd, kc]);
+        let is_4 = hand.is_four_of_kind().unwrap();
+        assert_eq!(is_4.cards(), vec![kh, ks, kd, kc]);
     }
 
     #[test]
@@ -933,6 +1021,20 @@ mod tests {
         let hand = SelectHand::new(vec![c1, c2, c3, c4]);
         let is_5 = hand.is_five_of_kind();
         assert_eq!(is_5, None);
+    }
+
+    #[test]
+    fn test_five_of_kind_preserves_order() {
+        let k1 = Card::new(Value::King, Suit::Heart);
+        let k2 = Card::new(Value::King, Suit::Spade);
+        let k3 = Card::new(Value::King, Suit::Diamond);
+        let k4 = Card::new(Value::King, Suit::Club);
+        let k5 = Card::new(Value::King, Suit::Heart);
+        let ah = Card::new(Value::Ace, Suit::Heart);
+
+        let hand = SelectHand::new(vec![k1, ah, k2, k3, k4, k5]);
+        let is_5 = hand.is_five_of_kind().unwrap();
+        assert_eq!(is_5.cards(), vec![k1, k2, k3, k4, k5]);
     }
 
     #[test]
