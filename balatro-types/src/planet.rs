@@ -49,20 +49,20 @@ impl Planets {
         1
     }
 
-    pub fn name(&self) -> String {
+    pub fn name(&self) -> &'static str {
         match self {
-            Self::Pluto => "Pluto".to_string(),
-            Self::Mercury => "Mercury".to_string(),
-            Self::Uranus => "Uranus".to_string(),
-            Self::Venus => "Venus".to_string(),
-            Self::Saturn => "Saturn".to_string(),
-            Self::Jupiter => "Jupiter".to_string(),
-            Self::Earth => "Earth".to_string(),
-            Self::Mars => "Mars".to_string(),
-            Self::Neptune => "Neptune".to_string(),
-            Self::PlanetX => "Planet X".to_string(),
-            Self::Ceres => "Ceres".to_string(),
-            Self::Eris => "Eris".to_string(),
+            Self::Pluto => "Pluto",
+            Self::Mercury => "Mercury",
+            Self::Uranus => "Uranus",
+            Self::Venus => "Venus",
+            Self::Saturn => "Saturn",
+            Self::Jupiter => "Jupiter",
+            Self::Earth => "Earth",
+            Self::Mars => "Mars",
+            Self::Neptune => "Neptune",
+            Self::PlanetX => "Planet X",
+            Self::Ceres => "Ceres",
+            Self::Eris => "Eris",
         }
     }
 

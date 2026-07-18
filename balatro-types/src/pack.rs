@@ -88,7 +88,7 @@ impl PackContent {
         match self {
             Self::Tarot(t) => t.name().to_string(),
             Self::Joker(j) => j.name().to_string(),
-            Self::Planet(p) => p.name(),
+            Self::Planet(p) => p.name().to_string(),
             Self::PlayingCard(c) => c.to_string(),
             Self::Spectral(s) => s.name().to_string(),
         }
