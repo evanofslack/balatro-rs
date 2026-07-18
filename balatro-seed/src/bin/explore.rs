@@ -2,7 +2,7 @@
 //! as `TheSoul`'s website output, for direct manual diffing against it.
 //!
 //! Usage: `explore SEED [--ante N] [--cards-per-ante 15,50,50,50,50,50,50,50]
-//! [--vouchers bought|offered] [--fresh-profile]`
+//! [--vouchers bought|offered] [--fresh-profile] [--ante-0]`
 //!
 //! Deliberately mirrors quirks of the website's own reference JS rather
 //! than "fixing" them, since the goal is a byte-diffable match:
@@ -13,9 +13,27 @@
 //!   (Hone, Tarot Tycoon, ...) never kick in, matching the site's own demo
 //!   loop, not a live run. `--vouchers offered` skips the lock entirely, so
 //!   an unbought voucher can resurface in a later ante.
+//! - `--ante-0` (default off, so the tool's default output shape stays
+//!   diffable against the site, which never shows this) prints an extra
+//!   section for the Ante 0 you'd reach by buying Hieroglyph/Petroglyph
+//!   (`-1 Ante`) out of the Ante 1 shop. Shown unconditionally when passed,
+//!   regardless of whether Ante 1's actual drawn voucher is one of those —
+//!   same "what's available," not "what you'll see" spirit as the rest of
+//!   this tool. It *displays* first but is *computed* last, after the whole
+//!   Ante 1..max_ante loop: its Tags/Shop/Packs draw against whatever lock
+//!   state that loop has progressed to (e.g. Garbage Tag, unlocked at Ante
+//!   2), matching the reference site's own analysis, which does the same
+//!   thing (computes it last, displays it first via numeric key order).
+//!   Computing it before the loop instead draws against Ante 1's
+//!   still-locked-down state and gives a different, non-matching result.
+//!   Its boss is copied from Ante 1's rather than drawn fresh:
+//!   the boss RNG is a single continuously-mutating node with no ante
+//!   suffix (`functions.hpp::nextBoss` locks/draws from plain `"boss"`), so
+//!   dropping to Ante 0 before fighting a boss doesn't reroll it — you still
+//!   face whatever boss Ante 1 already rolled.
 
 use balatro_seed::{Instance, ShopItem, pack_info, voucher_upgrade};
-use balatro_types::{Card, Edition, Enhancement, Seal};
+use balatro_types::{BossBlind, Card, Edition, Enhancement, Seal};
 
 fn edition_prefix(e: Edition) -> &'static str {
     match e {
@@ -120,6 +138,72 @@ fn render_pack_contents(inst: &mut Instance, category: &str, size: i32, ante: i3
     }
 }
 
+/// Renders one ante's section to a string (rather than printing it directly)
+/// so callers can compute sections out of order but still print them in
+/// display order — see the Ante-0 handling in `main` for why that split
+/// matters. `label` is what gets displayed and used for pack-count/shop-count
+/// shape (Ante 0 mirrors Ante 1's); `draw_ante` is what actually gets passed
+/// to the draw functions (0 for the Ante-0 preview, otherwise equal to
+/// `label`). `boss_override` skips drawing a boss and uses this one instead
+/// — see the Ante-0 module doc note for why.
+fn render_ante(
+    inst: &mut Instance,
+    label: i32,
+    draw_ante: i32,
+    n_cards: i32,
+    vouchers_bought: bool,
+    boss_override: Option<BossBlind>,
+) -> (String, BossBlind) {
+    use std::fmt::Write;
+    let mut out = String::new();
+
+    let _ = writeln!(out, "==ANTE {label}==");
+
+    let boss = boss_override.unwrap_or_else(|| inst.next_boss(draw_ante));
+    let _ = writeln!(out, "Boss: {}", boss.name());
+
+    let voucher = inst.next_voucher(draw_ante);
+    let _ = writeln!(out, "Voucher: {}", voucher.name());
+    // --vouchers bought (default): assume every offered voucher gets
+    // bought, matching the site's own analysis — an unbought voucher
+    // can't resurface in a later ante. --vouchers offered skips the
+    // lock, so a voucher you haven't confirmed as purchased stays
+    // eligible to reappear (closer to how the real game actually
+    // gates vouchers: on purchase, not on mere appearance).
+    if vouchers_bought {
+        inst.lock(voucher.name());
+        if let Some(upgrade) = voucher_upgrade(voucher) {
+            inst.unlock(upgrade.name());
+        }
+    }
+
+    let tag1 = inst.next_tag(draw_ante);
+    let tag2 = inst.next_tag(draw_ante);
+    let _ = writeln!(out, "Tags: {}, {}", tag1.name(), tag2.name());
+
+    let _ = writeln!(out, "Shop Queue: ");
+    for q in 1..=n_cards {
+        let item = inst.next_shop_item(draw_ante);
+        let _ = writeln!(out, "{q}) {}", render_shop_item(item));
+    }
+
+    let _ = writeln!(out);
+    let _ = writeln!(out, "Packs: ");
+    // Ante 0 gets the same pack count as Ante 1 (it's the "still early game"
+    // shop you'd see instead of Ante 1's, not an ante of its own).
+    let num_packs = if label <= 1 { 4 } else { 6 };
+    for _ in 1..=num_packs {
+        let pack = inst.next_pack(draw_ante);
+        let (category, size) = pack_info(pack);
+        let contents = render_pack_contents(inst, category, size, draw_ante);
+        let _ = writeln!(out, "{pack} - {contents}");
+    }
+
+    let _ = writeln!(out);
+
+    (out, boss)
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut seed: Option<String> = None;
@@ -127,6 +211,7 @@ fn main() {
     let mut cards_per_ante: Vec<i32> = vec![15, 50, 50, 50, 50, 50, 50, 50];
     let mut vouchers_bought = true;
     let mut fresh_profile = false;
+    let mut ante_0 = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -151,6 +236,7 @@ fn main() {
                 };
             }
             "--fresh-profile" => fresh_profile = true,
+            "--ante-0" => ante_0 = true,
             other if seed.is_none() => seed = Some(other.to_string()),
             other => panic!("unrecognized argument: {other}"),
         }
@@ -161,7 +247,7 @@ fn main() {
         .unwrap_or_else(|| {
             eprintln!(
                 "usage: explore SEED [--ante N] [--cards-per-ante 15,50,...] \
-                 [--vouchers bought|offered] [--fresh-profile]"
+                 [--vouchers bought|offered] [--fresh-profile] [--ante-0]"
             );
             std::process::exit(1);
         })
@@ -178,53 +264,38 @@ fn main() {
     // demo; pass --fresh-profile to simulate a brand-new save instead.
     inst.init_locks(1, fresh_profile, true);
 
+    let mut ante_1_boss = None;
+    let mut sections: Vec<String> = Vec::new();
     for ante in 1..=max_ante {
         inst.init_unlocks(ante, false);
 
-        println!("==ANTE {ante}==");
-
-        let boss = inst.next_boss(ante);
-        println!("Boss: {}", boss.name());
-
-        let voucher = inst.next_voucher(ante);
-        println!("Voucher: {}", voucher.name());
-        // --vouchers bought (default): assume every offered voucher gets
-        // bought, matching the site's own analysis — an unbought voucher
-        // can't resurface in a later ante. --vouchers offered skips the
-        // lock, so a voucher you haven't confirmed as purchased stays
-        // eligible to reappear (closer to how the real game actually
-        // gates vouchers: on purchase, not on mere appearance).
-        if vouchers_bought {
-            inst.lock(voucher.name());
-            if let Some(upgrade) = voucher_upgrade(voucher) {
-                inst.unlock(upgrade.name());
-            }
-        }
-
-        let tag1 = inst.next_tag(ante);
-        let tag2 = inst.next_tag(ante);
-        println!("Tags: {}, {}", tag1.name(), tag2.name());
-
-        println!("Shop Queue: ");
         let n_cards = cards_per_ante
             .get((ante - 1) as usize)
             .copied()
             .unwrap_or(0);
-        for q in 1..=n_cards {
-            let item = inst.next_shop_item(ante);
-            println!("{q}) {}", render_shop_item(item));
+        let (section, boss) =
+            render_ante(&mut inst, ante, ante, n_cards, vouchers_bought, None);
+        if ante == 1 {
+            ante_1_boss = Some(boss);
         }
+        sections.push(section);
+    }
 
-        println!();
-        println!("Packs: ");
-        let num_packs = if ante == 1 { 4 } else { 6 };
-        for _ in 1..=num_packs {
-            let pack = inst.next_pack(ante);
-            let (category, size) = pack_info(pack);
-            let contents = render_pack_contents(&mut inst, category, size, ante);
-            println!("{pack} - {contents}");
-        }
+    // Computed *after* the ante 1..max_ante loop above (not before it), even
+    // though it prints *first*: its Tags/Shop/Packs draw from whatever lock
+    // state that loop has progressed to by now (e.g. Garbage Tag, unlocked
+    // partway through a real run's ante progression), matching what the
+    // reference site's own analysis does — it likewise computes Ante 0 last
+    // but displays it first by numeric key order. Computing it early instead
+    // would draw against Ante 1's still-locked-down state and diverge.
+    if ante_0 {
+        let n_cards = cards_per_ante.first().copied().unwrap_or(0);
+        let (section, _) =
+            render_ante(&mut inst, 0, 0, n_cards, vouchers_bought, ante_1_boss);
+        print!("{section}");
+    }
 
-        println!();
+    for section in sections {
+        print!("{section}");
     }
 }
