@@ -100,13 +100,9 @@ impl Instance {
     }
 
     /// Uniform pick with lock-triggered resample. Mirrors
-    /// `Instance::randchoice` (`instance.hpp:63-76`) exactly, including one
-    /// asymmetry preserved from the source rather than "fixed": the initial
-    /// pick's resample trigger is gated by `showman`, but the resample
-    /// loop's own exit condition checks `is_locked` unconditionally (no
-    /// `showman` guard) — so once a resample chain starts (which, under
-    /// showman, only happens via the literal "RETRY" sentinel), it still
-    /// avoids locked items. Byte-accuracy means keeping this as-is.
+    /// `Instance::randchoice` (`instance.hpp:63-76`) exactly, including an
+    /// asymmetry preserved from the source: the resample loop's exit check
+    /// ignores `showman` even though the initial pick's trigger doesn't.
     pub fn randchoice<'a>(&mut self, id: &str, items: &[&'a str]) -> &'a str {
         let node = self.get_node(id);
         let mut rng = LuaRandom::new(node);

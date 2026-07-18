@@ -1,23 +1,11 @@
 //! Typed public draw API, mirroring `TheSoul/include/functions.hpp`'s
 //! `Instance` methods. Resolves raw pool strings (`pools.rs`) to
-//! `balatro_types` values via `resolve.rs`, and panics loudly on any
-//! unresolved name rather than silently returning something wrong — see
-//! `resolve::tests::pool_names_all_resolve` for the up-front check that
-//! should catch these before a panic ever fires here.
+//! `balatro_types` values via `resolve.rs`, panicking on any unresolved
+//! name (should be unreachable — see `resolve::tests::pool_names_all_resolve`).
 //!
-//! Scope cuts from the full Immolate port, tracked as follow-ups:
-//! - Joker stickers (eternal/perishable/rental) — stake-gated, not ported.
-//! - Playing-card shop items (Magic Trick voucher) — `ShopItem::PlayingCard`
-//!   stays a placeholder deliberately: Immolate's own `nextShopItem` never
-//!   implements this branch either ("Todo: Magic Trick support" in the
-//!   source), so there's no reference to verify against. Standard *packs*
-//!   are implemented (`next_standard_card`/`next_standard_pack`).
-//! - `initLocks`'s `freshProfile`/`freshRun` blocks are ported and callable
-//!   (`Instance::init_locks`'s two bools), but callers still hardcode both
-//!   to `true` (assume nothing ever discovered) — seeding `fresh_profile`'s
-//!   lock list from a real `Profile.unlocked`/`discovered` set instead is a
-//!   later follow-up, not done here.
-//! - Pre-10099-version joker pool variants (see `pools.rs`).
+//! Scope cuts from the full Immolate port are tracked in `ARCHITECTURE.md`
+//! (joker stickers, `ShopItem::PlayingCard`, `init_locks`'s fresh-profile
+//! seeding, pre-10099 pool variants).
 
 use crate::instance::Instance;
 use crate::pools;
@@ -84,13 +72,9 @@ fn resolved_joker(name: &str) -> Jokers {
 
 impl Instance {
     /// Full port of `functions.hpp::initLocks`. `fresh_profile` gates
-    /// permanent, profile-level achievement locks (things a real save's
-    /// `Profile.unlocked` would eventually override — see draws.rs module
-    /// docs); `fresh_run` gates locks that reset every run regardless of
-    /// profile, because the requirement is inherently in-run (Gros Michel
-    /// destroyed this run for Cavendish, a secret hand played this run for
-    /// Planet X/Ceres/Eris, ...) and can't be satisfied by profile state
-    /// alone.
+    /// profile-level achievement locks; `fresh_run` gates locks whose
+    /// requirement is inherently in-run (Cavendish, Planet X/Ceres/Eris, ...)
+    /// and can't be satisfied by profile state alone.
     pub fn init_locks(&mut self, ante: i32, fresh_profile: bool, fresh_run: bool) {
         if ante < 2 {
             for name in [
@@ -309,11 +293,8 @@ impl Instance {
         Consumable::Planet(planet)
     }
 
-    /// `functions.hpp::nextSpectral`. Note both the Soul and Black Hole
-    /// checks draw from the *same* node ID (`"soul_Spectral"+ante`), called
-    /// twice in a row — each call still consumes a fresh value because the
-    /// node cache mutates on every access, and if both checks succeed,
-    /// Black Hole wins (checked second, unconditionally overwrites).
+    /// `functions.hpp::nextSpectral`. Soul and Black Hole both draw from the
+    /// same node ID; if both succeed, Black Hole wins (checked second).
     pub fn next_spectral(&mut self, source: &str, ante: i32, soulable: bool) -> Consumable {
         let ante_str = ante.to_string();
         if soulable {
@@ -393,15 +374,8 @@ impl Instance {
         joker
     }
 
-    /// `functions.hpp::nextVoucher`. Deliberately doesn't lock the returned
-    /// voucher itself — that's a caller decision, not this method's. Callers
-    /// wanting a TheSoul-style "assume every offered voucher gets bought"
-    /// preview (what `explore.rs` does, to stay diffable against the
-    /// reference site) should lock it themselves right after calling this.
-    /// A future save-state-aware caller should instead lock only on
-    /// confirmed purchase (from real run/profile data), since an unbought
-    /// voucher can legitimately reappear in a later ante in the real game —
-    /// don't copy `explore.rs`'s lock-on-draw loop verbatim for that case.
+    /// `functions.hpp::nextVoucher`. Does not lock the result — locking (on
+    /// purchase, not on draw) is the caller's responsibility.
     pub fn next_voucher(&mut self, ante: i32) -> Voucher {
         let name = self.randchoice(&format!("Voucher{ante}"), pools::VOUCHERS);
         resolve::resolve_voucher(name)
@@ -415,11 +389,9 @@ impl Instance {
             .unwrap_or_else(|| panic!("pool name {name:?} has no balatro_types::Tag match"))
     }
 
-    /// `functions.hpp::nextBoss`. Filters the boss pool to the current
-    /// ante's category (finisher on `ante % 8 == 0`, else regular — the
-    /// real game distinguishes these by whether the name starts with "The
-    /// "), retrying with a full unlock if that category's pool is
-    /// exhausted (every candidate already locked from a prior ante).
+    /// `functions.hpp::nextBoss`. Filters to the current ante's category
+    /// (finisher on `ante % 8 == 0`, else regular), retrying with a full
+    /// unlock if that category's pool is exhausted.
     pub fn next_boss(&mut self, ante: i32) -> BossBlind {
         let is_finisher_ante = ante % 8 == 0;
         let matches_category = |name: &str| {
@@ -635,10 +607,8 @@ impl Instance {
 mod tests {
     use super::*;
 
-    // Coarse smoke test: a fixed seed's ante-1 draws should be stable and
-    // non-panicking across the whole draw surface. Not a correctness check
-    // against real Balatro (that's the planned manual TheSoul comparison) —
-    // just confirms the plumbing holds together end to end.
+    // Smoke test only, not a correctness check against real Balatro:
+    // confirms the whole draw surface is stable and non-panicking.
     #[test]
     fn ante_one_smoke_test_is_stable() {
         fn run() -> (String, String, Vec<String>) {

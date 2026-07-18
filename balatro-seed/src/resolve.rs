@@ -2,11 +2,8 @@
 //! `pools.rs`) onto the matching `balatro_types` variant, by display-name
 //! lookup (`T::iter().find(|v| v.name() == name)`).
 //!
-//! This is the safety net for the transcription risk called out in the
-//! plan: `pool_names_all_resolve` below exercises every table entry and
-//! fails loudly, listing every mismatch at once, rather than letting a
-//! naming discrepancy between TheSoul's strings and `balatro_types`'
-//! declared names silently produce a wrong draw.
+//! `pool_names_all_resolve` below exercises every table entry so a
+//! transcription mismatch fails loudly instead of silently drawing wrong.
 
 use balatro_types::{
     BossBlind, Card, Enhancement, Jokers, Planets, Spectral, Suit, Tag, Tarot, Value, Voucher,
