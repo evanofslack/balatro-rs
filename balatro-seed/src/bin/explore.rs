@@ -4,39 +4,30 @@
 //! Usage: `explore SEED [--ante N] [--cards-per-ante 15,50,50,50,50,50,50,50]
 //! [--vouchers bought|offered] [--no-activate-vouchers] [--fresh-profile] [--ante-0]`
 //!
-//! Deliberately mirrors quirks of the website's own reference JS rather
-//! than "fixing" them, since the goal is a byte-diffable match:
-//! - `init_locks` is called once for ante 1 before the loop, `init_unlocks`
-//!   once per ante inside it — not symmetric per-ante calls.
-//! - `--vouchers bought` (default) locks a drawn voucher (and unlocks its
-//!   upgrade tier) and, by default, also activates it, so voucher-driven
-//!   rate effects (Hone, Tarot Tycoon, ...) apply to later antes exactly as
-//!   they would in a live run. Pass `--no-activate-vouchers` to suppress
-//!   that and reproduce the reference site's own demo loop instead (which
-//!   locks but never activates) — needed to byte-diff against the site.
-//!   `--vouchers offered` skips the lock (and activation) entirely, so an
-//!   unbought voucher can resurface in a later ante.
-//! - `--ante-0` (default off, so the tool's default output shape stays
-//!   diffable against the site, which never shows this) prints an extra
-//!   section for the Ante 0 you'd reach by buying Hieroglyph/Petroglyph
-//!   (`-1 Ante`) out of the Ante 1 shop. Shown unconditionally when passed,
-//!   regardless of whether Ante 1's actual drawn voucher is one of those —
-//!   same "what's available," not "what you'll see" spirit as the rest of
-//!   this tool. It *displays* first but is *computed* last, after the whole
-//!   Ante 1..max_ante loop: its Tags/Shop/Packs draw against whatever lock
-//!   state that loop has progressed to (e.g. Garbage Tag, unlocked at Ante
-//!   2), matching the reference site's own analysis, which does the same
-//!   thing (computes it last, displays it first via numeric key order).
-//!   Computing it before the loop instead draws against Ante 1's
-//!   still-locked-down state and gives a different, non-matching result.
-//!   Its boss is copied from Ante 1's rather than drawn fresh:
-//!   the boss RNG is a single continuously-mutating node with no ante
-//!   suffix (`functions.hpp::nextBoss` locks/draws from plain `"boss"`), so
-//!   dropping to Ante 0 before fighting a boss doesn't reroll it — you still
-//!   face whatever boss Ante 1 already rolled.
+//! `--vouchers bought` (default) locks and activates each drawn voucher,
+//! matching a live run; `--no-activate-vouchers` reproduces the site's own
+//! demo (locks but never activates), needed to byte-diff against it.
+//! `--ante-0` previews the shop reachable via Hieroglyph/Petroglyph —
+//! computed last (after the full ante loop, so lock state matches) but
+//! displayed first, reusing Ante 1's boss since boss RNG has no ante suffix.
 
-use balatro_seed::{Instance, ShopItem, pack_info, voucher_upgrade};
-use balatro_types::{BossBlind, Card, Edition, Enhancement, Seal};
+use balatro_seed::{Instance, ShopItem, pack_card_count, voucher_upgrade};
+use balatro_types::{BossBlind, Card, Edition, Enhancement, PackCategory, PackSize, Seal};
+
+fn pack_display_name(category: PackCategory, size: PackSize) -> String {
+    let cat = match category {
+        PackCategory::Arcana => "Arcana",
+        PackCategory::Celestial => "Celestial",
+        PackCategory::Buffoon => "Buffoon",
+        PackCategory::Standard => "Standard",
+        PackCategory::Spectral => "Spectral",
+    };
+    match size {
+        PackSize::Normal => format!("{cat} Pack"),
+        PackSize::Jumbo => format!("Jumbo {cat} Pack"),
+        PackSize::Mega => format!("Mega {cat} Pack"),
+    }
+}
 
 fn edition_prefix(e: Edition) -> &'static str {
     match e {
@@ -100,55 +91,49 @@ fn render_card(card: &Card) -> String {
 fn render_shop_item(item: ShopItem) -> String {
     match item {
         ShopItem::Joker(j) => format!("{}{}", edition_prefix(j.edition()), j.name()),
-        ShopItem::Consumable(c) => c.name(),
+        ShopItem::Consumable(c) => c.name().to_string(),
         ShopItem::PlayingCard => "[playing card: not implemented]".to_string(),
     }
 }
 
-fn render_pack_contents(inst: &mut Instance, category: &str, size: i32, ante: i32) -> String {
+fn render_pack_contents(inst: &mut Instance, category: PackCategory, count: i32, ante: i32) -> String {
     match category {
-        "Celestial Pack" => inst
-            .next_celestial_pack(size, ante)
+        PackCategory::Celestial => inst
+            .next_celestial_pack(count, ante)
             .iter()
             .map(|c| c.name())
             .collect::<Vec<_>>()
             .join(", "),
-        "Arcana Pack" => inst
-            .next_arcana_pack(size, ante)
+        PackCategory::Arcana => inst
+            .next_arcana_pack(count, ante)
             .iter()
             .map(|c| c.name())
             .collect::<Vec<_>>()
             .join(", "),
-        "Spectral Pack" => inst
-            .next_spectral_pack(size, ante)
+        PackCategory::Spectral => inst
+            .next_spectral_pack(count, ante)
             .iter()
             .map(|c| c.name())
             .collect::<Vec<_>>()
             .join(", "),
-        "Buffoon Pack" => inst
-            .next_buffoon_pack(size, ante)
+        PackCategory::Buffoon => inst
+            .next_buffoon_pack(count, ante)
             .iter()
             .map(|j| format!("{}{}", edition_prefix(j.edition()), j.name()))
             .collect::<Vec<_>>()
             .join(", "),
-        "Standard Pack" => inst
-            .next_standard_pack(size, ante)
+        PackCategory::Standard => inst
+            .next_standard_pack(count, ante)
             .iter()
             .map(render_card)
             .collect::<Vec<_>>()
             .join(", "),
-        other => format!("[unknown pack category: {other}]"),
     }
 }
 
-/// Renders one ante's section to a string (rather than printing it directly)
-/// so callers can compute sections out of order but still print them in
-/// display order — see the Ante-0 handling in `main` for why that split
-/// matters. `label` is what gets displayed and used for pack-count/shop-count
-/// shape (Ante 0 mirrors Ante 1's); `draw_ante` is what actually gets passed
-/// to the draw functions (0 for the Ante-0 preview, otherwise equal to
-/// `label`). `boss_override` skips drawing a boss and uses this one instead
-/// — see the Ante-0 module doc note for why.
+/// Renders one ante's section to a string so `main` can compute sections
+/// out of order but print in display order. `draw_ante` is 0 for the
+/// Ante-0 preview, else equal to `label`.
 fn render_ante(
     inst: &mut Instance,
     label: i32,
@@ -168,10 +153,6 @@ fn render_ante(
 
     let voucher = inst.next_voucher(draw_ante);
     let _ = writeln!(out, "Voucher: {}", voucher.name());
-    // --vouchers bought (default): assume every offered voucher gets
-    // bought, matching the real game's own gating (on purchase, not mere
-    // appearance) rather than the site demo's lock-without-activate. Pass
-    // --no-activate-vouchers to reproduce the site's own demo loop exactly.
     if vouchers_bought {
         inst.lock(voucher.name());
         if let Some(upgrade) = voucher_upgrade(voucher) {
@@ -194,13 +175,12 @@ fn render_ante(
 
     let _ = writeln!(out);
     let _ = writeln!(out, "Packs: ");
-    // Ante 0 gets the same pack count as Ante 1 (it's the "still early game"
-    // shop you'd see instead of Ante 1's, not an ante of its own).
     let num_packs = if label <= 1 { 4 } else { 6 };
     for _ in 1..=num_packs {
-        let pack = inst.next_pack(draw_ante);
-        let (category, size) = pack_info(pack);
-        let contents = render_pack_contents(inst, category, size, draw_ante);
+        let (category, size) = inst.next_pack(draw_ante);
+        let count = pack_card_count(category, size);
+        let contents = render_pack_contents(inst, category, count, draw_ante);
+        let pack = pack_display_name(category, size);
         let _ = writeln!(out, "{pack} - {contents}");
     }
 
@@ -263,13 +243,7 @@ fn main() {
         .replace('0', "O");
 
     let mut inst = Instance::new(&seed);
-    // fresh_run is always true: Cavendish, Planet X/Ceres/Eris, Stone/Steel/
-    // Glass Joker and the voucher upgrade tiers reset every run regardless
-    // of profile, so there's no static (non-simulated) analysis where
-    // treating them as available makes sense. fresh_profile defaults to
-    // false (an experienced profile — Swashbuckler, Onyx Agate, Cartomancer,
-    // Astronomer, etc. already unlocked), matching the site's own default
-    // demo; pass --fresh-profile to simulate a brand-new save instead.
+    // fresh_run locks reset every run regardless of profile, so always true here.
     inst.init_locks(1, fresh_profile, true);
 
     let mut ante_1_boss = None;
@@ -296,13 +270,7 @@ fn main() {
         sections.push(section);
     }
 
-    // Computed *after* the ante 1..max_ante loop above (not before it), even
-    // though it prints *first*: its Tags/Shop/Packs draw from whatever lock
-    // state that loop has progressed to by now (e.g. Garbage Tag, unlocked
-    // partway through a real run's ante progression), matching what the
-    // reference site's own analysis does — it likewise computes Ante 0 last
-    // but displays it first by numeric key order. Computing it early instead
-    // would draw against Ante 1's still-locked-down state and diverge.
+    // Computed after the ante loop but displayed first — see module doc.
     if ante_0 {
         let n_cards = cards_per_ante.first().copied().unwrap_or(0);
         let (section, _) = render_ante(

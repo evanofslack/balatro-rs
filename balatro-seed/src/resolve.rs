@@ -1,48 +1,43 @@
-//! Maps a raw pool string (as transcribed from Immolate/TheSoul in
-//! `pools.rs`) onto the matching `balatro_types` variant, by display-name
-//! lookup (`T::iter().find(|v| v.name() == name)`).
-//!
-//! `pool_names_all_resolve` below exercises every table entry so a
-//! transcription mismatch fails loudly instead of silently drawing wrong.
+//! Maps a raw pool string (`pools.rs`) onto the matching `balatro_types`
+//! variant, by display-name lookup. Used to build `pools.rs`'s `Pool<T>`
+//! constants.
 
 use balatro_types::{
     BossBlind, Card, Enhancement, Jokers, Planets, Spectral, Suit, Tag, Tarot, Value, Voucher,
 };
 use strum::IntoEnumIterator;
 
-pub fn resolve_joker(name: &str) -> Option<Jokers> {
+pub(crate) fn resolve_joker(name: &str) -> Option<Jokers> {
     Jokers::iter().find(|j| j.name() == name)
 }
 
-pub fn resolve_tarot(name: &str) -> Option<Tarot> {
+pub(crate) fn resolve_tarot(name: &str) -> Option<Tarot> {
     Tarot::iter().find(|t| t.name() == name)
 }
 
-pub fn resolve_planet(name: &str) -> Option<Planets> {
+pub(crate) fn resolve_planet(name: &str) -> Option<Planets> {
     Planets::iter().find(|p| p.name() == name)
 }
 
-pub fn resolve_spectral(name: &str) -> Option<Spectral> {
+pub(crate) fn resolve_spectral(name: &str) -> Option<Spectral> {
     Spectral::iter().find(|s| s.name() == name)
 }
 
-pub fn resolve_voucher(name: &str) -> Option<Voucher> {
+pub(crate) fn resolve_voucher(name: &str) -> Option<Voucher> {
     Voucher::iter().find(|v| v.name() == name)
 }
 
-pub fn resolve_tag(name: &str) -> Option<Tag> {
+pub(crate) fn resolve_tag(name: &str) -> Option<Tag> {
     Tag::iter().find(|t| t.name() == name)
 }
 
-pub fn resolve_boss(name: &str) -> Option<BossBlind> {
+pub(crate) fn resolve_boss(name: &str) -> Option<BossBlind> {
     BossBlind::iter().find(|b| b.name() == name)
 }
 
-/// `Enhancement`/`Value` derive `EnumString` and their pool strings are
-/// exactly the variant names ("Bonus", "Two", ...), so a direct parse
-/// works here — unlike the other resolvers above, which match against a
-/// separate declared display name.
-pub fn resolve_enhancement(name: &str) -> Option<Enhancement> {
+/// Pool strings are exactly the variant names, so a direct parse works
+/// here unlike the other resolvers above.
+pub(crate) fn resolve_enhancement(name: &str) -> Option<Enhancement> {
     name.parse().ok()
 }
 
@@ -75,82 +70,11 @@ fn suit_from_char(c: char) -> Option<Suit> {
     }
 }
 
-/// Parses a `CARDS` pool entry (`"{suit}_{rank}"`, e.g. `"S_T"`) into a
-/// bare `Card` — a positional format, not a display-name lookup, so this
-/// doesn't fit the `T::iter().find(...)` pattern the rest of this module
-/// uses.
-pub fn resolve_card_base(base: &str) -> Option<Card> {
+/// Parses a `CARDS` pool entry (`"{suit}_{rank}"`, e.g. `"S_T"`) — a
+/// positional format, unlike the display-name lookups above.
+pub(crate) fn resolve_card_base(base: &str) -> Option<Card> {
     let bytes = base.as_bytes();
     let suit = suit_from_char(*bytes.first()? as char)?;
     let value = value_from_char(*bytes.get(2)? as char)?;
     Some(Card::new(value, suit))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::pools;
-
-    #[test]
-    fn pool_names_all_resolve() {
-        let mut failures: Vec<String> = Vec::new();
-
-        for &name in pools::TAROTS {
-            if resolve_tarot(name).is_none() {
-                failures.push(format!("tarot: {name:?}"));
-            }
-        }
-        for &name in pools::PLANETS {
-            if resolve_planet(name).is_none() {
-                failures.push(format!("planet: {name:?}"));
-            }
-        }
-        for &name in pools::SPECTRALS {
-            if name != "RETRY" && resolve_spectral(name).is_none() {
-                failures.push(format!("spectral: {name:?}"));
-            }
-        }
-        for &name in pools::COMMON_JOKERS
-            .iter()
-            .chain(pools::UNCOMMON_JOKERS)
-            .chain(pools::RARE_JOKERS)
-            .chain(pools::LEGENDARY_JOKERS)
-        {
-            if resolve_joker(name).is_none() {
-                failures.push(format!("joker: {name:?}"));
-            }
-        }
-        for &name in pools::VOUCHERS {
-            if resolve_voucher(name).is_none() {
-                failures.push(format!("voucher: {name:?}"));
-            }
-        }
-        for &name in pools::TAGS {
-            if resolve_tag(name).is_none() {
-                failures.push(format!("tag: {name:?}"));
-            }
-        }
-        for &name in pools::BOSSES {
-            if resolve_boss(name).is_none() {
-                failures.push(format!("boss: {name:?}"));
-            }
-        }
-        for &name in pools::ENHANCEMENTS {
-            if resolve_enhancement(name).is_none() {
-                failures.push(format!("enhancement: {name:?}"));
-            }
-        }
-        for &base in pools::CARDS {
-            if resolve_card_base(base).is_none() {
-                failures.push(format!("card base: {base:?}"));
-            }
-        }
-
-        assert!(
-            failures.is_empty(),
-            "{} pool name(s) failed to resolve against balatro_types:\n{}",
-            failures.len(),
-            failures.join("\n")
-        );
-    }
 }
