@@ -2,18 +2,12 @@
 //! `TheSoul/include/items.hpp`. Order **is** the draw-index space — do not
 //! reorder, dedupe, or alphabetize.
 //!
-//! Scope note: Immolate carries three version-gated variants of the joker
-//! rarity tables (current / `_101C` / `_100`, reflecting real Balatro patch
-//! history). Only the current (latest) tables are ported here; the older
-//! variants are deferred pending a decision on how much historical-seed
-//! compatibility this crate needs (see the plan's open questions).
-//!
-//! Two entries were corrected from TheSoul's literal array text to match
-//! `balatro_types`' actual display names ("Mail In Rebate" ->
-//! "Mail-In Rebate", "Drivers License" -> "Driver's License") — caught by
-//! `resolve::tests::pool_names_all_resolve`. Safe to correct: draw order is
-//! positional (`items[index]`), the string content itself never feeds the
-//! RNG, so this only fixes name resolution, not which item gets picked.
+//! Only the current joker rarity tables are ported (Immolate also carries
+//! `_101C`/`_100` version-gated variants — see `ARCHITECTURE.md`). Two
+//! entries are corrected from TheSoul's literal text to match
+//! `balatro_types`' display names ("Mail In Rebate" -> "Mail-In Rebate",
+//! "Drivers License" -> "Driver's License"); safe since draw order is
+//! positional and the string never feeds the RNG.
 
 pub const TAROTS: &[&str] = &[
     "The Fool",
