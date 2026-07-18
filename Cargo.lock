@@ -129,6 +129,7 @@ dependencies = [
 name = "balatro-rs"
 version = "0.0.1"
 dependencies = [
+ "balatro-seed",
  "balatro-types",
  "colored",
  "criterion",
@@ -143,6 +144,15 @@ dependencies = [
  "thiserror 1.0.69",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "balatro-seed"
+version = "0.1.0"
+dependencies = [
+ "balatro-types",
+ "serde",
+ "strum",
 ]
 
 [[package]]

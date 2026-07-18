@@ -23,6 +23,7 @@ pub mod joker;
 pub mod pack;
 pub mod planet;
 pub mod rank;
+mod rng;
 pub mod shop;
 pub mod space;
 pub mod stage;

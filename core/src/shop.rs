@@ -5,6 +5,7 @@ use crate::error::GameError;
 use crate::joker::{jokers_by_rarity, Jokers, Rarity};
 use crate::pack::{Pack, PackCategory, PackContent, PackSize};
 use crate::planet::{Planetarium, Planets};
+use crate::rng::{Backend, GeneratedItem, RngBackend};
 use crate::tarot::Tarot;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
@@ -16,17 +17,11 @@ pub struct Shop {
     pub jokers: Vec<Jokers>,
     pub consumables: Vec<Consumable>,
     pub packs: Vec<Pack>,
-    joker_gen: JokerGenerator,
-    consumable_gen: ConsumableGenerator,
-    pack_gen: PackGenerator,
 }
 
 impl Shop {
     pub fn new() -> Self {
         Shop {
-            joker_gen: JokerGenerator {},
-            consumable_gen: ConsumableGenerator {},
-            pack_gen: PackGenerator {},
             jokers: Vec::new(),
             consumables: Vec::new(),
             packs: Vec::new(),
@@ -47,7 +42,8 @@ impl Shop {
         held: &[Consumable],
         prob_mult: u32,
         held_jokers: &[Jokers],
-        rng: &mut impl Rng,
+        ante: i32,
+        backend: &mut Backend,
     ) {
         self.jokers.clear();
         self.consumables.clear();
@@ -74,30 +70,24 @@ impl Shop {
             })
             .collect();
 
-        // Joker=20, Tarot=4, Planet=4
-        let weights = [20u32, 4, 4];
-        let dist = WeightedIndex::new(weights).unwrap();
-
         for _ in 0..2 {
-            match dist.sample(rng) {
-                0 => {
-                    let joker = self.joker_gen.gen_joker(prob_mult, &excl_jokers, rng);
+            match backend.gen_shop_item(
+                ante,
+                planetarium,
+                prob_mult,
+                &excl_jokers,
+                &excl_tarots,
+                &excl_planets,
+            ) {
+                GeneratedItem::Joker(joker) => {
                     excl_jokers.push(joker.clone());
                     self.jokers.push(joker);
                 }
-                1 => {
-                    let c = self.consumable_gen.gen_tarot_consumable(&excl_tarots, rng);
-                    if let Consumable::Tarot(t) = &c {
-                        excl_tarots.push(*t);
-                    }
-                    self.consumables.push(c);
-                }
-                _ => {
-                    let c =
-                        self.consumable_gen
-                            .gen_planet_consumable(planetarium, &excl_planets, rng);
-                    if let Consumable::Planet(p) = &c {
-                        excl_planets.push(*p);
+                GeneratedItem::Consumable(c) => {
+                    match &c {
+                        Consumable::Tarot(t) => excl_tarots.push(*t),
+                        Consumable::Planet(p) => excl_planets.push(*p),
+                        Consumable::Spectral(_) => {}
                     }
                     self.consumables.push(c);
                 }
@@ -105,6 +95,7 @@ impl Shop {
         }
     }
 
+    #[allow(clippy::too_many_arguments)] // pre-existing shape (already at 7 pre-Real-mode); `ante` pushed it to 8
     pub(crate) fn refresh(
         &mut self,
         planetarium: &Planetarium,
@@ -112,18 +103,15 @@ impl Shop {
         allow_duplicates: bool,
         prob_mult: u32,
         held_jokers: &[Jokers],
-        rng: &mut impl Rng,
+        ante: i32,
+        backend: &mut Backend,
     ) {
         let _ = allow_duplicates;
-        self.refresh_cards(planetarium, held, prob_mult, held_jokers, rng);
+        self.refresh_cards(planetarium, held, prob_mult, held_jokers, ante, backend);
 
-        let p1 = self
-            .pack_gen
-            .gen_pack(planetarium, prob_mult, None, held_jokers, rng);
+        let p1 = backend.gen_pack(ante, planetarium, prob_mult, None, held_jokers);
         let exclude = (&p1.category, &p1.size);
-        let p2 = self
-            .pack_gen
-            .gen_pack(planetarium, prob_mult, Some(exclude), held_jokers, rng);
+        let p2 = backend.gen_pack(ante, planetarium, prob_mult, Some(exclude), held_jokers);
         self.packs = vec![p1, p2];
     }
 
@@ -482,6 +470,12 @@ impl PackGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rng::FastBackend;
+    use rand_chacha::ChaCha8Rng;
+
+    fn fast_backend() -> Backend {
+        Backend::Fast(FastBackend::new(ChaCha8Rng::from_entropy()))
+    }
 
     #[test]
     fn test_shop_refresh() {
@@ -489,7 +483,7 @@ mod tests {
         let planetarium = Planetarium::new();
         assert_eq!(shop.jokers.len(), 0);
         assert_eq!(shop.packs.len(), 0);
-        shop.refresh(&planetarium, &[], false, 1, &[], &mut rand::thread_rng());
+        shop.refresh(&planetarium, &[], false, 1, &[], 1, &mut fast_backend());
         assert_eq!(shop.jokers.len() + shop.consumables.len(), 2);
         assert_eq!(shop.packs.len(), 2);
     }
@@ -517,7 +511,7 @@ mod tests {
     fn test_shop_buy_pack() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false, 1, &[], &mut rand::thread_rng());
+        shop.refresh(&planetarium, &[], false, 1, &[], 1, &mut fast_backend());
         assert_eq!(shop.packs.len(), 2);
         let p1 = shop.packs[0].clone();
         let bought = shop.buy_pack(&p1).expect("buy pack");
@@ -545,7 +539,7 @@ mod tests {
     fn test_gen_moves_buy_consumable_slots_full() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false, 1, &[], &mut rand::thread_rng());
+        shop.refresh(&planetarium, &[], false, 1, &[], 1, &mut fast_backend());
         // slots full (held == consumable_slots)
         let moves = shop.gen_moves_buy_consumable(100, 2, 2);
         assert!(moves.is_none());
@@ -555,7 +549,7 @@ mod tests {
     fn test_gen_moves_buy_consumable_no_funds() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false, 1, &[], &mut rand::thread_rng());
+        shop.refresh(&planetarium, &[], false, 1, &[], 1, &mut fast_backend());
         // 0 money can't afford any planet ($3)
         let moves: Option<Vec<Action>> =
             shop.gen_moves_buy_consumable(0, 2, 0).map(|i| i.collect());
