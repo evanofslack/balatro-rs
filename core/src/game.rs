@@ -1216,12 +1216,8 @@ mod tests {
     use super::*;
     use crate::card::{Suit, Value};
 
-    // Cross-checked by hand against `explore`'s output for seed "TEST"
-    // (which itself matched the reference site's published ante-1 output
-    // exactly — see ARCHITECTURE.md). `Shop::refresh` only fills 2
-    // joker/consumable slots and 2 packs per call (real Balatro's actual
-    // per-visit shop size), so this checks the *first two* of the
-    // reference's longer simulated sequence, not all 15/4.
+    // Cross-checked by hand against `explore`'s output for seed "TEST" —
+    // see ARCHITECTURE.md.
     #[test]
     fn test_real_rng_mode_matches_balatro_seed_reference() {
         use crate::pack::PackSize;
@@ -1253,6 +1249,123 @@ mod tests {
         assert_eq!(g.shop.packs[1].size, PackSize::Normal);
         let p2_contents: Vec<String> = g.shop.packs[1].contents.iter().map(|c| c.name()).collect();
         assert_eq!(p2_contents, vec!["Medium", "Wraith"]);
+    }
+
+    // Same seed through two independent `Game`s: proves `RngMode::Real`
+    // stays deterministic as antes advance.
+    #[test]
+    fn test_real_rng_mode_is_deterministic_across_antes() {
+        use crate::pack::PackSize;
+
+        fn run() -> Vec<(Vec<String>, Vec<String>, Vec<(PackCategory, PackSize)>)> {
+            let config = Config {
+                rng_mode: RngMode::Real,
+                seed_str: Some("TEST".to_string()),
+                ..Config::default()
+            };
+            let mut g = Game::new(config);
+            let planetarium = g.planetarium.clone();
+            let mut antes = Vec::new();
+            for ante in 1..=4 {
+                g.shop
+                    .refresh(&planetarium, &[], false, 1, &[], ante, &mut g.backend);
+                let jokers: Vec<String> = g.shop.jokers.iter().map(|j| j.name().to_string()).collect();
+                let consumables: Vec<String> =
+                    g.shop.consumables.iter().map(|c| c.name().to_string()).collect();
+                let packs = vec![
+                    (g.shop.packs[0].category, g.shop.packs[0].size),
+                    (g.shop.packs[1].category, g.shop.packs[1].size),
+                ];
+                antes.push((jokers, consumables, packs));
+            }
+            antes
+        }
+
+        assert_eq!(
+            run(),
+            run(),
+            "same seed must produce the same draws across every ante"
+        );
+    }
+
+    // Buys the real shop joker, then refreshes many times: proves
+    // on_joker_bought reached the live Instance's lock table.
+    #[test]
+    fn test_real_rng_mode_excludes_bought_joker_from_future_draws() {
+        let config = Config {
+            rng_mode: RngMode::Real,
+            seed_str: Some("TEST".to_string()),
+            ..Config::default()
+        };
+        let mut g = Game::new(config);
+        g.stage = Stage::Shop();
+        g.money = 1000;
+
+        let planetarium = g.planetarium.clone();
+        g.shop
+            .refresh(&planetarium, &[], false, 1, &[], 1, &mut g.backend);
+        let bought = g.shop.jokers[0].clone();
+        g.buy_joker(bought.clone()).expect("buy joker");
+
+        for ante in 1..=50 {
+            g.shop.refresh(
+                &planetarium,
+                &[],
+                false,
+                1,
+                &g.jokers.clone(),
+                ante,
+                &mut g.backend,
+            );
+            assert!(
+                g.shop
+                    .jokers
+                    .iter()
+                    .all(|j| std::mem::discriminant(j) != std::mem::discriminant(&bought)),
+                "bought joker {} reappeared in shop while still owned (ante {ante})",
+                bought.name()
+            );
+        }
+    }
+
+    // Mirror of the test above: selling should make the joker drawable
+    // again. Probabilistic — enough draws that reappearance is near-certain.
+    #[test]
+    fn test_real_rng_mode_sold_joker_becomes_drawable_again() {
+        let config = Config {
+            rng_mode: RngMode::Real,
+            seed_str: Some("TEST".to_string()),
+            ..Config::default()
+        };
+        let mut g = Game::new(config);
+        g.stage = Stage::Shop();
+        g.money = 1000;
+
+        let planetarium = g.planetarium.clone();
+        g.shop
+            .refresh(&planetarium, &[], false, 1, &[], 1, &mut g.backend);
+        let bought = g.shop.jokers[0].clone();
+        g.buy_joker(bought.clone()).expect("buy joker");
+        g.sell_joker(0).expect("sell joker");
+
+        let mut reappeared = false;
+        for ante in 1..=500 {
+            g.shop
+                .refresh(&planetarium, &[], false, 1, &[], ante, &mut g.backend);
+            if g.shop
+                .jokers
+                .iter()
+                .any(|j| std::mem::discriminant(j) == std::mem::discriminant(&bought))
+            {
+                reappeared = true;
+                break;
+            }
+        }
+        assert!(
+            reappeared,
+            "sold joker {} never reappeared across 500 draws",
+            bought.name()
+        );
     }
 
     #[test]
