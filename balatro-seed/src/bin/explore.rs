@@ -2,17 +2,20 @@
 //! as `TheSoul`'s website output, for direct manual diffing against it.
 //!
 //! Usage: `explore SEED [--ante N] [--cards-per-ante 15,50,50,50,50,50,50,50]
-//! [--vouchers bought|offered] [--fresh-profile] [--ante-0]`
+//! [--vouchers bought|offered] [--no-activate-vouchers] [--fresh-profile] [--ante-0]`
 //!
 //! Deliberately mirrors quirks of the website's own reference JS rather
 //! than "fixing" them, since the goal is a byte-diffable match:
 //! - `init_locks` is called once for ante 1 before the loop, `init_unlocks`
 //!   once per ante inside it — not symmetric per-ante calls.
 //! - `--vouchers bought` (default) locks a drawn voucher (and unlocks its
-//!   upgrade tier) but never *activates* it — so voucher-driven rate effects
-//!   (Hone, Tarot Tycoon, ...) never kick in, matching the site's own demo
-//!   loop, not a live run. `--vouchers offered` skips the lock entirely, so
-//!   an unbought voucher can resurface in a later ante.
+//!   upgrade tier) and, by default, also activates it, so voucher-driven
+//!   rate effects (Hone, Tarot Tycoon, ...) apply to later antes exactly as
+//!   they would in a live run. Pass `--no-activate-vouchers` to suppress
+//!   that and reproduce the reference site's own demo loop instead (which
+//!   locks but never activates) — needed to byte-diff against the site.
+//!   `--vouchers offered` skips the lock (and activation) entirely, so an
+//!   unbought voucher can resurface in a later ante.
 //! - `--ante-0` (default off, so the tool's default output shape stays
 //!   diffable against the site, which never shows this) prints an extra
 //!   section for the Ante 0 you'd reach by buying Hieroglyph/Petroglyph
@@ -152,6 +155,7 @@ fn render_ante(
     draw_ante: i32,
     n_cards: i32,
     vouchers_bought: bool,
+    activate_vouchers: bool,
     boss_override: Option<BossBlind>,
 ) -> (String, BossBlind) {
     use std::fmt::Write;
@@ -165,15 +169,16 @@ fn render_ante(
     let voucher = inst.next_voucher(draw_ante);
     let _ = writeln!(out, "Voucher: {}", voucher.name());
     // --vouchers bought (default): assume every offered voucher gets
-    // bought, matching the site's own analysis — an unbought voucher
-    // can't resurface in a later ante. --vouchers offered skips the
-    // lock, so a voucher you haven't confirmed as purchased stays
-    // eligible to reappear (closer to how the real game actually
-    // gates vouchers: on purchase, not on mere appearance).
+    // bought, matching the real game's own gating (on purchase, not mere
+    // appearance) rather than the site demo's lock-without-activate. Pass
+    // --no-activate-vouchers to reproduce the site's own demo loop exactly.
     if vouchers_bought {
         inst.lock(voucher.name());
         if let Some(upgrade) = voucher_upgrade(voucher) {
             inst.unlock(upgrade.name());
+        }
+        if activate_vouchers {
+            inst.activate_voucher(voucher.name());
         }
     }
 
@@ -210,6 +215,7 @@ fn main() {
     let mut max_ante: i32 = 8;
     let mut cards_per_ante: Vec<i32> = vec![15, 50, 50, 50, 50, 50, 50, 50];
     let mut vouchers_bought = true;
+    let mut activate_vouchers = true;
     let mut fresh_profile = false;
     let mut ante_0 = false;
 
@@ -235,6 +241,7 @@ fn main() {
                     other => panic!("--vouchers expects bought|offered, got {other}"),
                 };
             }
+            "--no-activate-vouchers" => activate_vouchers = false,
             "--fresh-profile" => fresh_profile = true,
             "--ante-0" => ante_0 = true,
             other if seed.is_none() => seed = Some(other.to_string()),
@@ -247,7 +254,8 @@ fn main() {
         .unwrap_or_else(|| {
             eprintln!(
                 "usage: explore SEED [--ante N] [--cards-per-ante 15,50,...] \
-                 [--vouchers bought|offered] [--fresh-profile] [--ante-0]"
+                 [--vouchers bought|offered] [--no-activate-vouchers] \
+                 [--fresh-profile] [--ante-0]"
             );
             std::process::exit(1);
         })
@@ -273,8 +281,15 @@ fn main() {
             .get((ante - 1) as usize)
             .copied()
             .unwrap_or(0);
-        let (section, boss) =
-            render_ante(&mut inst, ante, ante, n_cards, vouchers_bought, None);
+        let (section, boss) = render_ante(
+            &mut inst,
+            ante,
+            ante,
+            n_cards,
+            vouchers_bought,
+            activate_vouchers,
+            None,
+        );
         if ante == 1 {
             ante_1_boss = Some(boss);
         }
@@ -290,8 +305,15 @@ fn main() {
     // would draw against Ante 1's still-locked-down state and diverge.
     if ante_0 {
         let n_cards = cards_per_ante.first().copied().unwrap_or(0);
-        let (section, _) =
-            render_ante(&mut inst, 0, 0, n_cards, vouchers_bought, ante_1_boss);
+        let (section, _) = render_ante(
+            &mut inst,
+            0,
+            0,
+            n_cards,
+            vouchers_bought,
+            activate_vouchers,
+            ante_1_boss,
+        );
         print!("{section}");
     }
 
