@@ -1,11 +1,12 @@
 use crate::card::Card;
-use crate::joker::{joker_display, Jokers};
+use crate::joker::Jokers;
+use crate::rank::HandRank;
 
 /// What caused a `ScoreStep`'s chips/mult change.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, PartialEq)]
 pub enum ScoreSource {
-    HandLevel,
+    HandLevel(HandRank),
     PlayedCard(Card),
     // stone cards always score +50 chips, even as kickers outside the
     // played hand's own scoring subset
@@ -38,11 +39,11 @@ impl ScoreStep {
     /// Human-readable summary, e.g. "K♠: +10 Chips" or "Mime (retrigger)".
     pub fn describe(&self) -> String {
         let label = match &self.source {
-            ScoreSource::HandLevel => "Hand level".to_string(),
+            ScoreSource::HandLevel(rank) => format!("{rank:?}"),
             ScoreSource::PlayedCard(c) => c.to_string(),
             ScoreSource::StoneKicker(c) => format!("{c} (stone kicker)"),
             ScoreSource::HeldCard(c) => format!("{c} (held)"),
-            ScoreSource::Joker(j) => joker_display(j),
+            ScoreSource::Joker(j) => j.name().to_string(),
         };
 
         let mut parts = Vec::new();
@@ -76,14 +77,14 @@ mod tests {
     #[test]
     fn test_describe_formats_chips_and_mult() {
         let step = ScoreStep {
-            source: ScoreSource::HandLevel,
+            source: ScoreSource::HandLevel(HandRank::TwoPair),
             chips_before: 0,
             chips_after: 10,
             mult_before: 1,
             mult_after: 3,
             retrigger: false,
         };
-        assert_eq!(step.describe(), "Hand level: +10 Chips, +2 Mult");
+        assert_eq!(step.describe(), "TwoPair: +10 Chips, +2 Mult");
     }
 
     #[test]
@@ -112,5 +113,22 @@ mod tests {
             retrigger: false,
         };
         assert_eq!(step.describe(), "A♥ (held)");
+    }
+
+    #[test]
+    fn test_describe_joker_uses_short_name() {
+        // Plain .name(), not joker_display() — the latter bakes in
+        // cost/rarity/desc for shop listings, far too verbose repeated on
+        // every trace step from the same joker.
+        use crate::joker::{Jokers, TheJoker};
+        let step = ScoreStep {
+            source: ScoreSource::Joker(Jokers::TheJoker(TheJoker::default())),
+            chips_before: 9,
+            chips_after: 9,
+            mult_before: 1,
+            mult_after: 5,
+            retrigger: false,
+        };
+        assert_eq!(step.describe(), "Joker: +4 Mult");
     }
 }
