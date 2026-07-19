@@ -1,7 +1,7 @@
 use crate::action::{Action, MoveDirection};
 use crate::ante::Ante;
 use crate::available::Available;
-use crate::card::{Card, Edition, Enhancement};
+use crate::card::{Card, Edition, Enhancement, Seal};
 use crate::config::{Config, RngMode};
 use crate::consumable::Consumable;
 use crate::deck::Deck;
@@ -185,6 +185,28 @@ impl Game {
         self.result().is_some()
     }
 
+    // Fires when the round that just ended cleared the blind, before played
+    // cards are swapped out and replacements drawn in. `self.available` still
+    // reflects what was actually held in hand at the moment the round ended.
+    fn handle_round_end(&mut self) {
+        for e in self.effect_registry.on_round_end.clone() {
+            if let Effects::OnRoundEnd(f) = e {
+                f.lock().unwrap()(self)
+            }
+        }
+
+        let planetarium = self.planetarium.clone();
+        for card in self.available.not_selected() {
+            if card.seal == Some(Seal::Blue)
+                && self.consumables.len() < self.config.consumable_slots
+            {
+                let gen = crate::shop::ConsumableGenerator::new();
+                let planet = gen.gen_planet_consumable(&planetarium, &[], &mut self.rng);
+                self.consumables.push(planet);
+            }
+        }
+    }
+
     fn clear_blind(&mut self) {
         self.score = self.config.base_score;
         self.plays = self.config.plays;
@@ -239,6 +261,11 @@ impl Game {
         let scored = best.clone();
         let score = self.calc_score(best);
         let clear_blind = self.handle_score(score)?;
+        // must run before the discard/redraw below: self.available still reflects
+        // the cards actually held when the round ended, not their replacements.
+        if clear_blind {
+            self.handle_round_end();
+        }
         self.discarded.extend(self.available.selected());
         let removed = self.available.remove_selected();
         self.draw(removed);
@@ -263,6 +290,25 @@ impl Game {
         self.discarded.extend(discarded.clone());
         let removed = self.available.remove_selected();
         self.draw(removed);
+
+        // Check for purple seals
+        for card in &discarded {
+            if card.seal == Some(Seal::Purple)
+                && self.consumables.len() < self.config.consumable_slots
+            {
+                let excl: Vec<Tarot> = self
+                    .consumables
+                    .iter()
+                    .filter_map(|c| match c {
+                        Consumable::Tarot(t) => Some(*t),
+                        _ => None,
+                    })
+                    .collect();
+                let gen = crate::shop::ConsumableGenerator::new();
+                let tarot = gen.gen_tarot_consumable(&excl, &mut self.rng);
+                self.consumables.push(tarot);
+            }
+        }
 
         let hand = MadeHand {
             hand: SelectHand::new(discarded.clone()),
@@ -342,8 +388,12 @@ impl Game {
     }
 
     // Extension point for retrigger jokers (Mime, Dusk, Hack, etc)
-    fn trigger_count(&self, _card: &Card) -> usize {
-        1
+    fn trigger_count(&self, card: &Card) -> usize {
+        if card.seal == Some(Seal::Red) {
+            2
+        } else {
+            1
+        }
     }
 
     fn calc_score_inner(
@@ -394,6 +444,9 @@ impl Game {
                     Edition::Holographic => self.mult += 10,
                     Edition::Polychrome => self.mult += self.mult / 2,
                     _ => {}
+                }
+                if card.seal == Some(Seal::Gold) {
+                    self.money += 3;
                 }
 
                 self.record_step(
@@ -1269,9 +1322,14 @@ mod tests {
             for ante in 1..=4 {
                 g.shop
                     .refresh(&planetarium, &[], false, 1, &[], ante, &mut g.backend);
-                let jokers: Vec<String> = g.shop.jokers.iter().map(|j| j.name().to_string()).collect();
-                let consumables: Vec<String> =
-                    g.shop.consumables.iter().map(|c| c.name().to_string()).collect();
+                let jokers: Vec<String> =
+                    g.shop.jokers.iter().map(|j| j.name().to_string()).collect();
+                let consumables: Vec<String> = g
+                    .shop
+                    .consumables
+                    .iter()
+                    .map(|c| c.name().to_string())
+                    .collect();
                 let packs = vec![
                     (g.shop.packs[0].category, g.shop.packs[0].size),
                     (g.shop.packs[1].category, g.shop.packs[1].size),
@@ -1736,6 +1794,133 @@ mod tests {
         let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
         g.calc_score(hand);
         assert_eq!(g.money, 3);
+    }
+
+    #[test]
+    fn test_seal_gold_scored() {
+        // Gold Seal: $3 when this card is played and scores (score itself unaffected)
+        let mut g = Game::default();
+        let mut ace = Card::new(Value::Ace, Suit::Spade);
+        ace.seal = Some(Seal::Gold);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 16);
+        assert_eq!(g.money, 3);
+    }
+
+    #[test]
+    fn test_seal_red_retrigger_played() {
+        // Red Seal: retrigger this card's played abilities.
+        // High card Ace, chips scored twice: (5 + 11 + 11) * 1 = 27
+        let mut g = Game::default();
+        let mut ace = Card::new(Value::Ace, Suit::Spade);
+        ace.seal = Some(Seal::Red);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 27);
+    }
+
+    #[test]
+    fn test_seal_red_retrigger_gold_held() {
+        // Red Seal retriggers held-card abilities too, not just played ones:
+        // a held Gold+Red card earns $6 (2x $3), not $3.
+        let mut g = Game::default();
+        let mut gold_red = Card::new(Value::Two, Suit::Heart);
+        gold_red.enhancement = Some(Enhancement::Gold);
+        gold_red.seal = Some(Seal::Red);
+        g.available.extend(vec![gold_red]);
+        let ace = Card::new(Value::Ace, Suit::Spade);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.money, 6);
+    }
+
+    #[test]
+    fn test_seal_red_retrigger_steel_held() {
+        // Pair of Kings scored; held Steel+Red King retriggers its Mult bonus twice.
+        // Pair level 1: chips=10, mult=2; both Kings score: chips=30
+        // Steel triggers twice: mult = 2 -> 3 (floor(2*1.5)) -> 4 (floor(3*1.5))
+        // score = 30 * 4 = 120
+        let mut g = Game::default();
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Diamond);
+        let mut steel_red_king = Card::new(Value::King, Suit::Spade);
+        steel_red_king.enhancement = Some(Enhancement::Steel);
+        steel_red_king.seal = Some(Seal::Red);
+        g.available.extend(vec![steel_red_king]);
+        let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 120);
+    }
+
+    #[test]
+    fn test_seal_purple_discard_creates_tarot() {
+        // Purple Seal: creates a Tarot card when this card is discarded.
+        let mut g = Game::default();
+        g.deal();
+        let card = g.available.cards()[0];
+        g.mutate_card(card.id, |c| c.seal = Some(Seal::Purple));
+        let card = g.available.cards()[0];
+        g.select_card(card).expect("can select card");
+
+        assert_eq!(g.consumables.len(), 0);
+        g.discard_selected().expect("can discard");
+        assert_eq!(g.consumables.len(), 1);
+        assert!(matches!(g.consumables[0], Consumable::Tarot(_)));
+    }
+
+    #[test]
+    fn test_seal_purple_discard_respects_slots() {
+        let mut g = Game::default();
+        g.config.consumable_slots = 0;
+        g.deal();
+        let card = g.available.cards()[0];
+        g.mutate_card(card.id, |c| c.seal = Some(Seal::Purple));
+        let card = g.available.cards()[0];
+        g.select_card(card).expect("can select card");
+
+        g.discard_selected().expect("can discard");
+        assert_eq!(g.consumables.len(), 0);
+    }
+
+    #[test]
+    fn test_seal_blue_round_end_creates_planet() {
+        // Blue Seal: creates a Planet card if held in hand when the round ends.
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+        g.deal();
+
+        let held_card = g.available.cards()[7];
+        g.mutate_card(held_card.id, |c| c.seal = Some(Seal::Blue));
+        for card in g.available.cards()[0..5].to_vec() {
+            g.available.select_card(card).expect("can select card");
+        }
+        assert_eq!(g.available.selected().len(), 5);
+
+        g.score += g.required_score();
+        assert_eq!(g.consumables.len(), 0);
+        g.play_selected().expect("can play selected");
+
+        assert_eq!(g.consumables.len(), 1);
+        assert!(matches!(g.consumables[0], Consumable::Planet(_)));
+    }
+
+    #[test]
+    fn test_seal_blue_does_not_fire_before_blind_cleared() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+        g.deal();
+
+        let held_card = g.available.cards()[7];
+        g.mutate_card(held_card.id, |c| c.seal = Some(Seal::Blue));
+        for card in g.available.cards()[0..5].to_vec() {
+            g.available.select_card(card).expect("can select card");
+        }
+        // score not bumped past required_score() - blind stays open
+        g.play_selected().expect("can play selected");
+
+        assert_eq!(g.consumables.len(), 0);
     }
 
     #[test]
