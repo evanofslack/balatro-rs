@@ -12,11 +12,9 @@ impl Deck {
     pub fn new() -> Self {
         Self { cards: Vec::new() }
     }
-    pub(crate) fn draw(&mut self, n: usize) -> Option<Vec<Card>> {
-        if self.cards.len() < n {
-            return None;
-        }
-        Some(self.cards.drain(0..n).collect())
+    pub(crate) fn draw(&mut self, n: usize) -> Vec<Card> {
+        let n = n.min(self.cards.len());
+        self.cards.drain(0..n).collect()
     }
     pub(crate) fn len(&self) -> usize {
         self.cards.len()
@@ -72,5 +70,36 @@ impl Default for Deck {
             }
         }
         Self { cards }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::card::Value;
+
+    #[test]
+    fn test_draw_within_size() {
+        let mut deck = Deck::default();
+        let drawn = deck.draw(5);
+        assert_eq!(drawn.len(), 5);
+        assert_eq!(deck.len(), 47);
+    }
+
+    #[test]
+    fn test_draw_more_than_remaining_returns_partial() {
+        let mut deck = Deck::new();
+        deck.push(Card::new(Value::King, Suit::Spade));
+        deck.push(Card::new(Value::King, Suit::Heart));
+        deck.push(Card::new(Value::King, Suit::Club));
+
+        let drawn = deck.draw(8);
+        assert_eq!(drawn.len(), 3);
+        assert_eq!(deck.len(), 0);
+
+        // deck is now empty; drawing again returns nothing, not a panic
+        let drawn = deck.draw(8);
+        assert_eq!(drawn.len(), 0);
+        assert_eq!(deck.len(), 0);
     }
 }
