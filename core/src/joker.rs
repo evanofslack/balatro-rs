@@ -1174,7 +1174,7 @@ mod tests {
             ..Default::default()
         };
         // simulate 10 cards already drawn out of the deck this round
-        let drawn = g.deck.draw(10).unwrap();
+        let drawn = g.deck.draw(10);
         g.available.extend(drawn);
         assert_eq!(g.deck.len(), 42);
 
@@ -1214,7 +1214,7 @@ mod tests {
 
         let mut g = Game::default();
         // draw 10 cards into hand -- still owned this run, not a deficit
-        let drawn = g.deck.draw(10).unwrap();
+        let drawn = g.deck.draw(10);
         g.available.extend(drawn);
         // destroy exactly 1 card -- a genuine deficit of 1 below the 52-card starting size
         let victim = g.deck.cards()[0];

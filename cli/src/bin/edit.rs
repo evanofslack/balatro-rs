@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use balatro_rs::ante::Ante;
+use balatro_rs::available::Available;
 use balatro_rs::card::{Card, Edition, Enhancement, Seal, Suit, Value};
 use balatro_rs::consumable::Consumable;
+use balatro_rs::deck::Deck;
 use balatro_rs::game::Game;
 use balatro_rs::joker::{Jokers, Stickers};
 use balatro_rs::planet::Planets;
@@ -74,6 +76,8 @@ enum Command {
         name: Planets,
     },
     ClearConsumables,
+    ClearDeck,
+    Redeal,
     AddCard {
         value: Value,
         suit: Suit,
@@ -156,6 +160,12 @@ fn main() -> Result<()> {
         Command::AddTarot { name } => game.consumables.push(Consumable::Tarot(name)),
         Command::AddPlanet { name } => game.consumables.push(Consumable::Planet(name)),
         Command::ClearConsumables => game.consumables.clear(),
+        Command::ClearDeck => {
+            game.deck = Deck::new();
+            game.available = Available::default();
+            game.discarded = Vec::new();
+        }
+        Command::Redeal => game.redeal(),
         Command::AddCard {
             value,
             suit,

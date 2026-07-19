@@ -219,10 +219,7 @@ impl Game {
 
     // draw from deck to available
     fn draw(&mut self, count: usize) {
-        if let Some(drawn) = self.deck.draw(count) {
-            self.available.extend(drawn);
-            // self.available.extend(drawn);
-        }
+        self.available.extend(self.deck.draw(count));
     }
 
     // shuffle and deal new cards to available
@@ -234,6 +231,12 @@ impl Game {
         self.available.empty();
         self.deck.shuffle(&mut self.rng);
         self.draw(self.config.available);
+    }
+
+    /// Reshuffles discarded/held cards back into the deck and redraws a
+    /// fresh hand, regardless of stage. Just a helper.
+    pub fn redeal(&mut self) {
+        self.deal();
     }
 
     pub(crate) fn select_card(&mut self, card: Card) -> Result<(), GameError> {
@@ -764,8 +767,7 @@ impl Game {
                     let prev = self.stage;
                     self.tarot_prev_stage = Some(prev);
                     self.stage = Stage::TarotHand(t);
-                    let n = self.config.available.min(self.deck.len());
-                    self.draw(n);
+                    self.draw(self.config.available);
                 } else {
                     t.apply(self)?;
                     if t != Tarot::Fool {
@@ -832,8 +834,7 @@ impl Game {
 
         // Arcana packs draw a hand for the player to apply tarots against
         if pack.category == PackCategory::Arcana {
-            let n = self.config.available.min(self.deck.len());
-            self.draw(n);
+            self.draw(self.config.available);
         }
 
         self.open_pack = Some(OpenPackState {
@@ -1218,6 +1219,21 @@ impl Game {
         let mut game: Self = serde_json::from_str(s)?;
         let jokers = game.jokers.clone();
         game.effect_registry.register_jokers(jokers, &game.clone());
+
+        // Deserializing doesn't allocate ids, so Card::new() calls after this
+        // point would otherwise collide with ids already present in `game`.
+        let max_id = game
+            .deck
+            .cards()
+            .iter()
+            .chain(game.available.cards().iter())
+            .chain(game.discarded.iter())
+            .map(|c| c.id)
+            .max();
+        if let Some(max_id) = max_id {
+            crate::card::ensure_id_counter_past(max_id);
+        }
+
         Ok(game)
     }
 }
@@ -2114,6 +2130,22 @@ mod tests {
     fn test_from_json_invalid() {
         let result = Game::from_json("not valid json");
         assert!(result.is_err());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_from_json_advances_id_counter_past_loaded_ids() {
+        let mut g = Game::default();
+        let mut high_id_card = Card::new(Value::King, Suit::Spade);
+        high_id_card.id = 999_999;
+        g.deck.push(high_id_card);
+
+        let json = g.to_json().expect("serialize");
+        let _g2 = Game::from_json(&json).expect("deserialize");
+
+        // Card::new() after loading must not collide with the loaded id.
+        let new_card = Card::new(Value::Two, Suit::Heart);
+        assert!(new_card.id > 999_999);
     }
 
     #[test]
