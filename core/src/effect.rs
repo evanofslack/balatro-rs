@@ -14,6 +14,7 @@ pub struct EffectRegistry {
     pub on_score: Vec<Effects>,
     pub on_handrank: Vec<Effects>,
     pub on_modify_hand: Vec<Effects>,
+    pub on_round_end: Vec<Effects>,
 }
 
 impl EffectRegistry {
@@ -24,6 +25,7 @@ impl EffectRegistry {
             on_score: Vec::new(),
             on_handrank: Vec::new(),
             on_modify_hand: Vec::new(),
+            on_round_end: Vec::new(),
         }
     }
 }
@@ -41,6 +43,7 @@ impl EffectRegistry {
         self.on_score.clear();
         self.on_handrank.clear();
         self.on_modify_hand.clear();
+        self.on_round_end.clear();
         for j in jokers {
             for e in j.effects(game) {
                 match e {
@@ -49,6 +52,7 @@ impl EffectRegistry {
                     Effects::OnScore(_) => self.on_score.push(e),
                     Effects::OnHandRank(_) => self.on_handrank.push(e),
                     Effects::OnModifyHand(_) => self.on_modify_hand.push(e),
+                    Effects::OnRoundEnd(_) => self.on_round_end.push(e),
                 }
             }
         }
@@ -64,6 +68,7 @@ pub enum Effects {
     OnScore(GameHandFn),
     OnHandRank(GameFn),
     OnModifyHand(GameModifyFn),
+    OnRoundEnd(GameFn),
 }
 
 impl std::fmt::Debug for Effects {
@@ -74,6 +79,7 @@ impl std::fmt::Debug for Effects {
             Self::OnScore(_) => write!(f, "OnScore"),
             Self::OnHandRank(_) => write!(f, "OnHandRank"),
             Self::OnModifyHand(_) => write!(f, "OnModifyHand"),
+            Self::OnRoundEnd(_) => write!(f, "OnRoundEnd"),
         }
     }
 }
