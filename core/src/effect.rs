@@ -21,7 +21,6 @@ pub enum RuleFlag {
 pub struct EffectRegistry {
     pub on_play: Vec<Effects>,
     pub on_discard: Vec<Effects>,
-    pub on_score: Vec<Effects>,
     pub on_handrank: Vec<Effects>,
     pub on_modify_hand: Vec<Effects>,
     pub on_round_end: Vec<Effects>,
@@ -35,7 +34,6 @@ impl EffectRegistry {
         Self {
             on_play: Vec::new(),
             on_discard: Vec::new(),
-            on_score: Vec::new(),
             on_handrank: Vec::new(),
             on_modify_hand: Vec::new(),
             on_round_end: Vec::new(),
@@ -56,7 +54,6 @@ impl EffectRegistry {
     pub fn register_jokers(&mut self, jokers: Vec<Jokers>, game: &Game) {
         self.on_play.clear();
         self.on_discard.clear();
-        self.on_score.clear();
         self.on_handrank.clear();
         self.on_modify_hand.clear();
         self.on_round_end.clear();
@@ -68,7 +65,7 @@ impl EffectRegistry {
                 match e {
                     Effects::OnPlay(_) => self.on_play.push(e),
                     Effects::OnDiscard(_) => self.on_discard.push(e),
-                    Effects::OnScore(_) => self.on_score.push(e),
+                    Effects::OnScore(_) => {} // not cached, recomputed in score loop on purpose
                     Effects::OnHandRank(_) => self.on_handrank.push(e),
                     Effects::OnModifyHand(_) => self.on_modify_hand.push(e),
                     Effects::OnRoundEnd(_) => self.on_round_end.push(e),

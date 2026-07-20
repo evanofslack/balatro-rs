@@ -338,7 +338,11 @@ impl Game {
     }
 
     pub(crate) fn is_face_card(&self, card: &Card) -> bool {
-        card.is_face_card() || self.effect_registry.rule_flags.contains(&RuleFlag::AllCardsAreFace)
+        card.is_face_card()
+            || self
+                .effect_registry
+                .rule_flags
+                .contains(&RuleFlag::AllCardsAreFace)
     }
 
     pub(crate) fn is_even(&self, card: &Card) -> bool {
@@ -546,7 +550,9 @@ impl Game {
             }
         }
 
-        // apply joker effects with per-joker edition ordering
+        // apply joker effects with per-joker edition ordering.
+        // effects recomputed per joker, not read from EffectRegistry. Each joker's edition
+        // bonus must sandwich its own OnScore closures in self.jokers order.
         for joker in self.jokers.clone() {
             let chips_before = self.chips;
             let mult_before = self.mult;
@@ -1279,55 +1285,11 @@ impl Game {
     }
 }
 
-/// Compute a score from base values and jokers, without needing a full Game.
-pub fn score_hand(
-    base_chips: usize,
-    base_mult: usize,
-    played_cards: &[Card],
-    jokers: &[Jokers],
-    mut hand: MadeHand,
-) -> usize {
-    let card_chips: usize = played_cards.iter().map(|c| c.chips()).sum();
-    let mut g = Game {
-        deck: Deck::new(),
-        chips: base_chips + card_chips,
-        mult: base_mult,
-        jokers: jokers.to_vec(),
-        ..Default::default()
-    };
-
-    for j in jokers {
-        for e in j.effects(&g) {
-            match e {
-                Effects::OnScore(_) => g.effect_registry.on_score.push(e),
-                Effects::OnModifyHand(_) => g.effect_registry.on_modify_hand.push(e),
-                _ => (),
-            }
-        }
-    }
-
-    for e in g.effect_registry.on_modify_hand.clone() {
-        if let Effects::OnModifyHand(f) = e {
-            f.lock().unwrap()(&mut g, &mut hand)
-        }
-    }
-
-    for e in g.effect_registry.on_score.clone() {
-        if let Effects::OnScore(f) = e {
-            f.lock().unwrap()(&mut g, hand.clone())
-        }
-    }
-
-    g.chips * g.mult
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::card::{Suit, Value};
 
-    // Cross-checked by hand against `explore`'s output for seed "TEST" —
-    // see ARCHITECTURE.md.
     #[test]
     fn test_real_rng_mode_matches_balatro_seed_reference() {
         use crate::pack::PackSize;
@@ -1748,39 +1710,6 @@ mod tests {
         g.buy_joker(j1.clone()).expect("buy joker");
         assert_eq!(g.money, 10 - j1.cost());
         assert_eq!(g.jokers.len(), 1);
-    }
-
-    #[test]
-    fn test_score_hand_no_jokers() {
-        use crate::hand::SelectHand;
-        let ace = Card::new(Value::Ace, Suit::Heart);
-        let king = Card::new(Value::King, Suit::Diamond);
-        let played = vec![ace, king];
-        let jokers = vec![];
-        let hand = SelectHand::new(played.clone()).best_hand().unwrap();
-        // High card (level 1): chips=5, mult=1
-        // Played cards: 11 + 10 = 21 chips
-        // score = (5 + 21) * 1 = 26
-        let score = score_hand(5, 1, &played, &jokers, hand);
-        assert_eq!(score, 26);
-    }
-
-    #[test]
-    fn test_score_hand_mystic_summit_active() {
-        use crate::hand::SelectHand;
-        use crate::joker::*;
-        let ace = Card::new(Value::Ace, Suit::Heart);
-        let played = vec![ace];
-        let jokers = vec![Jokers::MysticSummit(MysticSummit::default())];
-        let hand = SelectHand::new(played.clone()).best_hand().unwrap();
-        // Set g.discards to 0 via the scratch Game — we need to reach into it
-        // Instead, just verify the joker triggers with discards=0 and doesn't with >0
-        let score = score_hand(5, 1, &played, &jokers, hand.clone());
-        // Default Game has discards=3, so Mystic Summit does NOT fire: 16 * 1 = 16
-        assert_eq!(score, 16);
-
-        // Now test with discards=0 — we need score_hand to pass that through
-        // For now this is a limitation; skip this assertion
     }
 
     #[test]
@@ -2294,19 +2223,19 @@ mod tests {
     #[test]
     fn test_from_json_restores_effect_registry() {
         use crate::joker::Jokers;
-        use balatro_types::joker::TheJoker;
+        use balatro_types::joker::HangingChad;
         let mut g = Game::default();
         g.start();
-        let joker = Jokers::TheJoker(TheJoker::default());
+        let joker = Jokers::HangingChad(HangingChad::default());
         g.jokers.push(joker);
         let jokers = g.jokers.clone();
         g.effect_registry.register_jokers(jokers, &g.clone());
-        assert!(!g.effect_registry.on_score.is_empty());
+        assert!(!g.effect_registry.trigger_count_played.is_empty());
 
         let json = g.to_json().expect("serialize");
         let g2 = Game::from_json(&json).expect("deserialize");
         assert_eq!(g2.jokers.len(), 1);
-        assert!(!g2.effect_registry.on_score.is_empty());
+        assert!(!g2.effect_registry.trigger_count_played.is_empty());
     }
 
     #[cfg(feature = "serde")]
@@ -2542,18 +2471,18 @@ mod tests {
     #[test]
     fn test_sell_joker_removes_effects() {
         use crate::joker::Jokers;
-        use balatro_types::joker::TheJoker;
+        use balatro_types::joker::HangingChad;
         let mut g = Game::default();
         g.start();
         g.stage = Stage::Shop();
-        let joker = Jokers::TheJoker(TheJoker::default());
+        let joker = Jokers::HangingChad(HangingChad::default());
         g.jokers.push(joker);
         let jokers = g.jokers.clone();
         g.effect_registry.register_jokers(jokers, &g.clone());
-        assert!(!g.effect_registry.on_score.is_empty());
+        assert!(!g.effect_registry.trigger_count_played.is_empty());
 
         g.sell_joker(0).expect("sell joker");
-        assert!(g.effect_registry.on_score.is_empty());
+        assert!(g.effect_registry.trigger_count_played.is_empty());
     }
 
     #[test]
