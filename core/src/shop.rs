@@ -267,14 +267,11 @@ impl JokerGenerator {
     // Randomly generate rarity of new joker.
     // 70% chance Common, 25% chance Uncommon, 5% chance Rare.
     // Legendary can only appear from Soul Spectral Card.
-    fn gen_rarity(&self) -> Rarity {
-        // For now, we only have common jokers...
-        Rarity::Common
-        // let choices = [Rarity::Common, Rarity::Uncommon, Rarity::Rare];
-        // let weights = [70, 25, 5];
-        // let dist = WeightedIndex::new(&weights).unwrap();
-        // let mut rng = thread_rng();
-        // return choices[dist.sample(&mut rng)].clone();
+    fn gen_rarity(&self, rng: &mut impl Rng) -> Rarity {
+        let choices = [Rarity::Common, Rarity::Uncommon, Rarity::Rare];
+        let weights = [70u32, 25, 5];
+        let dist = WeightedIndex::new(weights).unwrap();
+        choices[dist.sample(rng)]
     }
 
     pub(crate) fn gen_joker(
@@ -283,7 +280,7 @@ impl JokerGenerator {
         exclude: &[Jokers],
         rng: &mut impl Rng,
     ) -> Jokers {
-        let rarity = self.gen_rarity();
+        let rarity = self.gen_rarity(rng);
         let all = jokers_by_rarity(rarity);
         let choices: Vec<_> = all
             .iter()
@@ -570,5 +567,36 @@ mod tests {
             };
             assert_eq!(pack.contents.len(), expected_count);
         }
+    }
+
+    #[test]
+    fn test_gen_joker_rarity_distribution_roughly_matches_weights() {
+        use rand::SeedableRng;
+        let mut rng = ChaCha8Rng::seed_from_u64(1234);
+        let gen = JokerGenerator::new();
+        let n = 2000;
+        let mut common = 0;
+        let mut uncommon = 0;
+        let mut rare = 0;
+        for _ in 0..n {
+            match gen.gen_joker(1, &[], &mut rng).rarity() {
+                Rarity::Common => common += 1,
+                Rarity::Uncommon => uncommon += 1,
+                Rarity::Rare => rare += 1,
+                Rarity::Legendary => panic!("gen_joker should never roll Legendary"),
+            }
+        }
+        // Generous bands around the intended 70/25/5 split - wide enough to
+        // never flake, tight enough to catch the roll being broken/reverted
+        // to Common-only.
+        assert!(
+            (1200..1900).contains(&common),
+            "expected ~70% Common, got {common}/{n}"
+        );
+        assert!(
+            (300..800).contains(&uncommon),
+            "expected ~25% Uncommon, got {uncommon}/{n}"
+        );
+        assert!((10..250).contains(&rare), "expected ~5% Rare, got {rare}/{n}");
     }
 }
