@@ -1,3 +1,4 @@
+use crate::card::Card;
 use crate::game::Game;
 use crate::hand::MadeHand;
 use crate::joker::{JokerEffects, Jokers};
@@ -6,6 +7,7 @@ use std::sync::{Arc, Mutex};
 type GameHandFn = Arc<Mutex<dyn Fn(&mut Game, MadeHand) + Send + 'static>>;
 type GameFn = Arc<Mutex<dyn Fn(&mut Game) + Send + 'static>>;
 type GameModifyFn = Arc<Mutex<dyn Fn(&mut Game, &mut MadeHand) + Send + 'static>>;
+type CardTriggerFn = Arc<Mutex<dyn Fn(&mut Game, Card, bool) -> usize + Send + 'static>>;
 
 #[derive(Debug, Clone)]
 pub struct EffectRegistry {
@@ -15,6 +17,8 @@ pub struct EffectRegistry {
     pub on_handrank: Vec<Effects>,
     pub on_modify_hand: Vec<Effects>,
     pub on_round_end: Vec<Effects>,
+    pub trigger_count_played: Vec<Effects>,
+    pub trigger_count_held: Vec<Effects>,
 }
 
 impl EffectRegistry {
@@ -26,6 +30,8 @@ impl EffectRegistry {
             on_handrank: Vec::new(),
             on_modify_hand: Vec::new(),
             on_round_end: Vec::new(),
+            trigger_count_played: Vec::new(),
+            trigger_count_held: Vec::new(),
         }
     }
 }
@@ -44,6 +50,8 @@ impl EffectRegistry {
         self.on_handrank.clear();
         self.on_modify_hand.clear();
         self.on_round_end.clear();
+        self.trigger_count_played.clear();
+        self.trigger_count_held.clear();
         for j in jokers {
             for e in j.effects(game) {
                 match e {
@@ -53,6 +61,8 @@ impl EffectRegistry {
                     Effects::OnHandRank(_) => self.on_handrank.push(e),
                     Effects::OnModifyHand(_) => self.on_modify_hand.push(e),
                     Effects::OnRoundEnd(_) => self.on_round_end.push(e),
+                    Effects::TriggerCountPlayed(_) => self.trigger_count_played.push(e),
+                    Effects::TriggerCountHeld(_) => self.trigger_count_held.push(e),
                 }
             }
         }
@@ -69,6 +79,8 @@ pub enum Effects {
     OnHandRank(GameFn),
     OnModifyHand(GameModifyFn),
     OnRoundEnd(GameFn),
+    TriggerCountPlayed(CardTriggerFn),
+    TriggerCountHeld(CardTriggerFn),
 }
 
 impl std::fmt::Debug for Effects {
@@ -80,6 +92,8 @@ impl std::fmt::Debug for Effects {
             Self::OnHandRank(_) => write!(f, "OnHandRank"),
             Self::OnModifyHand(_) => write!(f, "OnModifyHand"),
             Self::OnRoundEnd(_) => write!(f, "OnRoundEnd"),
+            Self::TriggerCountPlayed(_) => write!(f, "TriggerCountPlayed"),
+            Self::TriggerCountHeld(_) => write!(f, "TriggerCountHeld"),
         }
     }
 }

@@ -546,6 +546,55 @@ impl JokerEffects for Jokers {
                 }
                 vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
             }
+            Self::Dusk(_) => {
+                fn extra(g: &mut Game, _card: Card, _is_first: bool) -> usize {
+                    if g.plays == 0 {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                vec![Effects::TriggerCountPlayed(Arc::new(Mutex::new(extra)))]
+            }
+            Self::Hack(_) => {
+                fn extra(_g: &mut Game, card: Card, _is_first: bool) -> usize {
+                    if matches!(
+                        card.value,
+                        Value::Two | Value::Three | Value::Four | Value::Five
+                    ) {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                vec![Effects::TriggerCountPlayed(Arc::new(Mutex::new(extra)))]
+            }
+            Self::SockAndBuskin(_) => {
+                fn extra(_g: &mut Game, card: Card, _is_first: bool) -> usize {
+                    if card.is_face_card() {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                vec![Effects::TriggerCountPlayed(Arc::new(Mutex::new(extra)))]
+            }
+            Self::HangingChad(_) => {
+                fn extra(_g: &mut Game, _card: Card, is_first: bool) -> usize {
+                    if is_first {
+                        2
+                    } else {
+                        0
+                    }
+                }
+                vec![Effects::TriggerCountPlayed(Arc::new(Mutex::new(extra)))]
+            }
+            Self::Mime(_) => {
+                fn extra(_g: &mut Game, _card: Card, _is_first: bool) -> usize {
+                    1
+                }
+                vec![Effects::TriggerCountHeld(Arc::new(Mutex::new(extra)))]
+            }
             _ => vec![],
         }
     }
@@ -607,6 +656,11 @@ impl JokerEffects for Jokers {
                 | Self::BlueJoker(_)
                 | Self::Erosion(_)
                 | Self::DriversLicense(_)
+                | Self::Mime(_)
+                | Self::Dusk(_)
+                | Self::Hack(_)
+                | Self::SockAndBuskin(_)
+                | Self::HangingChad(_)
         )
     }
 }
@@ -640,9 +694,9 @@ mod tests {
     // `effects()` behavior implemented. Shop/pack generation
     // must never offer joker that silently does nothing.
     #[test]
-    fn test_exactly_54_jokers_implemented() {
+    fn test_exactly_59_jokers_implemented() {
         let count = Jokers::iter().filter(|j| j.is_implemented()).count();
-        assert_eq!(count, 54);
+        assert_eq!(count, 59);
     }
 
     #[test]
@@ -2626,5 +2680,88 @@ mod tests {
             money_before + 1,
             "Wild should count as Diamond for RoughGem"
         );
+    }
+
+    #[test]
+    fn test_hanging_chad_buy_flow() {
+        // High Card Ace, alone -> first (only) card retriggers 2 extra times.
+        // before: (5 + 11) * 1 = 16; after: (5 + 11*3) * 1 = 38
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let j = Jokers::HangingChad(HangingChad::default());
+        score_before_after_joker(j, hand, 16, 38);
+    }
+
+    #[test]
+    fn test_hack_buy_flow() {
+        // High Card Three, alone -> retriggers since 3 is in 2-5.
+        // before: (5 + 3) * 1 = 8; after: (5 + 3 + 3) * 1 = 11
+        let three = Card::new(Value::Three, Suit::Heart);
+        let hand = SelectHand::new(vec![three]);
+        let j = Jokers::Hack(Hack::default());
+        score_before_after_joker(j, hand, 8, 11);
+    }
+
+    #[test]
+    fn test_sock_and_buskin_buy_flow() {
+        // High Card Jack, alone -> retriggers since Jack is a face card.
+        // before: (5 + 10) * 1 = 15; after: (5 + 10 + 10) * 1 = 25
+        let jack = Card::new(Value::Jack, Suit::Heart);
+        let hand = SelectHand::new(vec![jack]);
+        let j = Jokers::SockAndBuskin(SockAndBuskin::default());
+        score_before_after_joker(j, hand, 15, 25);
+    }
+
+    #[test]
+    fn test_mime_buy_flow_retriggers_held_steel() {
+        // Same shape/numbers as test_seal_red_retrigger_steel_held (game.rs):
+        // mult 2 -> 3 (floor(2*1.5)) -> 4 (floor(3*1.5)); score = 30 * 4 = 120
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Diamond);
+        let mut steel_king = Card::new(Value::King, Suit::Spade);
+        steel_king.enhancement = Some(Enhancement::Steel);
+        g.available.extend(vec![steel_king]);
+        let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
+
+        let score = g.calc_score(hand.clone());
+        assert_eq!(score, 90);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let j = Jokers::Mime(Mime::default());
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let score = g.calc_score(hand);
+        assert_eq!(score, 120);
+    }
+
+    #[test]
+    fn test_dusk_buy_flow_retriggers_final_hand() {
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.plays = 0;
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+
+        let score = g.calc_score(hand.clone());
+        assert_eq!(score, 16);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let j = Jokers::Dusk(Dusk::default());
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let score = g.calc_score(hand);
+        assert_eq!(score, 27);
     }
 }

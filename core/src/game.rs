@@ -390,13 +390,26 @@ impl Game {
         });
     }
 
-    // Extension point for retrigger jokers (Mime, Dusk, Hack, etc)
-    fn trigger_count(&self, card: &Card) -> usize {
-        if card.seal == Some(Seal::Red) {
-            2
-        } else {
-            1
+    // Extension point for retrigger (jokers + red seal)
+    fn trigger_count_played(&mut self, card: &Card, is_first: bool) -> usize {
+        let mut n = if card.seal == Some(Seal::Red) { 2 } else { 1 };
+        for e in self.effect_registry.trigger_count_played.clone() {
+            if let Effects::TriggerCountPlayed(f) = e {
+                n += f.lock().unwrap()(self, *card, is_first);
+            }
         }
+        n
+    }
+
+    // Extension point for retrigger (jokers + red seal)
+    fn trigger_count_held(&mut self, card: &Card) -> usize {
+        let mut n = if card.seal == Some(Seal::Red) { 2 } else { 1 };
+        for e in self.effect_registry.trigger_count_held.clone() {
+            if let Effects::TriggerCountHeld(f) = e {
+                n += f.lock().unwrap()(self, *card, false);
+            }
+        }
+        n
     }
 
     fn calc_score_inner(
@@ -418,9 +431,15 @@ impl Game {
             false,
         );
 
+        // first card in original play order, across the whole selection (not just
+        // hand.hand.cards()'s best-5 subset).
+        // lets stone kickers compete for "first played card" too.
+        let first_played_id = hand.all.first().map(|c| c.id);
+
         // per-scored-card, rank chips, enhancements, editions
         for card in hand.hand.cards() {
-            for i in 0..self.trigger_count(&card) {
+            let is_first = Some(card.id) == first_played_id;
+            for trig in 0..self.trigger_count_played(&card, is_first) {
                 let chips_before = self.chips;
                 let mult_before = self.mult;
 
@@ -457,30 +476,35 @@ impl Game {
                     ScoreSource::PlayedCard(card),
                     chips_before,
                     mult_before,
-                    i > 0,
+                    trig > 0,
                 );
             }
         }
 
-        // stone cards always score +50 chips, even as kickers
+        // stone cards always score +50 chips, even as kickers outside the played
+        // hand's own scoring subset.
+        // still subject to the same retrigger rules as any other played card.
         for card in &hand.all {
             if card.enhancement == Some(Enhancement::Stone) {
-                let chips_before = self.chips;
-                let mult_before = self.mult;
-                self.chips += 50;
-                self.record_step(
-                    &mut trace,
-                    ScoreSource::StoneKicker(*card),
-                    chips_before,
-                    mult_before,
-                    false,
-                );
+                let is_first = Some(card.id) == first_played_id;
+                for trig in 0..self.trigger_count_played(card, is_first) {
+                    let chips_before = self.chips;
+                    let mult_before = self.mult;
+                    self.chips += 50;
+                    self.record_step(
+                        &mut trace,
+                        ScoreSource::StoneKicker(*card),
+                        chips_before,
+                        mult_before,
+                        trig > 0,
+                    );
+                }
             }
         }
 
         // held in hand effects (cards not played this hand)
         for card in self.available.not_selected() {
-            for i in 0..self.trigger_count(&card) {
+            for trig in 0..self.trigger_count_held(&card) {
                 let chips_before = self.chips;
                 let mult_before = self.mult;
                 match card.enhancement {
@@ -493,7 +517,7 @@ impl Game {
                     ScoreSource::HeldCard(card),
                     chips_before,
                     mult_before,
-                    i > 0,
+                    trig > 0,
                 );
             }
         }
@@ -1862,6 +1886,149 @@ mod tests {
         steel_red_king.enhancement = Some(Enhancement::Steel);
         steel_red_king.seal = Some(Seal::Red);
         g.available.extend(vec![steel_red_king]);
+        let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 120);
+    }
+
+    #[test]
+    fn test_stone_kicker_red_seal_retrigger() {
+        // [Ace, Stone+Red Seal] -> High Card Ace; stone kicker retriggers twice.
+        // (5 + 11 + 50 + 50) * 1 = 116
+        let mut g = Game::default();
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let mut stone = Card::new(Value::Two, Suit::Diamond);
+        stone.enhancement = Some(Enhancement::Stone);
+        stone.seal = Some(Seal::Red);
+        let hand = SelectHand::new(vec![ace, stone]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 116);
+    }
+
+    #[test]
+    fn test_hanging_chad_retriggers_first_played_card() {
+        use crate::joker::*;
+        // [Ace, Stone], Ace first -> Ace retriggers 3x, stone kicker only 1x.
+        // (5 + 11*3 + 50) * 1 = 88
+        let mut g = Game::default();
+        g.jokers.push(Jokers::HangingChad(HangingChad::default()));
+        let jokers = g.jokers.clone();
+        g.effect_registry.register_jokers(jokers, &g.clone());
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let mut stone = Card::new(Value::Two, Suit::Diamond);
+        stone.enhancement = Some(Enhancement::Stone);
+        let hand = SelectHand::new(vec![ace, stone]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 88);
+    }
+
+    #[test]
+    fn test_hanging_chad_stone_kicker_competes_for_first() {
+        use crate::joker::*;
+        // Same cards as above, stone selected first this time -> the stone
+        // kicker gets HangingChad's retrigger instead of the Ace.
+        // (5 + 11 + 50*3) * 1 = 166
+        let mut g = Game::default();
+        g.jokers.push(Jokers::HangingChad(HangingChad::default()));
+        let jokers = g.jokers.clone();
+        g.effect_registry.register_jokers(jokers, &g.clone());
+        let mut stone = Card::new(Value::Two, Suit::Diamond);
+        stone.enhancement = Some(Enhancement::Stone);
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![stone, ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 166);
+    }
+
+    #[test]
+    fn test_dusk_no_retrigger_with_plays_remaining() {
+        use crate::joker::*;
+        let mut g = Game::default();
+        g.jokers.push(Jokers::Dusk(Dusk::default()));
+        let jokers = g.jokers.clone();
+        g.effect_registry.register_jokers(jokers, &g.clone());
+        g.plays = 1;
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 16);
+    }
+
+    #[test]
+    fn test_dusk_retriggers_on_final_hand() {
+        use crate::joker::*;
+        // Same hand as above, but this is the last play of the round:
+        // (5 + 11 + 11) * 1 = 27
+        let mut g = Game::default();
+        g.jokers.push(Jokers::Dusk(Dusk::default()));
+        let jokers = g.jokers.clone();
+        g.effect_registry.register_jokers(jokers, &g.clone());
+        g.plays = 0;
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 27);
+    }
+
+    #[test]
+    fn test_hack_retriggers_only_low_ranks() {
+        use crate::joker::*;
+        // Two Pair (Threes + Kings): Hack retriggers each Three, not the Kings.
+        let cards = vec![
+            Card::new(Value::Three, Suit::Heart),
+            Card::new(Value::Three, Suit::Diamond),
+            Card::new(Value::King, Suit::Spade),
+            Card::new(Value::King, Suit::Club),
+        ];
+
+        let mut base_game = Game::default();
+        let base_hand = SelectHand::new(cards.clone()).best_hand().unwrap();
+        let base = base_game.calc_score(base_hand);
+
+        let mut g = Game::default();
+        g.jokers.push(Jokers::Hack(Hack::default()));
+        let jokers = g.jokers.clone();
+        g.effect_registry.register_jokers(jokers, &g.clone());
+        let hand = SelectHand::new(cards).best_hand().unwrap();
+        // Each Three retriggers once more: +3 chips * 2 cards = +6 chips,
+        // scaled by TwoPair's X2 mult -> +12 final score.
+        assert_eq!(g.calc_score(hand), base + 12);
+    }
+
+    #[test]
+    fn test_sock_and_buskin_retriggers_only_face_cards() {
+        use crate::joker::*;
+        // Two Pair (Jacks + Fours): SockAndBuskin retriggers each Jack, not the Fours.
+        let cards = vec![
+            Card::new(Value::Jack, Suit::Heart),
+            Card::new(Value::Jack, Suit::Diamond),
+            Card::new(Value::Four, Suit::Spade),
+            Card::new(Value::Four, Suit::Club),
+        ];
+
+        let mut base_game = Game::default();
+        let base_hand = SelectHand::new(cards.clone()).best_hand().unwrap();
+        let base = base_game.calc_score(base_hand);
+
+        let mut g = Game::default();
+        g.jokers
+            .push(Jokers::SockAndBuskin(SockAndBuskin::default()));
+        let jokers = g.jokers.clone();
+        g.effect_registry.register_jokers(jokers, &g.clone());
+        let hand = SelectHand::new(cards).best_hand().unwrap();
+        // Each Jack retriggers once more: +10 chips * 2 cards = +20 chips,
+        // scaled by TwoPair's X2 mult -> +40 final score.
+        assert_eq!(g.calc_score(hand), base + 40);
+    }
+
+    #[test]
+    fn test_mime_retriggers_held_steel() {
+        use crate::joker::*;
+        // Same math as test_seal_red_retrigger_steel_held (120), Mime instead of Red Seal:
+        // mult 2 -> 3 (floor(2*1.5)) -> 4 (floor(3*1.5)); score = 30 * 4 = 120
+        let mut g = Game::default();
+        g.jokers.push(Jokers::Mime(Mime::default()));
+        let jokers = g.jokers.clone();
+        g.effect_registry.register_jokers(jokers, &g.clone());
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Diamond);
+        let mut steel_king = Card::new(Value::King, Suit::Spade);
+        steel_king.enhancement = Some(Enhancement::Steel);
+        g.available.extend(vec![steel_king]);
         let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
         assert_eq!(g.calc_score(hand), 120);
     }
