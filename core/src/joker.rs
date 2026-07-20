@@ -546,6 +546,55 @@ impl JokerEffects for Jokers {
                 }
                 vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
             }
+            Self::Dusk(_) => {
+                fn extra(g: &mut Game, _card: Card, _is_first: bool) -> usize {
+                    if g.plays == 0 {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                vec![Effects::TriggerCountPlayed(Arc::new(Mutex::new(extra)))]
+            }
+            Self::Hack(_) => {
+                fn extra(_g: &mut Game, card: Card, _is_first: bool) -> usize {
+                    if matches!(
+                        card.value,
+                        Value::Two | Value::Three | Value::Four | Value::Five
+                    ) {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                vec![Effects::TriggerCountPlayed(Arc::new(Mutex::new(extra)))]
+            }
+            Self::SockAndBuskin(_) => {
+                fn extra(_g: &mut Game, card: Card, _is_first: bool) -> usize {
+                    if card.is_face_card() {
+                        1
+                    } else {
+                        0
+                    }
+                }
+                vec![Effects::TriggerCountPlayed(Arc::new(Mutex::new(extra)))]
+            }
+            Self::HangingChad(_) => {
+                fn extra(_g: &mut Game, _card: Card, is_first: bool) -> usize {
+                    if is_first {
+                        2
+                    } else {
+                        0
+                    }
+                }
+                vec![Effects::TriggerCountPlayed(Arc::new(Mutex::new(extra)))]
+            }
+            Self::Mime(_) => {
+                fn extra(_g: &mut Game, _card: Card, _is_first: bool) -> usize {
+                    1
+                }
+                vec![Effects::TriggerCountHeld(Arc::new(Mutex::new(extra)))]
+            }
             _ => vec![],
         }
     }
