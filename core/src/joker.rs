@@ -2938,6 +2938,63 @@ mod tests {
     }
 
     #[test]
+    fn test_multiple_retrigger_jokers_stack() {
+        // High Card Three, alone. Three qualifies for Hack (2-5)
+        // and (with Pareidolia active) also for SockAndBuskin.
+        // HangingChad adds a third trigger source.
+        // Each trigger re-scores card's chip value (3), so total
+        // trigger count directly multiplies.
+        let three = Card::new(Value::Three, Suit::Heart);
+        let hand = SelectHand::new(vec![three]);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        let best = hand.best_hand().unwrap();
+        // no jokers: (5 + 3) * 1 = 8
+        assert_eq!(g.calc_score(best.clone()), 8);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let hack = Jokers::Hack(Hack::default());
+        g.shop.jokers.push(hack.clone());
+        g.buy_joker(hack).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        // + Hack: 2 triggers (base 1 + Hack's 1) -> (5 + 3*2) * 1 = 11
+        assert_eq!(g.calc_score(best.clone()), 11);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let sb = Jokers::SockAndBuskin(SockAndBuskin::default());
+        g.shop.jokers.push(sb.clone());
+        g.buy_joker(sb).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        // + SockAndBuskin, no Pareidolia yet: Three isn't a face card -> unchanged
+        assert_eq!(g.calc_score(best.clone()), 11);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let p = Jokers::Pareidolia(Pareidolia::default());
+        g.shop.jokers.push(p.clone());
+        g.buy_joker(p).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        // + Pareidolia: SockAndBuskin's check now passes too -> 3 triggers
+        // (base 1 + Hack 1 + SockAndBuskin 1) -> (5 + 3*3) * 1 = 14
+        assert_eq!(g.calc_score(best.clone()), 14);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let hc = Jokers::HangingChad(HangingChad::default());
+        g.shop.jokers.push(hc.clone());
+        g.buy_joker(hc).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        // + HangingChad: card is first -> +2 more -> 5 triggers total
+        // (5 + 3*5) * 1 = 20
+        assert_eq!(g.calc_score(best.clone()), 20);
+    }
+
+    #[test]
     fn test_mime_buy_flow_retriggers_held_steel() {
         // Same shape/numbers as test_seal_red_retrigger_steel_held (game.rs):
         // mult 2 -> 3 (floor(2*1.5)) -> 4 (floor(3*1.5)); score = 30 * 4 = 120
