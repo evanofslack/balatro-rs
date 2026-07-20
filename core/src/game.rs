@@ -431,10 +431,15 @@ impl Game {
             false,
         );
 
-        // first card in original play order, across the whole selection (not just
-        // hand.hand.cards()'s best-5 subset).
-        // lets stone kickers compete for "first played card" too.
-        let first_played_id = hand.all.first().map(|c| c.id);
+        // first card in original play order that's actually used in scoring:
+        // either part of the made hand, or a stone kicker (which always scores).
+        // ordinary kickers that never score don't count, even if played first.
+        let hand_ids: Vec<usize> = hand.hand.cards().iter().map(|c| c.id).collect();
+        let first_played_id = hand
+            .all
+            .iter()
+            .find(|c| hand_ids.contains(&c.id) || c.enhancement == Some(Enhancement::Stone))
+            .map(|c| c.id);
 
         // per-scored-card, rank chips, enhancements, editions
         for card in hand.hand.cards() {

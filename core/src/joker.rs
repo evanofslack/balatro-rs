@@ -332,8 +332,9 @@ impl JokerEffects for Jokers {
             }
             Self::ReservedParking(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
+                    let pareidolia = g.jokers.iter().any(|j| matches!(j, Jokers::Pareidolia(_)));
                     for card in g.available.not_selected() {
-                        if card.is_face_card() && g.prob_roll(1, 2) {
+                        if (card.is_face_card() || pareidolia) && g.prob_roll(1, 2) {
                             g.money += 1;
                         }
                     }
@@ -572,8 +573,9 @@ impl JokerEffects for Jokers {
                 vec![Effects::TriggerCountPlayed(Arc::new(Mutex::new(extra)))]
             }
             Self::SockAndBuskin(_) => {
-                fn extra(_g: &mut Game, card: Card, _is_first: bool) -> usize {
-                    if card.is_face_card() {
+                fn extra(g: &mut Game, card: Card, _is_first: bool) -> usize {
+                    let pareidolia = g.jokers.iter().any(|j| matches!(j, Jokers::Pareidolia(_)));
+                    if card.is_face_card() || pareidolia {
                         1
                     } else {
                         0
@@ -2166,6 +2168,47 @@ mod tests {
     }
 
     #[test]
+    fn test_reserved_parking_pareidolia_counts_non_face_cards() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let rp = Jokers::ReservedParking(ReservedParking::default());
+        let p = Jokers::Pareidolia(Pareidolia::default());
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.available.extend(vec![
+            Card::new(Value::Ace, Suit::Club),
+            Card::new(Value::Two, Suit::Spade),
+        ]);
+        let best = hand.best_hand().unwrap();
+        g.calc_score(best.clone());
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(rp.clone());
+        g.buy_joker(rp).unwrap();
+        g.shop.jokers.push(p.clone());
+        g.buy_joker(p).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let mut saw_increase = false;
+        for _ in 0..100 {
+            g.money = 994;
+            g.calc_score(best.clone());
+            if g.money > 994 {
+                saw_increase = true;
+                break;
+            }
+        }
+        assert!(
+            saw_increase,
+            "Pareidolia should make non-face held cards count for Reserved Parking"
+        );
+    }
+
+    #[test]
     fn test_baseball_card() {
         let ten = Card::new(Value::Ten, Suit::Heart);
         let hand = SelectHand::new(vec![ten, ten]);
@@ -2752,6 +2795,23 @@ mod tests {
     }
 
     #[test]
+    fn test_hanging_chad_skips_unscored_leading_kicker() {
+        // Pair of Kings with an unmatched Queen kicker played first. The Queen
+        // never scores, so "first played card used in scoring" must resolve
+        // to the first King, not the Queen.
+        // Pair (level 1): 10 chips, 2 mult. Kings score 10 chips each.
+        // before: (10 + 10 + 10) * 2 = 60
+        // after: king1 retriggers (1 base + 2 from HangingChad = 3 triggers),
+        // king2 doesn't: (10 + 10*3 + 10*1) * 2 = 100
+        let queen = Card::new(Value::Queen, Suit::Diamond);
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Spade);
+        let hand = SelectHand::new(vec![queen, king1, king2]);
+        let j = Jokers::HangingChad(HangingChad::default());
+        score_before_after_joker(j, hand, 60, 100);
+    }
+
+    #[test]
     fn test_hack_buy_flow() {
         // High Card Three, alone -> retriggers since 3 is in 2-5.
         // before: (5 + 3) * 1 = 8; after: (5 + 3 + 3) * 1 = 11
@@ -2769,6 +2829,40 @@ mod tests {
         let hand = SelectHand::new(vec![jack]);
         let j = Jokers::SockAndBuskin(SockAndBuskin::default());
         score_before_after_joker(j, hand, 15, 25);
+    }
+
+    #[test]
+    fn test_sock_and_buskin_pareidolia_retriggers_non_face_card() {
+        // High Card Two, alone. Two isn't a face card, so SockAndBuskin alone
+        // doesn't retrigger it. Once Pareidolia is also owned, it should.
+        // no jokers: (5 + 2) * 1 = 7
+        // + SockAndBuskin only: still 7 (not a face card)
+        // + Pareidolia: (5 + 2*2) * 1 = 9 (now retriggers once)
+        let two = Card::new(Value::Two, Suit::Heart);
+        let hand = SelectHand::new(vec![two]);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        let best = hand.best_hand().unwrap();
+        assert_eq!(g.calc_score(best.clone()), 7);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let sb = Jokers::SockAndBuskin(SockAndBuskin::default());
+        g.shop.jokers.push(sb.clone());
+        g.buy_joker(sb).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 7);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let p = Jokers::Pareidolia(Pareidolia::default());
+        g.shop.jokers.push(p.clone());
+        g.buy_joker(p).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 9);
     }
 
     #[test]
