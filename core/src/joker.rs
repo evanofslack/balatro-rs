@@ -222,7 +222,7 @@ impl JokerEffects for Jokers {
             Self::EvenSteven(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
-                        if card.is_even() {
+                        if g.is_even(&card) {
                             g.mult += 4;
                         }
                     }
@@ -232,7 +232,7 @@ impl JokerEffects for Jokers {
             Self::OddTodd(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
-                        if card.is_odd() {
+                        if g.is_odd(&card) {
                             g.chips += 31;
                         }
                     }
@@ -1772,6 +1772,70 @@ mod tests {
         // Odd Todd: 0 odd cards -> no bonus
         let after = 260;
         score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_even_steven_pareidolia_disqualifies_even_cards() {
+        // High Card Two, alone: (5 + 2) * 1 = 7
+        // + EvenSteven: Two is even -> +4 mult: (5 + 2) * (1 + 4) = 35
+        // + Pareidolia: Two now counts as a face card, so no longer "even": back to 7
+        let two = Card::new(Value::Two, Suit::Heart);
+        let hand = SelectHand::new(vec![two]);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        let best = hand.best_hand().unwrap();
+        assert_eq!(g.calc_score(best.clone()), 7);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let es = Jokers::EvenSteven(EvenSteven::default());
+        g.shop.jokers.push(es.clone());
+        g.buy_joker(es).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 35);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let p = Jokers::Pareidolia(Pareidolia::default());
+        g.shop.jokers.push(p.clone());
+        g.buy_joker(p).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 7);
+    }
+
+    #[test]
+    fn test_odd_todd_pareidolia_disqualifies_odd_cards() {
+        // High Card Three, alone: (5 + 3) * 1 = 8
+        // + OddTodd: Three is odd -> +31 chips: (5 + 3 + 31) * 1 = 39
+        // + Pareidolia: Three now counts as a face card, so no longer "odd": back to 8
+        let three = Card::new(Value::Three, Suit::Heart);
+        let hand = SelectHand::new(vec![three]);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        let best = hand.best_hand().unwrap();
+        assert_eq!(g.calc_score(best.clone()), 8);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let ot = Jokers::OddTodd(OddTodd::default());
+        g.shop.jokers.push(ot.clone());
+        g.buy_joker(ot).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 39);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let p = Jokers::Pareidolia(Pareidolia::default());
+        g.shop.jokers.push(p.clone());
+        g.buy_joker(p).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 8);
     }
 
     #[test]

@@ -341,6 +341,14 @@ impl Game {
         card.is_face_card() || self.effect_registry.rule_flags.contains(&RuleFlag::AllCardsAreFace)
     }
 
+    pub(crate) fn is_even(&self, card: &Card) -> bool {
+        card.is_even_impl(self.is_face_card(card))
+    }
+
+    pub(crate) fn is_odd(&self, card: &Card) -> bool {
+        card.is_odd_impl(self.is_face_card(card))
+    }
+
     // Every card the player owns this run, regardless of whether it's
     // currently undrawn, in hand, or already discarded this round.
     // `self.deck` alone is only the undrawn remainder mid-round.

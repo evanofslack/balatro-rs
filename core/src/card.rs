@@ -33,8 +33,6 @@ pub struct Card {
     pub edition: Edition,
     pub enhancement: Option<Enhancement>,
     pub seal: Option<Seal>,
-    // set by effects like Pareidolia on scoring copies
-    pub face_card_override: bool,
 }
 
 impl Card {
@@ -47,20 +45,27 @@ impl Card {
             edition: Edition::Base,
             enhancement: None,
             seal: None,
-            face_card_override: false,
         }
     }
 
     pub fn is_face_card(&self) -> bool {
-        matches!(self.value, Value::Jack | Value::Queen | Value::King) || self.face_card_override
+        matches!(self.value, Value::Jack | Value::Queen | Value::King)
+    }
+
+    pub(crate) fn is_even_impl(&self, is_face: bool) -> bool {
+        self.value != Value::Ace && !is_face && (self.value as u16).is_multiple_of(2)
+    }
+
+    pub(crate) fn is_odd_impl(&self, is_face: bool) -> bool {
+        self.value == Value::Ace || (!is_face && !(self.value as u16).is_multiple_of(2))
     }
 
     pub fn is_even(&self) -> bool {
-        self.value != Value::Ace && !self.is_face_card() && (self.value as u16).is_multiple_of(2)
+        self.is_even_impl(self.is_face_card())
     }
 
     pub fn is_odd(&self) -> bool {
-        self.value == Value::Ace || !self.is_face_card() && !(self.value as u16).is_multiple_of(2)
+        self.is_odd_impl(self.is_face_card())
     }
 
     pub fn matches_suit(&self, suit: Suit) -> bool {
@@ -153,17 +158,6 @@ mod tests {
         assert!(!ten.is_face_card());
         let two = Card::new(Value::Two, Suit::Diamond);
         assert!(!two.is_face_card());
-    }
-
-    #[test]
-    fn test_face_card_override() {
-        let mut two = Card::new(Value::Two, Suit::Diamond);
-        assert!(!two.is_face_card());
-        two.face_card_override = true;
-        assert!(two.is_face_card());
-        // override does not affect even/odd — is_face_card() gates those too
-        assert!(!two.is_even());
-        assert!(!two.is_odd());
     }
 
     #[test]

@@ -111,7 +111,6 @@ impl TarotEffect for Tarot {
                     c.enhancement = right.enhancement;
                     c.edition = right.edition;
                     c.seal = right.seal;
-                    c.face_card_override = right.face_card_override;
                 });
             }
             Self::Hermit => {
