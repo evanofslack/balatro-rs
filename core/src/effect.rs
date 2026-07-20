@@ -2,12 +2,20 @@ use crate::card::Card;
 use crate::game::Game;
 use crate::hand::MadeHand;
 use crate::joker::{JokerEffects, Jokers};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 type GameHandFn = Arc<Mutex<dyn Fn(&mut Game, MadeHand) + Send + 'static>>;
 type GameFn = Arc<Mutex<dyn Fn(&mut Game) + Send + 'static>>;
 type GameModifyFn = Arc<Mutex<dyn Fn(&mut Game, &mut MadeHand) + Send + 'static>>;
 type CardTriggerFn = Arc<Mutex<dyn Fn(&mut Game, Card, bool) -> usize + Send + 'static>>;
+
+// A joker's mere presence flips a named rule used elsewhere in scoring/hand
+// evaluation, rather than contributing a chip/mult delta at a specific hook.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum RuleFlag {
+    AllCardsAreFace,
+}
 
 #[derive(Debug, Clone)]
 pub struct EffectRegistry {
@@ -19,6 +27,7 @@ pub struct EffectRegistry {
     pub on_round_end: Vec<Effects>,
     pub trigger_count_played: Vec<Effects>,
     pub trigger_count_held: Vec<Effects>,
+    pub rule_flags: HashSet<RuleFlag>,
 }
 
 impl EffectRegistry {
@@ -32,6 +41,7 @@ impl EffectRegistry {
             on_round_end: Vec::new(),
             trigger_count_played: Vec::new(),
             trigger_count_held: Vec::new(),
+            rule_flags: HashSet::new(),
         }
     }
 }
@@ -52,6 +62,7 @@ impl EffectRegistry {
         self.on_round_end.clear();
         self.trigger_count_played.clear();
         self.trigger_count_held.clear();
+        self.rule_flags.clear();
         for j in jokers {
             for e in j.effects(game) {
                 match e {
@@ -63,6 +74,9 @@ impl EffectRegistry {
                     Effects::OnRoundEnd(_) => self.on_round_end.push(e),
                     Effects::TriggerCountPlayed(_) => self.trigger_count_played.push(e),
                     Effects::TriggerCountHeld(_) => self.trigger_count_held.push(e),
+                    Effects::RuleFlag(flag) => {
+                        self.rule_flags.insert(flag);
+                    }
                 }
             }
         }
@@ -81,6 +95,7 @@ pub enum Effects {
     OnRoundEnd(GameFn),
     TriggerCountPlayed(CardTriggerFn),
     TriggerCountHeld(CardTriggerFn),
+    RuleFlag(RuleFlag),
 }
 
 impl std::fmt::Debug for Effects {
@@ -94,6 +109,7 @@ impl std::fmt::Debug for Effects {
             Self::OnRoundEnd(_) => write!(f, "OnRoundEnd"),
             Self::TriggerCountPlayed(_) => write!(f, "TriggerCountPlayed"),
             Self::TriggerCountHeld(_) => write!(f, "TriggerCountHeld"),
+            Self::RuleFlag(flag) => write!(f, "RuleFlag({:?})", flag),
         }
     }
 }

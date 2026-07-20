@@ -5,7 +5,7 @@ use crate::card::{Card, Edition, Enhancement, Seal};
 use crate::config::{Config, RngMode};
 use crate::consumable::Consumable;
 use crate::deck::Deck;
-use crate::effect::{EffectRegistry, Effects};
+use crate::effect::{EffectRegistry, Effects, RuleFlag};
 use crate::error::GameError;
 use crate::hand::{MadeHand, SelectHand};
 use crate::joker::{joker_display, JokerEffects, Jokers};
@@ -335,6 +335,10 @@ impl Game {
     pub(crate) fn mutate_card<F: Fn(&mut Card) + Copy>(&mut self, id: usize, f: F) {
         self.available.mutate_card(id, f);
         self.deck.mutate_card(id, f);
+    }
+
+    pub(crate) fn is_face_card(&self, card: &Card) -> bool {
+        card.is_face_card() || self.effect_registry.rule_flags.contains(&RuleFlag::AllCardsAreFace)
     }
 
     // Every card the player owns this run, regardless of whether it's

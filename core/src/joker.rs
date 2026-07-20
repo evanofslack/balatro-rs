@@ -1,5 +1,5 @@
 use crate::card::{Card, Enhancement, Suit, Value};
-use crate::effect::Effects;
+use crate::effect::{Effects, RuleFlag};
 use crate::game::Game;
 use crate::hand::{MadeHand, SelectHand};
 use std::sync::{Arc, Mutex};
@@ -205,7 +205,7 @@ impl JokerEffects for Jokers {
             Self::ScaryFace(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
-                        if card.is_face_card() {
+                        if g.is_face_card(&card) {
                             g.chips += 30;
                         }
                     }
@@ -218,24 +218,7 @@ impl JokerEffects for Jokers {
                 }
                 vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
             }
-            Self::Pareidolia(_) => {
-                fn apply(_g: &mut Game, hand: &mut MadeHand) {
-                    for card in &mut hand.all {
-                        card.face_card_override = true;
-                    }
-                    let cards: Vec<Card> = hand
-                        .hand
-                        .cards()
-                        .into_iter()
-                        .map(|mut c| {
-                            c.face_card_override = true;
-                            c
-                        })
-                        .collect();
-                    hand.hand = SelectHand::new(cards);
-                }
-                vec![Effects::OnModifyHand(Arc::new(Mutex::new(apply)))]
-            }
+            Self::Pareidolia(_) => vec![Effects::RuleFlag(RuleFlag::AllCardsAreFace)],
             Self::EvenSteven(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
@@ -270,7 +253,7 @@ impl JokerEffects for Jokers {
             Self::BusinessCard(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
-                        if card.is_face_card() && g.prob_roll(1, 2) {
+                        if g.is_face_card(&card) && g.prob_roll(1, 2) {
                             g.money += 2;
                         }
                     }
@@ -308,7 +291,7 @@ impl JokerEffects for Jokers {
                         .cards()
                         .into_iter()
                         .map(|mut c| {
-                            if c.is_face_card() {
+                            if g.is_face_card(&c) {
                                 c.enhancement = Some(Enhancement::Gold);
                                 g.mutate_card(c.id, |c| c.enhancement = Some(Enhancement::Gold));
                             }
@@ -322,7 +305,7 @@ impl JokerEffects for Jokers {
             Self::Photograph(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
-                        if card.is_face_card() {
+                        if g.is_face_card(&card) {
                             g.mult *= 2;
                             break;
                         }
@@ -332,9 +315,8 @@ impl JokerEffects for Jokers {
             }
             Self::ReservedParking(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    let pareidolia = g.jokers.iter().any(|j| matches!(j, Jokers::Pareidolia(_)));
                     for card in g.available.not_selected() {
-                        if (card.is_face_card() || pareidolia) && g.prob_roll(1, 2) {
+                        if g.is_face_card(&card) && g.prob_roll(1, 2) {
                             g.money += 1;
                         }
                     }
@@ -374,7 +356,7 @@ impl JokerEffects for Jokers {
             Self::SmileyFace(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
-                        if card.is_face_card() {
+                        if g.is_face_card(&card) {
                             g.mult += 5;
                         }
                     }
@@ -574,8 +556,7 @@ impl JokerEffects for Jokers {
             }
             Self::SockAndBuskin(_) => {
                 fn extra(g: &mut Game, card: Card, _is_first: bool) -> usize {
-                    let pareidolia = g.jokers.iter().any(|j| matches!(j, Jokers::Pareidolia(_)));
-                    if card.is_face_card() || pareidolia {
+                    if g.is_face_card(&card) {
                         1
                     } else {
                         0
@@ -2036,6 +2017,33 @@ mod tests {
         // the enhancement must persist onto the real card, not just the
         // transient MadeHand used for this scoring pass
         let scored = g.available.cards().into_iter().find(|c| c.id == king.id);
+        assert_eq!(scored.unwrap().enhancement, Some(Enhancement::Gold));
+    }
+
+    #[test]
+    fn test_midas_mask_pareidolia_converts_non_face_card_to_gold() {
+        let two = Card::new(Value::Two, Suit::Heart);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.available.extend(vec![two]);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mm = Jokers::MidasMask(MidasMask::default());
+        g.shop.jokers.push(mm.clone());
+        g.buy_joker(mm).unwrap();
+        let p = Jokers::Pareidolia(Pareidolia::default());
+        g.shop.jokers.push(p.clone());
+        g.buy_joker(p).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let hand = SelectHand::new(vec![two]);
+        g.calc_score(hand.best_hand().unwrap());
+
+        let scored = g.available.cards().into_iter().find(|c| c.id == two.id);
         assert_eq!(scored.unwrap().enhancement, Some(Enhancement::Gold));
     }
 
