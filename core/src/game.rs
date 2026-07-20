@@ -5,7 +5,7 @@ use crate::card::{Card, Edition, Enhancement, Seal};
 use crate::config::{Config, RngMode};
 use crate::consumable::Consumable;
 use crate::deck::Deck;
-use crate::effect::{EffectRegistry, Effects};
+use crate::effect::{EffectRegistry, Effects, RuleFlag};
 use crate::error::GameError;
 use crate::hand::{MadeHand, SelectHand};
 use crate::joker::{joker_display, JokerEffects, Jokers};
@@ -337,6 +337,18 @@ impl Game {
         self.deck.mutate_card(id, f);
     }
 
+    pub(crate) fn is_face_card(&self, card: &Card) -> bool {
+        card.is_face_card() || self.effect_registry.rule_flags.contains(&RuleFlag::AllCardsAreFace)
+    }
+
+    pub(crate) fn is_even(&self, card: &Card) -> bool {
+        card.is_even_impl(self.is_face_card(card))
+    }
+
+    pub(crate) fn is_odd(&self, card: &Card) -> bool {
+        card.is_odd_impl(self.is_face_card(card))
+    }
+
     // Every card the player owns this run, regardless of whether it's
     // currently undrawn, in hand, or already discarded this round.
     // `self.deck` alone is only the undrawn remainder mid-round.
@@ -431,10 +443,15 @@ impl Game {
             false,
         );
 
-        // first card in original play order, across the whole selection (not just
-        // hand.hand.cards()'s best-5 subset).
-        // lets stone kickers compete for "first played card" too.
-        let first_played_id = hand.all.first().map(|c| c.id);
+        // first card in original play order that's actually used in scoring:
+        // either part of the made hand, or a stone kicker (which always scores).
+        // ordinary kickers that never score don't count, even if played first.
+        let hand_ids: Vec<usize> = hand.hand.cards().iter().map(|c| c.id).collect();
+        let first_played_id = hand
+            .all
+            .iter()
+            .find(|c| hand_ids.contains(&c.id) || c.enhancement == Some(Enhancement::Stone))
+            .map(|c| c.id);
 
         // per-scored-card, rank chips, enhancements, editions
         for card in hand.hand.cards() {

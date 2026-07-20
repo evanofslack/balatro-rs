@@ -1,5 +1,5 @@
 use crate::card::{Card, Enhancement, Suit, Value};
-use crate::effect::Effects;
+use crate::effect::{Effects, RuleFlag};
 use crate::game::Game;
 use crate::hand::{MadeHand, SelectHand};
 use std::sync::{Arc, Mutex};
@@ -205,7 +205,7 @@ impl JokerEffects for Jokers {
             Self::ScaryFace(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
-                        if card.is_face_card() {
+                        if g.is_face_card(&card) {
                             g.chips += 30;
                         }
                     }
@@ -218,28 +218,11 @@ impl JokerEffects for Jokers {
                 }
                 vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
             }
-            Self::Pareidolia(_) => {
-                fn apply(_g: &mut Game, hand: &mut MadeHand) {
-                    for card in &mut hand.all {
-                        card.face_card_override = true;
-                    }
-                    let cards: Vec<Card> = hand
-                        .hand
-                        .cards()
-                        .into_iter()
-                        .map(|mut c| {
-                            c.face_card_override = true;
-                            c
-                        })
-                        .collect();
-                    hand.hand = SelectHand::new(cards);
-                }
-                vec![Effects::OnModifyHand(Arc::new(Mutex::new(apply)))]
-            }
+            Self::Pareidolia(_) => vec![Effects::RuleFlag(RuleFlag::AllCardsAreFace)],
             Self::EvenSteven(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
-                        if card.is_even() {
+                        if g.is_even(&card) {
                             g.mult += 4;
                         }
                     }
@@ -249,7 +232,7 @@ impl JokerEffects for Jokers {
             Self::OddTodd(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
-                        if card.is_odd() {
+                        if g.is_odd(&card) {
                             g.chips += 31;
                         }
                     }
@@ -270,7 +253,7 @@ impl JokerEffects for Jokers {
             Self::BusinessCard(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
-                        if card.is_face_card() && g.prob_roll(1, 2) {
+                        if g.is_face_card(&card) && g.prob_roll(1, 2) {
                             g.money += 2;
                         }
                     }
@@ -300,16 +283,18 @@ impl JokerEffects for Jokers {
                 vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
             }
             Self::MidasMask(_) => {
-                fn apply(_g: &mut Game, hand: &mut MadeHand) {
-                    for card in &mut hand.all {
-                        card.enhancement = Some(Enhancement::Gold);
-                    }
+                fn apply(g: &mut Game, hand: &mut MadeHand) {
+                    // only cards that are actually scored (hand.hand), not
+                    // unscored kickers (hand.all), become Gold
                     let cards: Vec<Card> = hand
                         .hand
                         .cards()
                         .into_iter()
                         .map(|mut c| {
-                            c.enhancement = Some(Enhancement::Gold);
+                            if g.is_face_card(&c) {
+                                c.enhancement = Some(Enhancement::Gold);
+                                g.mutate_card(c.id, |c| c.enhancement = Some(Enhancement::Gold));
+                            }
                             c
                         })
                         .collect();
@@ -320,7 +305,7 @@ impl JokerEffects for Jokers {
             Self::Photograph(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
-                        if card.is_face_card() {
+                        if g.is_face_card(&card) {
                             g.mult *= 2;
                             break;
                         }
@@ -331,7 +316,7 @@ impl JokerEffects for Jokers {
             Self::ReservedParking(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in g.available.not_selected() {
-                        if card.is_face_card() && g.prob_roll(1, 2) {
+                        if g.is_face_card(&card) && g.prob_roll(1, 2) {
                             g.money += 1;
                         }
                     }
@@ -371,7 +356,7 @@ impl JokerEffects for Jokers {
             Self::SmileyFace(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
-                        if card.is_face_card() {
+                        if g.is_face_card(&card) {
                             g.mult += 5;
                         }
                     }
@@ -570,8 +555,8 @@ impl JokerEffects for Jokers {
                 vec![Effects::TriggerCountPlayed(Arc::new(Mutex::new(extra)))]
             }
             Self::SockAndBuskin(_) => {
-                fn extra(_g: &mut Game, card: Card, _is_first: bool) -> usize {
-                    if card.is_face_card() {
+                fn extra(g: &mut Game, card: Card, _is_first: bool) -> usize {
+                    if g.is_face_card(&card) {
                         1
                     } else {
                         0
@@ -1790,6 +1775,70 @@ mod tests {
     }
 
     #[test]
+    fn test_even_steven_pareidolia_disqualifies_even_cards() {
+        // High Card Two, alone: (5 + 2) * 1 = 7
+        // + EvenSteven: Two is even -> +4 mult: (5 + 2) * (1 + 4) = 35
+        // + Pareidolia: Two now counts as a face card, so no longer "even": back to 7
+        let two = Card::new(Value::Two, Suit::Heart);
+        let hand = SelectHand::new(vec![two]);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        let best = hand.best_hand().unwrap();
+        assert_eq!(g.calc_score(best.clone()), 7);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let es = Jokers::EvenSteven(EvenSteven::default());
+        g.shop.jokers.push(es.clone());
+        g.buy_joker(es).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 35);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let p = Jokers::Pareidolia(Pareidolia::default());
+        g.shop.jokers.push(p.clone());
+        g.buy_joker(p).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 7);
+    }
+
+    #[test]
+    fn test_odd_todd_pareidolia_disqualifies_odd_cards() {
+        // High Card Three, alone: (5 + 3) * 1 = 8
+        // + OddTodd: Three is odd -> +31 chips: (5 + 3 + 31) * 1 = 39
+        // + Pareidolia: Three now counts as a face card, so no longer "odd": back to 8
+        let three = Card::new(Value::Three, Suit::Heart);
+        let hand = SelectHand::new(vec![three]);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        let best = hand.best_hand().unwrap();
+        assert_eq!(g.calc_score(best.clone()), 8);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let ot = Jokers::OddTodd(OddTodd::default());
+        g.shop.jokers.push(ot.clone());
+        g.buy_joker(ot).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 39);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let p = Jokers::Pareidolia(Pareidolia::default());
+        g.shop.jokers.push(p.clone());
+        g.buy_joker(p).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 8);
+    }
+
+    #[test]
     fn test_scholar() {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace, ace]);
@@ -2004,9 +2053,93 @@ mod tests {
         // (10 + 22) * 2 = 64
         let before = 64;
 
-        // Midas Mask converts to Gold but Gold has no game logic yet -> same score
+        // Aces aren't face cards, so Midas Mask doesn't touch them -> same score
         let after = 64;
         score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_midas_mask_converts_played_face_card_to_gold() {
+        let king = Card::new(Value::King, Suit::Heart);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.available.extend(vec![king]);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let j = Jokers::MidasMask(MidasMask::default());
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let hand = SelectHand::new(vec![king]);
+        g.calc_score(hand.best_hand().unwrap());
+
+        // the enhancement must persist onto the real card, not just the
+        // transient MadeHand used for this scoring pass
+        let scored = g.available.cards().into_iter().find(|c| c.id == king.id);
+        assert_eq!(scored.unwrap().enhancement, Some(Enhancement::Gold));
+    }
+
+    #[test]
+    fn test_midas_mask_pareidolia_converts_non_face_card_to_gold() {
+        let two = Card::new(Value::Two, Suit::Heart);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.available.extend(vec![two]);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mm = Jokers::MidasMask(MidasMask::default());
+        g.shop.jokers.push(mm.clone());
+        g.buy_joker(mm).unwrap();
+        let p = Jokers::Pareidolia(Pareidolia::default());
+        g.shop.jokers.push(p.clone());
+        g.buy_joker(p).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let hand = SelectHand::new(vec![two]);
+        g.calc_score(hand.best_hand().unwrap());
+
+        let scored = g.available.cards().into_iter().find(|c| c.id == two.id);
+        assert_eq!(scored.unwrap().enhancement, Some(Enhancement::Gold));
+    }
+
+    #[test]
+    fn test_midas_mask_does_not_convert_unscored_kicker() {
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Spade);
+        let queen = Card::new(Value::Queen, Suit::Diamond);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.available.extend(vec![king1, king2, queen]);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let j = Jokers::MidasMask(MidasMask::default());
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // Pair of Kings + Queen kicker: only the pair is scored, the queen
+        // kicker never scores and so should stay unenhanced
+        let hand = SelectHand::new(vec![king1, king2, queen]);
+        g.calc_score(hand.best_hand().unwrap());
+
+        let cards = g.available.cards();
+        let scored_king = cards.iter().find(|c| c.id == king1.id).unwrap();
+        let kicker_queen = cards.iter().find(|c| c.id == queen.id).unwrap();
+        assert_eq!(scored_king.enhancement, Some(Enhancement::Gold));
+        assert_eq!(kicker_queen.enhancement, None);
     }
 
     #[test]
@@ -2104,6 +2237,47 @@ mod tests {
         let money_before = g.money;
         g.calc_score(best.clone());
         assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_reserved_parking_pareidolia_counts_non_face_cards() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]);
+        let rp = Jokers::ReservedParking(ReservedParking::default());
+        let p = Jokers::Pareidolia(Pareidolia::default());
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.available.extend(vec![
+            Card::new(Value::Ace, Suit::Club),
+            Card::new(Value::Two, Suit::Spade),
+        ]);
+        let best = hand.best_hand().unwrap();
+        g.calc_score(best.clone());
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        g.shop.jokers.push(rp.clone());
+        g.buy_joker(rp).unwrap();
+        g.shop.jokers.push(p.clone());
+        g.buy_joker(p).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let mut saw_increase = false;
+        for _ in 0..100 {
+            g.money = 994;
+            g.calc_score(best.clone());
+            if g.money > 994 {
+                saw_increase = true;
+                break;
+            }
+        }
+        assert!(
+            saw_increase,
+            "Pareidolia should make non-face held cards count for Reserved Parking"
+        );
     }
 
     #[test]
@@ -2693,6 +2867,23 @@ mod tests {
     }
 
     #[test]
+    fn test_hanging_chad_skips_unscored_leading_kicker() {
+        // Pair of Kings with an unmatched Queen kicker played first. The Queen
+        // never scores, so "first played card used in scoring" must resolve
+        // to the first King, not the Queen.
+        // Pair (level 1): 10 chips, 2 mult. Kings score 10 chips each.
+        // before: (10 + 10 + 10) * 2 = 60
+        // after: king1 retriggers (1 base + 2 from HangingChad = 3 triggers),
+        // king2 doesn't: (10 + 10*3 + 10*1) * 2 = 100
+        let queen = Card::new(Value::Queen, Suit::Diamond);
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Spade);
+        let hand = SelectHand::new(vec![queen, king1, king2]);
+        let j = Jokers::HangingChad(HangingChad::default());
+        score_before_after_joker(j, hand, 60, 100);
+    }
+
+    #[test]
     fn test_hack_buy_flow() {
         // High Card Three, alone -> retriggers since 3 is in 2-5.
         // before: (5 + 3) * 1 = 8; after: (5 + 3 + 3) * 1 = 11
@@ -2710,6 +2901,40 @@ mod tests {
         let hand = SelectHand::new(vec![jack]);
         let j = Jokers::SockAndBuskin(SockAndBuskin::default());
         score_before_after_joker(j, hand, 15, 25);
+    }
+
+    #[test]
+    fn test_sock_and_buskin_pareidolia_retriggers_non_face_card() {
+        // High Card Two, alone. Two isn't a face card, so SockAndBuskin alone
+        // doesn't retrigger it. Once Pareidolia is also owned, it should.
+        // no jokers: (5 + 2) * 1 = 7
+        // + SockAndBuskin only: still 7 (not a face card)
+        // + Pareidolia: (5 + 2*2) * 1 = 9 (now retriggers once)
+        let two = Card::new(Value::Two, Suit::Heart);
+        let hand = SelectHand::new(vec![two]);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        let best = hand.best_hand().unwrap();
+        assert_eq!(g.calc_score(best.clone()), 7);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let sb = Jokers::SockAndBuskin(SockAndBuskin::default());
+        g.shop.jokers.push(sb.clone());
+        g.buy_joker(sb).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 7);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let p = Jokers::Pareidolia(Pareidolia::default());
+        g.shop.jokers.push(p.clone());
+        g.buy_joker(p).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+        assert_eq!(g.calc_score(best.clone()), 9);
     }
 
     #[test]
