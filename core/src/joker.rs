@@ -300,16 +300,18 @@ impl JokerEffects for Jokers {
                 vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
             }
             Self::MidasMask(_) => {
-                fn apply(_g: &mut Game, hand: &mut MadeHand) {
-                    for card in &mut hand.all {
-                        card.enhancement = Some(Enhancement::Gold);
-                    }
+                fn apply(g: &mut Game, hand: &mut MadeHand) {
+                    // only cards that are actually scored (hand.hand), not
+                    // unscored kickers (hand.all), become Gold
                     let cards: Vec<Card> = hand
                         .hand
                         .cards()
                         .into_iter()
                         .map(|mut c| {
-                            c.enhancement = Some(Enhancement::Gold);
+                            if c.is_face_card() {
+                                c.enhancement = Some(Enhancement::Gold);
+                                g.mutate_card(c.id, |c| c.enhancement = Some(Enhancement::Gold));
+                            }
                             c
                         })
                         .collect();
@@ -2004,9 +2006,66 @@ mod tests {
         // (10 + 22) * 2 = 64
         let before = 64;
 
-        // Midas Mask converts to Gold but Gold has no game logic yet -> same score
+        // Aces aren't face cards, so Midas Mask doesn't touch them -> same score
         let after = 64;
         score_before_after_joker(j, hand, before, after);
+    }
+
+    #[test]
+    fn test_midas_mask_converts_played_face_card_to_gold() {
+        let king = Card::new(Value::King, Suit::Heart);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.available.extend(vec![king]);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let j = Jokers::MidasMask(MidasMask::default());
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let hand = SelectHand::new(vec![king]);
+        g.calc_score(hand.best_hand().unwrap());
+
+        // the enhancement must persist onto the real card, not just the
+        // transient MadeHand used for this scoring pass
+        let scored = g.available.cards().into_iter().find(|c| c.id == king.id);
+        assert_eq!(scored.unwrap().enhancement, Some(Enhancement::Gold));
+    }
+
+    #[test]
+    fn test_midas_mask_does_not_convert_unscored_kicker() {
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Spade);
+        let queen = Card::new(Value::Queen, Suit::Diamond);
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.available.extend(vec![king1, king2, queen]);
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let j = Jokers::MidasMask(MidasMask::default());
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // Pair of Kings + Queen kicker: only the pair is scored, the queen
+        // kicker never scores and so should stay unenhanced
+        let hand = SelectHand::new(vec![king1, king2, queen]);
+        g.calc_score(hand.best_hand().unwrap());
+
+        let cards = g.available.cards();
+        let scored_king = cards.iter().find(|c| c.id == king1.id).unwrap();
+        let kicker_queen = cards.iter().find(|c| c.id == queen.id).unwrap();
+        assert_eq!(scored_king.enhancement, Some(Enhancement::Gold));
+        assert_eq!(kicker_queen.enhancement, None);
     }
 
     #[test]
