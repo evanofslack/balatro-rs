@@ -245,6 +245,43 @@ impl JokerEffects for Jokers {
                 }
                 vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
             }
+            Self::WeeJoker(wee) => {
+                let id = wee.instance_id;
+                let apply = move |g: &mut Game, hand: MadeHand| {
+                    let twos = hand
+                        .hand
+                        .cards()
+                        .iter()
+                        .filter(|c| c.value == Value::Two)
+                        .count();
+                    let counter = match g.joker_state_mut(id) {
+                        Some(state) => {
+                            state.counter += 8.0 * twos as f32;
+                            state.counter
+                        }
+                        None => return,
+                    };
+                    g.chips += counter as usize;
+                };
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::SpareTrousers(st) => {
+                let id = st.instance_id;
+                let apply = move |g: &mut Game, hand: MadeHand| {
+                    let has_two_pair = hand.hand.is_two_pair().is_some();
+                    let counter = match g.joker_state_mut(id) {
+                        Some(state) => {
+                            if has_two_pair {
+                                state.counter += 2.0;
+                            }
+                            state.counter
+                        }
+                        None => return,
+                    };
+                    g.mult += counter as usize;
+                };
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
             Self::Fibonacci(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     for card in _hand.hand.cards() {
@@ -668,6 +705,8 @@ impl JokerEffects for Jokers {
                 | Self::RideTheBus(_)
                 | Self::CardSharp(_)
                 | Self::Obelisk(_)
+                | Self::WeeJoker(_)
+                | Self::SpareTrousers(_)
                 | Self::Fibonacci(_)
                 | Self::ScaryFace(_)
                 | Self::AbstractJoker(_)
@@ -741,9 +780,9 @@ mod tests {
     // `effects()` behavior implemented. Shop/pack generation
     // must never offer joker that silently does nothing.
     #[test]
-    fn test_exactly_63_jokers_implemented() {
+    fn test_exactly_65_jokers_implemented() {
         let count = Jokers::iter().filter(|j| j.is_implemented()).count();
-        assert_eq!(count, 63);
+        assert_eq!(count, 65);
     }
 
     #[test]
@@ -3225,5 +3264,64 @@ mod tests {
         // HighCard == most-played (now 4 plays, still highest) -> streak resets
         // (5 + 11) * 1 = 16
         assert_eq!(g.calc_score(high_card_hand), 16);
+    }
+
+    #[test]
+    fn test_wee_joker_accumulates_chips_per_scored_two() {
+        let two = Card::new(Value::Two, Suit::Heart);
+        let two_hand = SelectHand::new(vec![two]).best_hand().unwrap(); // HighCard, one 2
+
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let ace_hand = SelectHand::new(vec![ace]).best_hand().unwrap(); // HighCard, no 2s
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut j = Jokers::WeeJoker(WeeJoker::default());
+        j.set_instance_id(42);
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // scored 2: counter 0 -> 8; chips = level(5) + card(2) + counter(8) = 15
+        assert_eq!(g.calc_score(two_hand.clone()), 15);
+        // scored 2 again: counter 8 -> 16; chips = 5 + 2 + 16 = 23
+        assert_eq!(g.calc_score(two_hand), 23);
+        // no 2 this hand, but the accumulated bonus persists: chips = 5 + 11 + 16 = 32
+        assert_eq!(g.calc_score(ace_hand), 32);
+    }
+
+    #[test]
+    fn test_spare_trousers_accumulates_mult_per_two_pair_hand() {
+        let ac = Card::new(Value::Ace, Suit::Club);
+        let kc = Card::new(Value::King, Suit::Club);
+        let two_pair_hand = SelectHand::new(vec![ac, ac, kc, kc]).best_hand().unwrap(); // TwoPair
+
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let ace_hand = SelectHand::new(vec![ace]).best_hand().unwrap(); // HighCard, no two pair
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut j = Jokers::SpareTrousers(SpareTrousers::default());
+        j.set_instance_id(99);
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // two pair: counter 0 -> 2; mult = level(2) + counter(2) = 4
+        // chips = level(20) + cards(2*11 + 2*10 = 42) = 62; score = 62 * 4 = 248
+        assert_eq!(g.calc_score(two_pair_hand.clone()), 248);
+        // two pair again: counter 2 -> 4; mult = 2 + 4 = 6; score = 62 * 6 = 372
+        assert_eq!(g.calc_score(two_pair_hand), 372);
+        // no two pair this hand, bonus persists: mult = level(1) + counter(4) = 5
+        // chips = 5 + 11 = 16; score = 16 * 5 = 80
+        assert_eq!(g.calc_score(ace_hand), 80);
     }
 }
