@@ -1,17 +1,31 @@
 # balatro-rs
 
-Game engine and move generator for a simplified version of [balatro](https://www.playbalatro.com/), written in rust with python bindings
+A toolbox of Rust crates for [Balatro](https://www.playbalatro.com/)
 
-## Overview
+## Features
 
-This library implements a subset of balatro's rules allowing execution of games or simulations. It provides an exhaustive list of actions a user could take at any given stage, as well as an engine to execute those actions and progress the game.
+- rules engine and move generator for simulation/RL (with python bindings)
+- real save-file (`.jkr`) parsing
+- byte-accurate port of the game's actual seed/RNG algorithm
+- TUI for playing core game, CLIs for various other functionlity
 
-The goal of providing all valid actions is to serve as a move generator. This would be the first step to apply reinforcement learning for balatro.
+## Crates
+
+| Crate                                 | What it does                                                                                                                                                                                                                                                          |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`core`](core) (package `balatro-rs`) | The rules engine — scoring, playing/discarding, blinds, shop, jokers/tarots/planets. Exposes an exhaustive move generator, meant as a base for simulation and reinforcement learning. Ships a `calc` CLI that scores an existing hand without needing a running game. |
+| [`balatro-types`](balatro-types)      | Neutral vocabulary shared by everything — `Card`, `Jokers`, `Tarot`, `Voucher`, etc. Pure data, no behavior.                                                                                                                                                          |
+| [`balatro-jkr`](balatro-jkr)          | Codec for Balatro's `.jkr` save-file container format (raw-DEFLATE + Lua table literals). No game vocabulary. Ships a `jkr` CLI that dumps a `.jkr` file's decoded contents.                                                                                          |
+| [`balatro-profile`](balatro-profile)  | Reads real save/profile files into typed data (`Profile`, `SaveSnapshot`) using `balatro-jkr` + `balatro-types`. Read-only; ships a `profile` CLI.                                                                                                                    |
+| [`balatro-seed`](balatro-seed)        | A byte-accurate port of Balatro's actual seed/RNG algorithm (pseudohash + per-node `LuaRandom`), verified against a reference implementation ante-by-ante. Ships an `explore` CLI to print a seed's full expected contents.                                           |
+| [`cli`](cli) (`balatro-cli`)          | Interactive terminal game over `core`. Also ships `balatro-edit`, a CLI for editing a `core::Game`'s JSON state.                                                                                                                                                      |
+| [`tui`](tui) (`balatro-tui`)          | Full ratatui-based terminal UI over `core::Game`.                                                                                                                                                                                                                     |
+| [`pylatro`](pylatro)                  | PyO3 Python bindings over `core`, for scripting and RL experimentation.                                                                                                                                                                                               |
 
 ## Example
 
 ```rust
-use balatro_rs::{action::Action, game::Game, stage::Stage};
+use balatro_rs::{action::Action, game::Game};
 use rand::Rng;
 
 fn main() {
@@ -19,8 +33,8 @@ fn main() {
     g.start();
     while !g.is_over() {
         // Get all available moves
-        let actions: Vec<Action> = g.gen_moves().collect();
-        if actions.len() == 0 {
+        let actions: Vec<Action> = g.gen_actions().collect();
+        if actions.is_empty() {
             break;
         }
 
@@ -33,37 +47,63 @@ fn main() {
 }
 ```
 
-## Features
+`Game` also exposes `gen_action_space()`, a fixed-size binary action mask,
+for RL environments that want a stable action-space shape instead of a
+variable-length iterator.
 
-This library does not implement all aspects of balatro and likely never will.
+## `core` feature coverage
 
-The follow features are implemented (including move generation)
+`core` does not implement all of Balatro and likely never will. Implemented
+(including move generation):
 
 - [x] identification and scoring of poker hands
 - [x] playing/discarding/reordering of cards
 - [x] blind pass/fail and game win/lose conditions
 - [x] money/interest generation
-- [x] ante progression (up to ante 8)
-- [x] blind progression (small, big, boss)
-- [x] stage transition (pre-blind, blind, post-blind, shop)
-- [x] buying/selling/using planets
-- [x] buying/selling/using jokers (partial support)
-- [x] buying/selling/using tarots
+- [x] ante progression (1-8) and blind progression (small/big/boss)
+- [x] buying/selling/using jokers, tarots, and planets
+- [x] card enhancements, editions, and seals in effect
+- [x] skip blind / tags (partialy)
+- [x] optional real-seed-accurate shop/pack generation via `balatro-seed` (partially wired)
 
-The following features are missing and may or may not be added
+The following are missing and may or may not be added:
 
-- [ ] buying/selling/using spectrals
+- [ ] spectral card use-effects
 - [ ] boss blind modifiers
-- [ ] skip blind/tags
-- [ ] card enhancements, foils and seals
-- [ ] joker foils
-- [ ] alternative decks
-- [ ] alternative stakes
+- [ ] vouchers
+- [ ] alternative decks and stakes as wired starting config
+- [ ] remaining unimplemented jokers
 
-## TUI
+## Building & running
 
-An interactive terminal client is available in [/tui](https://github.com/evanofslack/balatro-rs/tree/main/tui). Run `cargo run -p balatro-tui` to start a game, or load a saved state with `--load <file>`.
+```bash
+# run all tests across the workspace
+cargo test
 
-## Python bindings
+# core library only
+cargo test -p balatro-rs
 
-This library uses [pyo3](https://pyo3.rs) to provide python bindings. For more details on the python work and attempts at applying reinforcement learning, check the work in the directory [/pylatro](https://github.com/evanofslack/balatro-rs/tree/main/pylatro).
+# interactive terminal game
+cargo run -p balatro-cli
+
+# interactive terminal UI
+cargo run -p balatro-tui
+
+# explore a seed's full expected contents, byte-accurate vs. real Balatro
+cargo run -p balatro-seed --bin explore -- SEED --ante 1
+
+# inspect a real save/profile file
+cargo run -p balatro-profile --bin profile -- save.jkr
+
+# dump a raw .jkr file's decoded contents
+cargo run -p balatro-jkr --bin jkr -- meta.jkr
+
+# score an existing game-state JSON (e.g. from balatro-edit) without a running game
+cargo run -p balatro-rs --bin calc -- score state.json
+
+# build the Python bindings (requires maturin)
+cd pylatro && maturin develop
+```
+
+Each interface (`cli`, `tui`, `pylatro`, and the various CLI binaries) has
+its own usage docs in its directory.
