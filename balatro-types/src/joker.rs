@@ -1,4 +1,4 @@
-use crate::card::Edition;
+use crate::card::{Edition, Suit, Value};
 #[cfg(feature = "python")]
 use pyo3::pyclass;
 use strum::EnumIter;
@@ -45,6 +45,26 @@ pub struct Stickers {
     pub rental: bool,
 }
 
+/// A rotating-selector value some jokers (MailInRebate, Castle, AncientJoker,
+/// TheIdol) lock onto for the run rather than accumulating a number.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SelectorValue {
+    Suit(Suit),
+    Value(Value),
+}
+
+/// Per-instance persistent state slot, uniform across all jokers and mostly
+/// inert for the ones that don't need it.
+/// `counter` covers accumulator-style jokers (Hologram, Ramen, LuckyCat, ...).
+/// `selector` covers rotating-selector jokers.
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct JokerState {
+    pub counter: f32,
+    pub selector: Option<SelectorValue>,
+}
+
 /// `Jokers` is the definitive static repr of all jokers in the game.
 // We could pass around `Box<dyn Joker>` but it doesn't work so nice with pyo3 and serde.
 // Since we know all variants (one for each joker), we define an enum that implements
@@ -65,31 +85,58 @@ macro_rules! make_jokers {
         $(
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         #[cfg_attr(feature = "python", pyclass(eq))]
-        #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
+        #[derive(Debug, Clone, Copy, Default)]
         pub struct $x {
             pub edition: Edition,
             pub stickers: Stickers,
+            #[cfg_attr(feature = "serde", serde(default))]
+            pub instance_id: usize,
+            #[cfg_attr(feature = "serde", serde(default))]
+            pub state: JokerState,
+        }
+
+        impl PartialEq for $x {
+            fn eq(&self, other: &Self) -> bool {
+                self.instance_id == other.instance_id
+                    && self.edition == other.edition
+                    && self.stickers == other.stickers
+                    && self.state.selector == other.state.selector
+            }
+        }
+        impl Eq for $x {}
+        impl std::hash::Hash for $x {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                self.instance_id.hash(state);
+                self.edition.hash(state);
+                self.stickers.hash(state);
+                self.state.selector.hash(state);
+            }
         }
         )*
 
         impl Jokers {
-            fn inner_ref(&self) -> (&Edition, &Stickers) {
+            fn inner_ref(&self) -> (&Edition, &Stickers, &usize, &JokerState) {
                 match self {
-                    $(Self::$x(j) => (&j.edition, &j.stickers),)*
+                    $(Self::$x(j) => (&j.edition, &j.stickers, &j.instance_id, &j.state),)*
                 }
             }
 
-            fn inner_mut(&mut self) -> (&mut Edition, &mut Stickers) {
+            fn inner_mut(&mut self) -> (&mut Edition, &mut Stickers, &mut usize, &mut JokerState) {
                 match self {
-                    $(Self::$x(j) => (&mut j.edition, &mut j.stickers),)*
+                    $(Self::$x(j) => (&mut j.edition, &mut j.stickers, &mut j.instance_id, &mut j.state),)*
                 }
             }
 
             pub fn edition(&self) -> Edition { *self.inner_ref().0 }
             pub fn stickers(&self) -> Stickers { *self.inner_ref().1 }
+            pub fn instance_id(&self) -> usize { *self.inner_ref().2 }
+            pub fn state(&self) -> JokerState { *self.inner_ref().3 }
+            pub fn state_mut(&mut self) -> &mut JokerState { self.inner_mut().3 }
 
             pub fn set_edition(&mut self, edition: Edition) { *self.inner_mut().0 = edition; }
             pub fn set_stickers(&mut self, stickers: Stickers) { *self.inner_mut().1 = stickers; }
+            pub fn set_instance_id(&mut self, id: usize) { *self.inner_mut().2 = id; }
+            pub fn set_state(&mut self, state: JokerState) { *self.inner_mut().3 = state; }
         }
 
         impl std::str::FromStr for Jokers {

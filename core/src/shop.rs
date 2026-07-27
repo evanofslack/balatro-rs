@@ -295,6 +295,7 @@ impl JokerGenerator {
         let i = rng.gen_range(0..choices.len());
         let mut joker = choices[i].clone();
         joker.set_edition(gen_edition(prob_mult, rng));
+        joker.set_instance_id(crate::joker::mint_joker_id());
         joker
     }
 }
@@ -492,6 +493,26 @@ mod tests {
         shop.jokers = vec![j1.clone()];
         assert_eq!(shop.joker_from_index(0).expect("first joker"), j1.clone());
         shop.buy_joker(&j1).expect("buy joker");
+    }
+
+    #[test]
+    fn test_shop_buy_joker_disambiguates_duplicates_by_instance_id() {
+        // Two copies of the same joker variant, distinguishable only by
+        // instance_id (same as real shop generation would produce). Without
+        // instance-id-sensitive equality, `buy_joker`'s `.position()` lookup
+        // can't tell them apart and may remove the wrong one.
+        let mut j1 = jokers_by_rarity(Rarity::Common)[0].clone();
+        let mut j2 = j1.clone();
+        j1.set_instance_id(1);
+        j2.set_instance_id(2);
+
+        let mut shop = Shop::new();
+        shop.jokers = vec![j1.clone(), j2.clone()];
+
+        let bought = shop.buy_joker(&j2).expect("buy joker");
+        assert_eq!(bought.instance_id(), 2);
+        assert_eq!(shop.jokers.len(), 1);
+        assert_eq!(shop.jokers[0].instance_id(), 1);
     }
 
     #[test]

@@ -2,10 +2,22 @@ use crate::card::{Card, Enhancement, Suit, Value};
 use crate::effect::{Effects, RuleFlag};
 use crate::game::Game;
 use crate::hand::{MadeHand, SelectHand};
+use crate::rank::HandRank;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use strum::IntoEnumIterator;
 
 pub use balatro_types::joker::*;
+
+static JOKER_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+pub(crate) fn mint_joker_id() -> usize {
+    JOKER_ID_COUNTER.fetch_add(1, Ordering::SeqCst)
+}
+
+pub(crate) fn ensure_joker_id_counter_past(max_seen: usize) {
+    JOKER_ID_COUNTER.fetch_max(max_seen + 1, Ordering::SeqCst);
+}
 
 /// `balatro_types::Jokers` already supplies all static joker data
 /// (name/rarity/cost/desc/category/etc.) as inherent methods.
@@ -185,6 +197,89 @@ impl JokerEffects for Jokers {
                         g.mult += 15;
                     }
                 }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::Supernova(_) => {
+                fn apply(g: &mut Game, hand: MadeHand) {
+                    g.mult += g.planetarium.level(hand.rank).plays;
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::RideTheBus(_) => {
+                fn apply(g: &mut Game, hand: MadeHand) {
+                    let has_face = hand.hand.cards().iter().any(|c| g.is_face_card(c));
+                    if has_face {
+                        g.consecutive_hands_without_face_card = 0;
+                    } else {
+                        g.consecutive_hands_without_face_card += 1;
+                        g.mult += g.consecutive_hands_without_face_card;
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::CardSharp(_) => {
+                fn apply(g: &mut Game, hand: MadeHand) {
+                    if g.hand_ranks_played_this_round.contains(&hand.rank) {
+                        g.mult *= 3;
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::Obelisk(_) => {
+                fn apply(g: &mut Game, hand: MadeHand) {
+                    // RoyalFlush shares Planetarium storage with
+                    // StraightFlush, normalize this
+                    let played_rank = if hand.rank == HandRank::RoyalFlush {
+                        HandRank::StraightFlush
+                    } else {
+                        hand.rank
+                    };
+                    if played_rank == g.most_played_hand_rank() {
+                        g.consecutive_hands_not_most_played_type = 0;
+                    } else {
+                        g.consecutive_hands_not_most_played_type += 1;
+                        g.mult +=
+                            (g.mult as f64 * 0.2 * g.consecutive_hands_not_most_played_type as f64)
+                                as usize;
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::WeeJoker(wee) => {
+                let id = wee.instance_id;
+                let apply = move |g: &mut Game, hand: MadeHand| {
+                    let twos = hand
+                        .hand
+                        .cards()
+                        .iter()
+                        .filter(|c| c.value == Value::Two)
+                        .count();
+                    let counter = match g.joker_state_mut(id) {
+                        Some(state) => {
+                            state.counter += 8.0 * twos as f32;
+                            state.counter
+                        }
+                        None => return,
+                    };
+                    g.chips += counter as usize;
+                };
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::SpareTrousers(st) => {
+                let id = st.instance_id;
+                let apply = move |g: &mut Game, hand: MadeHand| {
+                    let has_two_pair = hand.hand.is_two_pair().is_some();
+                    let counter = match g.joker_state_mut(id) {
+                        Some(state) => {
+                            if has_two_pair {
+                                state.counter += 2.0;
+                            }
+                            state.counter
+                        }
+                        None => return,
+                    };
+                    g.mult += counter as usize;
+                };
                 vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
             }
             Self::Fibonacci(_) => {
@@ -606,6 +701,12 @@ impl JokerEffects for Jokers {
                 | Self::JokerStencil(_)
                 | Self::Banner(_)
                 | Self::MysticSummit(_)
+                | Self::Supernova(_)
+                | Self::RideTheBus(_)
+                | Self::CardSharp(_)
+                | Self::Obelisk(_)
+                | Self::WeeJoker(_)
+                | Self::SpareTrousers(_)
                 | Self::Fibonacci(_)
                 | Self::ScaryFace(_)
                 | Self::AbstractJoker(_)
@@ -679,9 +780,9 @@ mod tests {
     // `effects()` behavior implemented. Shop/pack generation
     // must never offer joker that silently does nothing.
     #[test]
-    fn test_exactly_59_jokers_implemented() {
+    fn test_exactly_65_jokers_implemented() {
         let count = Jokers::iter().filter(|j| j.is_implemented()).count();
-        assert_eq!(count, 59);
+        assert_eq!(count, 65);
     }
 
     #[test]
@@ -3045,5 +3146,182 @@ mod tests {
 
         let score = g.calc_score(hand);
         assert_eq!(score, 27);
+    }
+
+    #[test]
+    fn test_supernova_scales_with_hand_type_plays_this_run() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap(); // HighCard
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let j = Jokers::Supernova(Supernova::default());
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // 1st play of HighCard this run: planetarium plays 0 -> 1, +1 mult
+        // (5 + 11) * (1 + 1) = 32
+        assert_eq!(g.calc_score(hand.clone()), 32);
+        // 2nd play of HighCard this run: plays 1 -> 2, +2 mult
+        // (5 + 11) * (1 + 2) = 48
+        assert_eq!(g.calc_score(hand), 48);
+    }
+
+    #[test]
+    fn test_ride_the_bus_resets_on_scoring_face_card() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let no_face_hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+
+        let king = Card::new(Value::King, Suit::Heart);
+        let face_hand = SelectHand::new(vec![king]).best_hand().unwrap();
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let j = Jokers::RideTheBus(RideTheBus::default());
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // no face card: streak 0 -> 1, +1 mult -> (5 + 11) * (1 + 1) = 32
+        assert_eq!(g.calc_score(no_face_hand.clone()), 32);
+        // no face card again: streak 1 -> 2, +2 mult -> (5 + 11) * (1 + 2) = 48
+        assert_eq!(g.calc_score(no_face_hand), 48);
+        // scoring face card resets the streak, no bonus this hand
+        // (5 + 10) * 1 = 15
+        assert_eq!(g.calc_score(face_hand), 15);
+    }
+
+    #[test]
+    fn test_card_sharp_triples_mult_on_repeat_hand_type_same_round() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap(); // HighCard
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let j = Jokers::CardSharp(CardSharp::default());
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // 1st play of HighCard this round: not yet played -> no bonus
+        assert_eq!(g.calc_score(hand.clone()), 16);
+        // 2nd play of HighCard, same round: already played -> X3 mult
+        // (5 + 11) * (1 * 3) = 48
+        assert_eq!(g.calc_score(hand.clone()), 48);
+
+        g.clear_blind();
+
+        // new round: the played-this-round set was cleared -> no bonus again
+        assert_eq!(g.calc_score(hand), 16);
+    }
+
+    #[test]
+    fn test_obelisk_scales_mult_for_hands_not_matching_most_played_type() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let high_card_hand = SelectHand::new(vec![ace]).best_hand().unwrap(); // HighCard
+
+        let four_aces = Card::new(Value::Ace, Suit::Club);
+        let four_of_kind_hand = SelectHand::new(vec![four_aces, four_aces, four_aces, four_aces])
+            .best_hand()
+            .unwrap(); // FourOfAKind
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+
+        // Establish HighCard as the run's most-played type before Obelisk exists.
+        for _ in 0..3 {
+            g.calc_score(high_card_hand.clone());
+        }
+
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let j = Jokers::Obelisk(Obelisk::default());
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // FourOfAKind != most-played (HighCard, 3 plays) -> streak 0 -> 1
+        // (60 + 44) * (7 + (7 * 0.2 * 1) as usize) = 104 * (7 + 1) = 832
+        assert_eq!(g.calc_score(four_of_kind_hand.clone()), 832);
+        // still != most-played (HighCard now leads 3 to 2) -> streak 1 -> 2
+        // (60 + 44) * (7 + (7 * 0.2 * 2) as usize) = 104 * (7 + 2) = 936
+        assert_eq!(g.calc_score(four_of_kind_hand), 936);
+        // HighCard == most-played (now 4 plays, still highest) -> streak resets
+        // (5 + 11) * 1 = 16
+        assert_eq!(g.calc_score(high_card_hand), 16);
+    }
+
+    #[test]
+    fn test_wee_joker_accumulates_chips_per_scored_two() {
+        let two = Card::new(Value::Two, Suit::Heart);
+        let two_hand = SelectHand::new(vec![two]).best_hand().unwrap(); // HighCard, one 2
+
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let ace_hand = SelectHand::new(vec![ace]).best_hand().unwrap(); // HighCard, no 2s
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut j = Jokers::WeeJoker(WeeJoker::default());
+        j.set_instance_id(42);
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // scored 2: counter 0 -> 8; chips = level(5) + card(2) + counter(8) = 15
+        assert_eq!(g.calc_score(two_hand.clone()), 15);
+        // scored 2 again: counter 8 -> 16; chips = 5 + 2 + 16 = 23
+        assert_eq!(g.calc_score(two_hand), 23);
+        // no 2 this hand, but the accumulated bonus persists: chips = 5 + 11 + 16 = 32
+        assert_eq!(g.calc_score(ace_hand), 32);
+    }
+
+    #[test]
+    fn test_spare_trousers_accumulates_mult_per_two_pair_hand() {
+        let ac = Card::new(Value::Ace, Suit::Club);
+        let kc = Card::new(Value::King, Suit::Club);
+        let two_pair_hand = SelectHand::new(vec![ac, ac, kc, kc]).best_hand().unwrap(); // TwoPair
+
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let ace_hand = SelectHand::new(vec![ace]).best_hand().unwrap(); // HighCard, no two pair
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut j = Jokers::SpareTrousers(SpareTrousers::default());
+        j.set_instance_id(99);
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // two pair: counter 0 -> 2; mult = level(2) + counter(2) = 4
+        // chips = level(20) + cards(2*11 + 2*10 = 42) = 62; score = 62 * 4 = 248
+        assert_eq!(g.calc_score(two_pair_hand.clone()), 248);
+        // two pair again: counter 2 -> 4; mult = 2 + 4 = 6; score = 62 * 6 = 372
+        assert_eq!(g.calc_score(two_pair_hand), 372);
+        // no two pair this hand, bonus persists: mult = level(1) + counter(4) = 5
+        // chips = 5 + 11 = 16; score = 16 * 5 = 80
+        assert_eq!(g.calc_score(ace_hand), 80);
     }
 }
