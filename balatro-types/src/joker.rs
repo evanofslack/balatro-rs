@@ -131,6 +131,7 @@ macro_rules! make_jokers {
             pub fn stickers(&self) -> Stickers { *self.inner_ref().1 }
             pub fn instance_id(&self) -> usize { *self.inner_ref().2 }
             pub fn state(&self) -> JokerState { *self.inner_ref().3 }
+            pub fn state_mut(&mut self) -> &mut JokerState { self.inner_mut().3 }
 
             pub fn set_edition(&mut self, edition: Edition) { *self.inner_mut().0 = edition; }
             pub fn set_stickers(&mut self, stickers: Stickers) { *self.inner_mut().1 = stickers; }

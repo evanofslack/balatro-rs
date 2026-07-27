@@ -8,7 +8,7 @@ use crate::deck::Deck;
 use crate::effect::{EffectRegistry, Effects, RuleFlag};
 use crate::error::GameError;
 use crate::hand::{MadeHand, SelectHand};
-use crate::joker::{joker_display, JokerEffects, Jokers};
+use crate::joker::{joker_display, JokerEffects, JokerState, Jokers};
 use crate::pack::{OpenPackState, Pack, PackCategory, PackContent};
 use crate::planet::Planetarium;
 use crate::rank::HandRank;
@@ -335,6 +335,13 @@ impl Game {
     pub(crate) fn mutate_card<F: Fn(&mut Card) + Copy>(&mut self, id: usize, f: F) {
         self.available.mutate_card(id, f);
         self.deck.mutate_card(id, f);
+    }
+
+    pub(crate) fn joker_state_mut(&mut self, id: usize) -> Option<&mut JokerState> {
+        self.jokers
+            .iter_mut()
+            .find(|j| j.instance_id() == id)
+            .map(|j| j.state_mut())
     }
 
     pub(crate) fn is_face_card(&self, card: &Card) -> bool {
@@ -2214,6 +2221,35 @@ mod tests {
         g.destroy_card(card.id);
         assert_eq!(g.available.cards().len(), available_before - 1);
         assert!(g.available.cards().iter().all(|c| c.id != card.id));
+    }
+
+    #[test]
+    fn test_joker_state_mut_finds_by_instance_id() {
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
+
+        let mut g = Game::default();
+        let mut joker = Jokers::TheJoker(TheJoker::default());
+        joker.set_instance_id(7);
+        g.jokers.push(joker);
+
+        let state = g.joker_state_mut(7).expect("joker with id 7 exists");
+        state.counter = 3.5;
+
+        assert_eq!(g.jokers[0].state().counter, 3.5);
+    }
+
+    #[test]
+    fn test_joker_state_mut_missing_id_returns_none() {
+        use crate::joker::Jokers;
+        use balatro_types::joker::TheJoker;
+
+        let mut g = Game::default();
+        let mut joker = Jokers::TheJoker(TheJoker::default());
+        joker.set_instance_id(7);
+        g.jokers.push(joker);
+
+        assert!(g.joker_state_mut(999).is_none());
     }
 
     #[cfg(feature = "serde")]
