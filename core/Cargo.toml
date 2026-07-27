@@ -27,7 +27,7 @@ balatro-seed = { path = "../balatro-seed" }
 criterion = "0.3"
 
 [features]
-default = ["serde", "python"]
+default = ["serde"]
 python = ["dep:pyo3", "balatro-types/python"]
 serde = ["dep:serde", "dep:serde_json", "uuid?/serde", "rand_chacha/serde1", "balatro-types/serde", "balatro-seed/serde"]
 colored = ["dep:colored"]

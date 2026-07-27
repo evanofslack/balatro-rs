@@ -10,4 +10,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = "0.23.1"
-balatro-rs = {path = "../core/", version = "0.0.1"}
+balatro-rs = {path = "../core/", version = "0.0.1", features = ["python"]}
