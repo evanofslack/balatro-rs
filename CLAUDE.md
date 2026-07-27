@@ -61,3 +61,8 @@ simplified, non-Balatro-accurate RNG — reproducing exactly what a real seed ge
 2. `gen_action_space() -> ActionSpace` — fixed-size binary mask vector for RL environments
 
 Both call `handle_action(action)` to execute moves.
+
+## Developement
+
+- Use existing patterns when possible
+- Minimal comments, only when really worth explaining (readable code is preferable, concise comments only when necessary)
