@@ -21,6 +21,7 @@ use crate::tarot::{Tarot, TarotEffect};
 
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
+use std::collections::HashSet;
 use std::fmt;
 use strum::IntoEnumIterator;
 
@@ -77,6 +78,14 @@ pub struct Game {
     pub mult: usize,
     pub score: usize,
     pub prob_mult: u32,
+
+    // shared game-level history some jokers key off (RideTheBus, Obelisk, etc)
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) hand_ranks_played_this_round: HashSet<HandRank>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) consecutive_hands_without_face_card: usize,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) consecutive_hands_not_most_played_type: usize,
 
     pub last_consumable_used: Option<Consumable>,
     #[cfg_attr(feature = "serde", serde(default))]
@@ -155,6 +164,9 @@ impl Game {
             mult: config.base_mult,
             score: config.base_score,
             prob_mult: 1,
+            hand_ranks_played_this_round: HashSet::new(),
+            consecutive_hands_without_face_card: 0,
+            consecutive_hands_not_most_played_type: 0,
             last_consumable_used: None,
             last_score: 0,
             reroll_cost: default_reroll_cost(),
@@ -207,10 +219,11 @@ impl Game {
         }
     }
 
-    fn clear_blind(&mut self) {
+    pub(crate) fn clear_blind(&mut self) {
         self.score = self.config.base_score;
         self.plays = self.config.plays;
         self.discards = self.config.discards;
+        self.hand_ranks_played_this_round.clear();
         self.deck.append(&mut self.discarded);
         self.deck.extend(self.available.cards());
         self.available.empty();
@@ -358,6 +371,14 @@ impl Game {
 
     pub(crate) fn is_odd(&self, card: &Card) -> bool {
         card.is_odd_impl(self.is_face_card(card))
+    }
+
+    pub(crate) fn most_played_hand_rank(&self) -> HandRank {
+        HandRank::iter()
+            // royal flush has no storage slot of its own, its counted as straight flush
+            .filter(|r| *r != HandRank::RoyalFlush)
+            .max_by_key(|r| self.planetarium.level(*r).plays)
+            .unwrap_or(HandRank::HighCard)
     }
 
     // Every card the player owns this run, regardless of whether it's
@@ -604,6 +625,9 @@ impl Game {
                 );
             }
         }
+
+        // record after joker loop, not before (for CardSharp)
+        self.hand_ranks_played_this_round.insert(hand.rank);
 
         // compute score
         let score = self.chips * self.mult;
