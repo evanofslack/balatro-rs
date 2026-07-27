@@ -1281,6 +1281,19 @@ impl Game {
             crate::card::ensure_id_counter_past(max_id);
         }
 
+        // Same fixup for joker instance ids, minted ones sit in `game.jokers`
+        // and `game.shop.jokers`, and 0 means "never minted" so it's excluded.
+        let max_joker_id = game
+            .jokers
+            .iter()
+            .chain(game.shop.jokers.iter())
+            .map(|j| j.instance_id())
+            .filter(|&id| id > 0)
+            .max();
+        if let Some(max_joker_id) = max_joker_id {
+            crate::joker::ensure_joker_id_counter_past(max_joker_id);
+        }
+
         Ok(game)
     }
 }

@@ -163,6 +163,7 @@ impl RealBackend {
                 .instance
                 .next_buffoon_pack(count, ante)
                 .into_iter()
+                .map(seed_joker_with_id)
                 .map(PackContent::Joker)
                 .collect(),
             PackCategory::Standard => self
@@ -185,6 +186,14 @@ fn seed_card_to_core_card(c: balatro_types::Card) -> Card {
     card
 }
 
+/// Joker generation doesn't mints a real instance id (it has
+/// no notion of instance identity), assign one here.
+/// (same translation `seed_card_to_core_card` does for cards)
+fn seed_joker_with_id(mut j: Jokers) -> Jokers {
+    j.set_instance_id(crate::joker::mint_joker_id());
+    j
+}
+
 /// `Consumable` may carry Soul/Black Hole (a Spectral) even from a
 /// nominally Tarot/Planet draw; `PackContent` has a matching variant for
 /// each case, so this is lossless.
@@ -198,7 +207,7 @@ fn consumable_to_pack_content(c: Consumable) -> PackContent {
 
 impl RngBackend for RealBackend {
     // `planetarium` is unused: `Fast` mode uses it to gate secret planets
-    // behind discovery state, which isn't wired into `Real` mode (known gap).
+    // behind discovery state, which isn't wired into `Real` mode TODO.
     fn gen_shop_item(
         &mut self,
         ante: i32,
@@ -209,7 +218,7 @@ impl RngBackend for RealBackend {
         _exclude_planets: &[Planets],
     ) -> GeneratedItem {
         match self.instance.next_shop_item(ante) {
-            balatro_seed::ShopItem::Joker(j) => GeneratedItem::Joker(j),
+            balatro_seed::ShopItem::Joker(j) => GeneratedItem::Joker(seed_joker_with_id(j)),
             balatro_seed::ShopItem::Consumable(c) => GeneratedItem::Consumable(c),
             balatro_seed::ShopItem::PlayingCard => {
                 // Unreachable: needs Magic Trick active, and core has no

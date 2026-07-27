@@ -2,10 +2,21 @@ use crate::card::{Card, Enhancement, Suit, Value};
 use crate::effect::{Effects, RuleFlag};
 use crate::game::Game;
 use crate::hand::{MadeHand, SelectHand};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use strum::IntoEnumIterator;
 
 pub use balatro_types::joker::*;
+
+static JOKER_ID_COUNTER: AtomicUsize = AtomicUsize::new(1);
+
+pub(crate) fn mint_joker_id() -> usize {
+    JOKER_ID_COUNTER.fetch_add(1, Ordering::SeqCst)
+}
+
+pub(crate) fn ensure_joker_id_counter_past(max_seen: usize) {
+    JOKER_ID_COUNTER.fetch_max(max_seen + 1, Ordering::SeqCst);
+}
 
 /// `balatro_types::Jokers` already supplies all static joker data
 /// (name/rarity/cost/desc/category/etc.) as inherent methods.
