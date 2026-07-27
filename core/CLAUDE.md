@@ -4,21 +4,21 @@ Main game engine library. All game logic lives here.
 
 ## Key modules
 
-| Module | Purpose |
-|---|---|
-| `game.rs` | `Game` struct — central state and orchestration |
-| `action.rs` | `Action` enum — every possible player move |
-| `joker.rs` | `Joker` trait, `Jokers` enum, all joker implementations |
-| `hand.rs` | Hand evaluation: `SelectHand`, `MadeHand`, poker detection |
-| `generator.rs` | `gen_actions_*` functions — generate valid moves per stage |
-| `space.rs` | `ActionSpace` — fixed-size binary mask for RL environments |
-| `stage.rs` | `Stage` enum (PreBlind, Blind, PostBlind, Shop, End) |
-| `rank.rs` | `HandRank` enum with chip/mult values per level |
-| `effect.rs` | `EffectRegistry` — joker effect callbacks |
-| `shop.rs` | `Shop`, `JokerGenerator` — shop inventory and buying |
-| `card.rs` | `Card` with `Value`, `Suit`, `Enhancement`, `Edition`, `Seal` |
-| `available.rs` | `Available` — hand of cards with selection state |
-| `config.rs` | `Config` — all game parameters |
+| Module         | Purpose                                                       |
+| -------------- | ------------------------------------------------------------- |
+| `game.rs`      | `Game` struct — central state and orchestration               |
+| `action.rs`    | `Action` enum — every possible player move                    |
+| `joker.rs`     | `Joker` trait, `Jokers` enum, all joker implementations       |
+| `hand.rs`      | Hand evaluation: `SelectHand`, `MadeHand`, poker detection    |
+| `generator.rs` | `gen_actions_*` functions — generate valid moves per stage    |
+| `space.rs`     | `ActionSpace` — fixed-size binary mask for RL environments    |
+| `stage.rs`     | `Stage` enum (PreBlind, Blind, PostBlind, Shop, End)          |
+| `rank.rs`      | `HandRank` enum with chip/mult values per level               |
+| `effect.rs`    | `EffectRegistry` — joker effect callbacks                     |
+| `shop.rs`      | `Shop`, `JokerGenerator` — shop inventory and buying          |
+| `card.rs`      | `Card` with `Value`, `Suit`, `Enhancement`, `Edition`, `Seal` |
+| `available.rs` | `Available` — hand of cards with selection state              |
+| `config.rs`    | `Config` — all game parameters                                |
 
 ## Joker system
 
@@ -37,7 +37,7 @@ The `make_jokers!` macro at the top of `joker.rs` generates the `Jokers` enum an
 `EffectRegistry` collects hooks from all active jokers at the start of each scoring pass. Hooks fire at:
 
 - `on_play` — when a hand is played
-- `on_discard` — when cards are discarded  
+- `on_discard` — when cards are discarded
 - `on_score` — per scored card
 - `on_handrank` — after hand rank determined
 - `on_modify_hand` — to modify the select hand before scoring
@@ -61,7 +61,7 @@ Cards have a `uuid` ID (behind the `serde` feature) to disambiguate identical ca
 ## Features
 
 - `serde` (default) — enables serialization of all game types, activates uuid IDs
-- `python` (default) — enables PyO3 `#[pyclass]` on `Game`, `Config`, `Stage`, `Jokers`
+- `python` — enables PyO3 `#[pyclass]` on `Game`, `Config`, `Stage`, `Jokers`; not a default feature since only `pylatro` needs it — `pylatro` enables it explicitly on its `balatro-rs` dependency
 - `colored` — enables colored terminal output in `card.rs`/`hand.rs`
 
 When adding new public types that should be usable from Python, gate `#[pyclass]` / `#[pymethods]` behind `#[cfg(feature = "python")]` and mirror in `pylatro/src/lib.rs` if needed.
