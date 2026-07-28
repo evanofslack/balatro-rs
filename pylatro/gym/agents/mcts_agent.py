@@ -29,6 +29,27 @@ Deliberate simplifications, documented as they were added:
 
   This filter is local to this agent's own search — core, env.legal_actions(),
   and other agents/human play still see and can choose SkipBlind normally.
+- MoveCard/SortHand are excluded from the search tree everywhere: hand
+  order has no effect on score in the current curated pool (no seals or
+  order-dependent enhancements like Glass are in play yet), so they're
+  pure search overhead — confirmed empirically as the dominant real-action
+  cost (60-70% of an episode's actual moves) once SkipBlind stopped
+  masking it. Revisit this exclusion once seals/enhancements that care
+  about hand position are introduced.
+
+  This also fixes a real dead end, not just a speed cost: during
+  Stage::TarotHand (targeting a tarot), SelectCard/DeselectCard are the
+  *only* way to satisfy the tarot's min_targets() before ApplyTarot()
+  becomes legal (core/src/generator.rs's gen_actions_tarot_hand) — there's
+  no atomic equivalent there the way there is in the Blind stage. Since
+  MoveCard was unbounded specifically in TarotHand (core/src/game.rs,
+  deliberately exempted from the blind-phase reorder cap) and
+  SelectCard/DeselectCard were excluded unconditionally everywhere, the
+  search had no way to ever reach ApplyTarot() and fell back to spamming
+  MoveCard until max_steps truncated the episode (confirmed: 4/100 eval
+  episodes did exactly this, ~290 MoveCard actions each, ~40% of that
+  run's entire action budget). SelectCard/DeselectCard are therefore only
+  excluded during the Blind stage now — see _excluded_kinds().
 """
 
 import math
@@ -37,14 +58,29 @@ import random
 import pylatro
 from joker_pool import apply_to_config
 
-AGENT_VERSION = "4"  # 1 = original baseline (results/mcts_*.json, pre-versioning)
-                      # 2 = exclude SkipBlind from search tree
-                      # 3 = margin-aware terminal loss value (heuristic_value)
-                      # 4 = rank PlayHand candidates by one-ply lookahead score
+AGENT_VERSION = "5"  # 1 = original baseline (results/mcts_*.json, pre-versioning)
+# 2 = exclude SkipBlind from search tree
+# 3 = margin-aware terminal loss value (heuristic_value)
+# 4 = rank PlayHand candidates by one-ply lookahead score
+# 5 = exclude MoveCard/SortHand everywhere; stage-aware
+#     SelectCard/DeselectCard exclusion (Blind-only),
+#     fixing the TarotHand dead end
 
-EXCLUDED_KINDS = {"SelectCard", "DeselectCard", "Play", "Discard", "SkipBlind"}
+# Stage::TarotHand's Stage.int() encoding (core/src/stage.rs) — the one
+# stage where SelectCard/DeselectCard aren't dominated by anything atomic.
+TAROT_HAND_STAGE = 8
+
+# Excluded in every stage: Play()/Discard() are dominated by atomic
+# PlayHand/DiscardHand; SkipBlind and MoveCard/SortHand per the module
+# docstring above.
+ALWAYS_EXCLUDED_KINDS = {"Play", "Discard", "SkipBlind", "MoveCard", "SortHand"}
+# Excluded only during the Blind stage, where atomic PlayHand/DiscardHand
+# dominate them. In Stage::TarotHand they're the only way to select tarot
+# targets, so they must stay legal there.
+BLIND_ONLY_EXCLUDED_KINDS = {"SelectCard", "DeselectCard"}
+
 MAX_PLAY_HAND_CANDIDATES = 20
-MAX_DISCARD_HAND_CANDIDATES = 10
+MAX_DISCARD_HAND_CANDIDATES = 20
 ROLLOUT_HORIZON = 15
 
 
@@ -54,13 +90,20 @@ def _action_kind(action) -> str:
     return name[len(prefix) :] if name.startswith(prefix) else name
 
 
+def _excluded_kinds(game) -> set:
+    if game.state.stage.int() == TAROT_HAND_STAGE:
+        return ALWAYS_EXCLUDED_KINDS
+    return ALWAYS_EXCLUDED_KINDS | BLIND_ONLY_EXCLUDED_KINDS
+
+
 def search_actions(game, rng):
+    excluded = _excluded_kinds(game)
     kept = []
     play_hands = []
     discard_hands = []
     for action in game.gen_actions():
         kind = _action_kind(action)
-        if kind in EXCLUDED_KINDS:
+        if kind in excluded:
             continue
         elif kind == "PlayHand":
             play_hands.append(action)
@@ -84,10 +127,10 @@ def search_actions(game, rng):
 # for a fixed sim budget: it decides which subtrees UCB1 gets to explore at
 # all, not just which action one rollout step takes.
 RAW_PLAY_HAND_POOL = 60  # cap on raw masks evaluated per node (branching
-                          # factor is up to ~218 at an 8-card hand)
+# factor is up to ~218 at an 8-card hand)
 RANKED_PLAY_HAND_TOP_N = 14
 RANDOM_PLAY_HAND_TAIL = 6  # top_n + tail == MAX_PLAY_HAND_CANDIDATES (20),
-                            # keeps today's UCB1 branching factor unchanged
+# keeps today's UCB1 branching factor unchanged
 
 
 def _play_hand_score(game, action) -> int:
@@ -112,12 +155,13 @@ def expansion_actions(game, rng):
     never moves state.score (the redraw is random per clone), so ranking it
     would need multiple stochastic samples per candidate — out of scope for
     this pass, deferred."""
+    excluded = _excluded_kinds(game)
     kept = []
     play_hands = []
     discard_hands = []
     for action in game.gen_actions():
         kind = _action_kind(action)
-        if kind in EXCLUDED_KINDS:
+        if kind in excluded:
             continue
         elif kind == "PlayHand":
             play_hands.append(action)
@@ -172,7 +216,9 @@ def heuristic_value(game) -> float:
         state = game.state
         required = max(state.required_score, 1)
         margin = min(state.score / required, 1.0)
-        return TERMINAL_LOSE_FLOOR + (TERMINAL_LOSE_CEILING - TERMINAL_LOSE_FLOOR) * margin
+        return (
+            TERMINAL_LOSE_FLOOR + (TERMINAL_LOSE_CEILING - TERMINAL_LOSE_FLOOR) * margin
+        )
     state = game.state
     progress = state.score_log10 - math.log10(state.required_score + 1)
     return progress + 0.01 * state.money + 0.3 * len(state.jokers) + 0.5 * state.round
@@ -194,8 +240,9 @@ class Node:
         log_n = math.log(self.visits)
         return max(
             self.children,
-            key=lambda ac: ac[1].value_sum / ac[1].visits
-            + c * math.sqrt(log_n / ac[1].visits),
+            key=lambda ac: (
+                ac[1].value_sum / ac[1].visits + c * math.sqrt(log_n / ac[1].visits)
+            ),
         )
 
 
