@@ -1,3 +1,4 @@
+import math
 import random
 import types
 
@@ -17,17 +18,19 @@ from env import BalatroEnv
 from joker_pool import apply_to_config
 
 
-def _fake_game(is_over, is_win=False, score=0, required_score=100):
+def _fake_game(
+    is_over, is_win=False, score=0, required_score=100, round=0, money=0, jokers=None
+):
     return types.SimpleNamespace(
         is_over=is_over,
         is_win=is_win,
         state=types.SimpleNamespace(
             score=score,
             required_score=required_score,
-            score_log10=0.0,
-            money=0,
-            jokers=[],
-            round=0,
+            score_log10=math.log10(score + 1),
+            money=money,
+            jokers=jokers if jokers is not None else [],
+            round=round,
         ),
     )
 
@@ -53,6 +56,33 @@ def test_heuristic_value_win_and_bounds():
     assert TERMINAL_LOSE_FLOOR <= never_scored < mid < near_miss <= TERMINAL_LOSE_CEILING
 
 
+def test_heuristic_value_round_dominates_and_stays_bounded():
+    round_0_states = [
+        _fake_game(
+            is_over=False,
+            score=s,
+            required_score=300,
+            round=0,
+            money=m,
+            jokers=[None] * j,
+        )
+        for s in (0, 150, 299)
+        for m in (0, 40)
+        for j in (0, 5)
+    ]
+    round_1_state = _fake_game(
+        is_over=False, score=0, required_score=450, round=1, money=0, jokers=[]
+    )
+
+    round_0_values = [heuristic_value(g) for g in round_0_states]
+    round_1_value = heuristic_value(round_1_state)
+
+    assert all(0.0 <= v <= 1.0 for v in round_0_values + [round_1_value])
+    # a state that's cleared one more blind beats every sampled round-0 state,
+    # even ones with far more money/jokers/within-blind progress.
+    assert round_1_value > max(round_0_values)
+
+
 def test_no_skip_blind_in_episode():
     env = BalatroEnv(max_steps=20)
     apply_to_config(env._config)
@@ -60,6 +90,20 @@ def test_no_skip_blind_in_episode():
     agent.run_episode(env, seed=1, max_steps=20)
     kinds = {_action_kind(a) for a in env._game.state.action_history}
     assert "SkipBlind" not in kinds
+
+
+def test_agent_seed_makes_episode_deterministic():
+    def play(agent_seed):
+        env = BalatroEnv(max_steps=30)
+        apply_to_config(env._config)
+        agent = MctsAgent(n_simulations=5, agent_seed=agent_seed)
+        agent.run_episode(env, seed=1, max_steps=30)
+        state = env._game.state
+        return [_action_kind(a) for a in state.action_history], state.score
+
+    first = play(agent_seed=42)
+    second = play(agent_seed=42)
+    assert first == second
 
 
 def test_expansion_actions_retains_true_best_play_hand():

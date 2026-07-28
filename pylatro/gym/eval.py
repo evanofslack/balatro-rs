@@ -22,6 +22,7 @@ def run_agent(
     max_steps: int,
     episodes: int,
     out: Optional[str] = None,
+    agent_seed: Optional[int] = None,
 ):
     print(
         f"starting {episodes} episodes with {sims} sims for agent {agent_name}, out={out}"
@@ -37,7 +38,7 @@ def run_agent(
     elif agent_name == "mcts":
         from agents.mcts_agent import AGENT_VERSION, MctsAgent
 
-        agent = MctsAgent(n_simulations=sims)
+        agent = MctsAgent(n_simulations=sims, agent_seed=agent_seed)
         run_episode = lambda seed: agent.run_episode(env, seed, max_steps)
     else:
         raise ValueError(f"unknown agent: {agent_name}")
@@ -63,6 +64,7 @@ def run_agent(
             "max_steps": max_steps,
             "episodes": episodes,
             "elapsed_sec": elapsed,
+            "agent_seed": agent_seed,
         }
         save_results(out, logs, summary, meta)
         print(f"saved to {out}")
@@ -79,5 +81,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--out", default=None, help="write per-episode + summary JSON to this path"
     )
+    parser.add_argument(
+        "--agent-seed",
+        type=int,
+        default=None,
+        help="seed the mcts agent's own rng for reproducible A/B comparisons "
+        "(default: unseeded)",
+    )
     args = parser.parse_args()
-    run_agent(args.agent, args.sims, args.max_steps, args.episodes, args.out)
+    run_agent(
+        args.agent,
+        args.sims,
+        args.max_steps,
+        args.episodes,
+        args.out,
+        args.agent_seed,
+    )

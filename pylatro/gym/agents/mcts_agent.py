@@ -6,77 +6,38 @@ whenever search/heuristic behavior changes, so saved eval results
 (eval.py --out, which records it in meta.agent_version) can be attributed to
 the code that produced them.
 
-Deliberate simplifications, documented as they were added:
-
-- Rollouts are bounded-horizon with a heuristic leaf evaluation, not
-  uniform-random-to-terminal — a uniform-random policy essentially never
-  clears a blind, so a full random rollout gives near-zero signal at any
-  search depth worth exploring on a laptop-scale simulation budget.
-- The granular SelectCard/DeselectCard/Play/Discard actions are excluded
-  from the search tree in favor of the atomic PlayHand/DiscardHand actions
-  they're strictly dominated by (same reachable outcomes, fewer nodes).
-  PlayHand/DiscardHand's own branching factor (all C(n,<=5) subsets) is
-  still large, so candidates are randomly sampled down to a bounded count
-  per node rather than enumerated exhaustively.
-- SkipBlind is excluded from the search tree too, but for a different
-  reason: skip_blind()'s tag effect is currently a no-op for every Tag
-  variant (core/src/game.rs), and skipping forfeits the money a cleared
-  blind would pay out — but within ROLLOUT_HORIZON, a rollout that skips
-  reliably avoids ever risking the terminal-loss value, while a rollout
-  that actually tries to play a blind risks it. Left unfiltered, UCB1
-  learns to skip every blind (empirically: 81 SkipBlind vs 112 SelectBlind
-  picks, 0% win rate over 100 eval episodes at 100 sims/decision).
-
-  This filter is local to this agent's own search — core, env.legal_actions(),
-  and other agents/human play still see and can choose SkipBlind normally.
-- MoveCard/SortHand are excluded from the search tree everywhere: hand
-  order has no effect on score in the current curated pool (no seals or
-  order-dependent enhancements like Glass are in play yet), so they're
-  pure search overhead — confirmed empirically as the dominant real-action
-  cost (60-70% of an episode's actual moves) once SkipBlind stopped
-  masking it. Revisit this exclusion once seals/enhancements that care
-  about hand position are introduced.
-
-  This also fixes a real dead end, not just a speed cost: during
-  Stage::TarotHand (targeting a tarot), SelectCard/DeselectCard are the
-  *only* way to satisfy the tarot's min_targets() before ApplyTarot()
-  becomes legal (core/src/generator.rs's gen_actions_tarot_hand) — there's
-  no atomic equivalent there the way there is in the Blind stage. Since
-  MoveCard was unbounded specifically in TarotHand (core/src/game.rs,
-  deliberately exempted from the blind-phase reorder cap) and
-  SelectCard/DeselectCard were excluded unconditionally everywhere, the
-  search had no way to ever reach ApplyTarot() and fell back to spamming
-  MoveCard until max_steps truncated the episode (confirmed: 4/100 eval
-  episodes did exactly this, ~290 MoveCard actions each, ~40% of that
-  run's entire action budget). SelectCard/DeselectCard are therefore only
-  excluded during the Blind stage now — see _excluded_kinds().
+The rationale and measured evidence behind each version's deliberate
+simplifications (rollout heuristic, action exclusions, the TarotHand
+dead-end fix, heuristic_value's scale/weights) live in docs/mcts.md, not
+here — that file is the changelog, this file is the implementation.
 """
 
 import math
 import random
+from typing import Optional
 
 import pylatro
 from joker_pool import apply_to_config
 
-AGENT_VERSION = "5"  # 1 = original baseline (results/mcts_*.json, pre-versioning)
+AGENT_VERSION = "6"  # 1 = original baseline (results/mcts_*.json, pre-versioning)
 # 2 = exclude SkipBlind from search tree
 # 3 = margin-aware terminal loss value (heuristic_value)
 # 4 = rank PlayHand candidates by one-ply lookahead score
 # 5 = exclude MoveCard/SortHand everywhere; stage-aware
 #     SelectCard/DeselectCard exclusion (Blind-only),
 #     fixing the TarotHand dead end
+# 6 = heuristic_value() rescaled to [0.0, 1.0]; non-terminal branch
+#     reweighted so clearing the next blind (state.round) dominates
 
 # Stage::TarotHand's Stage.int() encoding (core/src/stage.rs) — the one
 # stage where SelectCard/DeselectCard aren't dominated by anything atomic.
 TAROT_HAND_STAGE = 8
 
-# Excluded in every stage: Play()/Discard() are dominated by atomic
-# PlayHand/DiscardHand; SkipBlind and MoveCard/SortHand per the module
-# docstring above.
+# Play()/Discard()/SkipBlind/MoveCard/SortHand: excluded everywhere — see
+# docs/mcts.md (v2, v5) for why.
 ALWAYS_EXCLUDED_KINDS = {"Play", "Discard", "SkipBlind", "MoveCard", "SortHand"}
-# Excluded only during the Blind stage, where atomic PlayHand/DiscardHand
-# dominate them. In Stage::TarotHand they're the only way to select tarot
-# targets, so they must stay legal there.
+# SelectCard/DeselectCard: excluded only in the Blind stage — they're the
+# only way to target a tarot in Stage::TarotHand. See docs/mcts.md (v5).
 BLIND_ONLY_EXCLUDED_KINDS = {"SelectCard", "DeselectCard"}
 
 MAX_PLAY_HAND_CANDIDATES = 20
@@ -118,19 +79,11 @@ def search_actions(game, rng):
     return kept + play_hands + discard_hands
 
 
-# Tree-expansion-only PlayHand biasing. Deliberately NOT used by _rollout()
-# — that call site fires up to ROLLOUT_HORIZON * n_simulations times per
-# real decision with no caching, so ranking there would multiply the extra
-# clone+handle_action cost by orders of magnitude. Tree expansion is capped
-# at n_simulations new nodes per decision (each ranks once, cached via
-# node.untried), so this is where branching-factor quality actually matters
-# for a fixed sim budget: it decides which subtrees UCB1 gets to explore at
-# all, not just which action one rollout step takes.
-RAW_PLAY_HAND_POOL = 60  # cap on raw masks evaluated per node (branching
-# factor is up to ~218 at an 8-card hand)
+# Tree-expansion-only PlayHand biasing — not used by _rollout() (uncached,
+# fires far more often). See docs/mcts.md (v4) for why.
+RAW_PLAY_HAND_POOL = 60
 RANKED_PLAY_HAND_TOP_N = 14
-RANDOM_PLAY_HAND_TAIL = 6  # top_n + tail == MAX_PLAY_HAND_CANDIDATES (20),
-# keeps today's UCB1 branching factor unchanged
+RANDOM_PLAY_HAND_TAIL = 6  # top_n + tail == MAX_PLAY_HAND_CANDIDATES (20)
 
 
 def _play_hand_score(game, action) -> int:
@@ -148,13 +101,8 @@ def _play_hand_score(game, action) -> int:
 
 def expansion_actions(game, rng):
     """Like search_actions(), but PlayHand candidates are biased toward
-    higher-scoring subsets via one-ply lookahead instead of pure uniform
-    sampling. Used only at tree-expansion call sites (root init,
-    _select_and_expand) — see module comment above RAW_PLAY_HAND_POOL.
-    DiscardHand is left on uniform random sampling, unchanged: discarding
-    never moves state.score (the redraw is random per clone), so ranking it
-    would need multiple stochastic samples per candidate — out of scope for
-    this pass, deferred."""
+    higher-scoring subsets via one-ply lookahead. DiscardHand stays uniform
+    random — see docs/mcts.md (v4, "Next steps") for why."""
     excluded = _excluded_kinds(game)
     kept = []
     play_hands = []
@@ -193,26 +141,28 @@ def expansion_actions(game, rng):
     return kept + play_hands + discard_hands
 
 
-TERMINAL_WIN_VALUE = 50.0
-TERMINAL_LOSE_FLOOR = -10.0  # never scored a chip
-TERMINAL_LOSE_CEILING = -2.0  # ran out of plays one point short of clearing
+TERMINAL_WIN_VALUE = 1.0
+TERMINAL_LOSE_FLOOR = 0.0  # never scored a chip
+TERMINAL_LOSE_CEILING = 0.2  # ran out of plays one point short of clearing
+
+# Non-terminal branch: bounded so a live state is never valued below a loss
+# or above a win. Weighted so clearing the next blind (state.round)
+# dominates progress/money/jokers — see docs/mcts.md (v6) for the derivation.
+NONTERMINAL_FLOOR = 0.05
+NONTERMINAL_CEILING = 0.9
+ROUND_WEIGHT = 0.5
+PROGRESS_WEIGHT = 0.05
+MONEY_WEIGHT = 0.002
+JOKER_WEIGHT = 0.02
 
 
 def heuristic_value(game) -> float:
-    """Bounded state-value estimate used as the rollout's leaf evaluation."""
+    """Bounded [0.0, 1.0] state-value estimate for the rollout leaf/UCB1
+    backprop — see docs/mcts.md (v6) for why it's scaled this way."""
     if game.is_over:
         if game.is_win:
             return TERMINAL_WIN_VALUE
-        # Margin-aware loss: a near-miss (plays exhausted with score close to
-        # required_score) is far less bad than never having scored at all. A
-        # flat value here discards real signal between the two, and is a
-        # fragile pattern any future free/stalling action could exploit the
-        # same way SkipBlind did (see EXCLUDED_KINDS above). Loss is only
-        # reachable with state.plays == 0 (core/src/game.rs's handle_score),
-        # so there's no separate reserves term to add beyond the score
-        # margin itself. Kept as a plain linear interpolation, no
-        # per-mechanic weighting, to avoid overfitting a new formula to the
-        # one exploit that motivated it.
+        # Margin-aware loss (near-miss vs. total whiff) — see docs/mcts.md (v3).
         state = game.state
         required = max(state.required_score, 1)
         margin = min(state.score / required, 1.0)
@@ -221,7 +171,13 @@ def heuristic_value(game) -> float:
         )
     state = game.state
     progress = state.score_log10 - math.log10(state.required_score + 1)
-    return progress + 0.01 * state.money + 0.3 * len(state.jokers) + 0.5 * state.round
+    raw = (
+        ROUND_WEIGHT * state.round
+        + PROGRESS_WEIGHT * progress
+        + MONEY_WEIGHT * state.money
+        + JOKER_WEIGHT * len(state.jokers)
+    )
+    return max(NONTERMINAL_FLOOR, min(raw, NONTERMINAL_CEILING))
 
 
 class Node:
@@ -247,10 +203,18 @@ class Node:
 
 
 class MctsAgent:
-    def __init__(self, n_simulations: int = 100, exploration: float = math.sqrt(2)):
+    def __init__(
+        self,
+        n_simulations: int = 100,
+        exploration: float = math.sqrt(2),
+        agent_seed: Optional[int] = None,
+    ):
         self.n_simulations = n_simulations
         self.exploration = exploration
-        self._rng = random.Random()
+        # None preserves the old unseeded behavior (random.Random(None) seeds
+        # from OS entropy); pass an int for reproducible A/B comparisons
+        # across agent versions/configs.
+        self._rng = random.Random(agent_seed)
 
     def search(self, game) -> "pylatro.Action":
         root = Node(game.clone())
