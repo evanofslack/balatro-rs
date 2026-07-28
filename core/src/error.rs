@@ -46,6 +46,8 @@ pub enum GameError {
     InvalidSelectCard,
     #[error("Invalid action space")]
     InvalidActionSpace,
+    #[error("Reorder action budget exceeded")]
+    ReorderBudgetExceeded,
 }
 
 impl std::convert::From<ActionSpaceError> for GameError {

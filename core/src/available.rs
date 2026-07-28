@@ -1,4 +1,4 @@
-use crate::action::{MoveDirection, SortBy};
+use crate::action::{CardMask, MoveDirection, SortBy};
 use crate::card::{Card, Enhancement, Suit};
 use crate::error::GameError;
 use itertools::Itertools;
@@ -42,6 +42,24 @@ impl Available {
         } else {
             Err(GameError::NoCardMatch)
         }
+    }
+
+    /// Replace the current selection wholesale with `mask` (bit `i` = hand
+    /// position `i`).
+    pub(crate) fn select_mask(&mut self, mask: CardMask) -> Result<(), GameError> {
+        if mask.count() == 0 {
+            return Err(GameError::InvalidSelectCard);
+        }
+        let len = self.cards.len();
+        for i in 0..32 {
+            if mask.contains(i) && i >= len {
+                return Err(GameError::InvalidSelectCard);
+            }
+        }
+        for (i, (_, selected)) in self.cards.iter_mut().enumerate() {
+            *selected = mask.contains(i);
+        }
+        Ok(())
     }
 
     pub fn selected(&self) -> Vec<Card> {
@@ -179,6 +197,26 @@ mod tests {
         assert_eq!(selected[0], ace);
         let not_selected = a.not_selected();
         assert_eq!(not_selected[0], king);
+    }
+
+    #[test]
+    fn test_select_mask() {
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let king = Card::new(Value::King, Suit::Diamond);
+        let queen = Card::new(Value::Queen, Suit::Club);
+        let mut a = Available::default();
+        a.extend(vec![ace, king, queen]);
+
+        a.select_mask(CardMask::from_positions(&[0, 2])).unwrap();
+        assert_eq!(a.selected(), vec![ace, queen]);
+
+        // Replaces the previous selection wholesale, doesn't accumulate.
+        a.select_mask(CardMask::from_positions(&[1])).unwrap();
+        assert_eq!(a.selected(), vec![king]);
+
+        // Out-of-range bit and empty mask are both rejected.
+        assert!(a.select_mask(CardMask::from_positions(&[5])).is_err());
+        assert!(a.select_mask(CardMask::from_positions(&[])).is_err());
     }
 
     #[test]

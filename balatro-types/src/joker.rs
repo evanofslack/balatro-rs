@@ -1,9 +1,10 @@
 use crate::card::{Edition, Suit, Value};
 #[cfg(feature = "python")]
-use pyo3::pyclass;
+use pyo3::prelude::*;
 use strum::EnumIter;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "python", pyclass(eq))]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum Rarity {
     Common,
@@ -48,6 +49,7 @@ pub struct Stickers {
 /// A rotating-selector value some jokers (MailInRebate, Castle, AncientJoker,
 /// TheIdol) lock onto for the run rather than accumulating a number.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "python", pyclass(eq))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SelectorValue {
     Suit(Suit),
@@ -59,10 +61,24 @@ pub enum SelectorValue {
 /// `counter` covers accumulator-style jokers (Hologram, Ramen, LuckyCat, ...).
 /// `selector` covers rotating-selector jokers.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "python", pyclass(eq))]
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct JokerState {
     pub counter: f32,
     pub selector: Option<SelectorValue>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl JokerState {
+    #[getter]
+    fn get_counter(&self) -> f32 {
+        self.counter
+    }
+    #[getter]
+    fn get_selector(&self) -> Option<SelectorValue> {
+        self.selector
+    }
 }
 
 /// `Jokers` is the definitive static repr of all jokers in the game.
@@ -364,6 +380,48 @@ macro_rules! joker_data {
             }
         }
     };
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Jokers {
+    #[pyo3(name = "id")]
+    fn py_id(&self) -> &'static str {
+        self.id()
+    }
+    #[staticmethod]
+    #[pyo3(name = "from_id")]
+    fn py_from_id(s: &str) -> Option<Self> {
+        Self::from_id(s)
+    }
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> &'static str {
+        self.name()
+    }
+    #[pyo3(name = "desc")]
+    fn py_desc(&self) -> &'static str {
+        self.desc()
+    }
+    #[pyo3(name = "cost")]
+    fn py_cost(&self) -> usize {
+        self.cost()
+    }
+    #[pyo3(name = "rarity")]
+    fn py_rarity(&self) -> Rarity {
+        self.rarity()
+    }
+    #[pyo3(name = "instance_id")]
+    fn py_instance_id(&self) -> usize {
+        self.instance_id()
+    }
+    #[pyo3(name = "state")]
+    fn py_state(&self) -> JokerState {
+        self.state()
+    }
+    #[pyo3(name = "edition")]
+    fn py_edition(&self) -> Edition {
+        self.edition()
+    }
 }
 
 use Categories::*;

@@ -1,4 +1,4 @@
-use crate::action::{Action, MoveDirection};
+use crate::action::{Action, CardMask, MoveDirection};
 use crate::ante::Ante;
 use crate::available::Available;
 use crate::card::{Card, Edition, Enhancement, Seal};
@@ -90,6 +90,9 @@ pub struct Game {
     pub last_consumable_used: Option<Consumable>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub last_score: usize,
+    // MoveCard/SortHand actions taken since the current hand was dealt
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) reorder_actions_taken: usize,
     #[cfg_attr(feature = "serde", serde(default = "default_reroll_cost"))]
     pub reroll_cost: usize,
 
@@ -101,7 +104,7 @@ pub struct Game {
     pub(crate) rng: ChaCha8Rng,
     // shop/pack generation backend (Fast/Real, per config.rng_mode) — does
     // not affect deck shuffling, prob_roll, or tag draws, which stay on
-    // `rng` above regardless of RngMode.
+    // `rng` above regardless of RngMode TODO.
     #[cfg_attr(feature = "serde", serde(default = "default_backend"))]
     pub(crate) backend: Backend,
     // track stage so we can come back to it after temp tarot stage
@@ -169,6 +172,7 @@ impl Game {
             consecutive_hands_not_most_played_type: 0,
             last_consumable_used: None,
             last_score: 0,
+            reorder_actions_taken: 0,
             reroll_cost: default_reroll_cost(),
             tarot_prev_stage: None,
             open_pack: None,
@@ -244,6 +248,7 @@ impl Game {
         self.available.empty();
         self.deck.shuffle(&mut self.rng);
         self.draw(self.config.available);
+        self.reorder_actions_taken = 0;
     }
 
     /// Reshuffles discarded/held cards back into the deck and redraws a
@@ -257,6 +262,15 @@ impl Game {
             return Err(GameError::InvalidSelectCard);
         }
         self.available.select_card(card)
+    }
+
+    /// Replace the current selection wholesale with `mask`, used by the
+    /// atomic `PlayHand`/`DiscardHand` actions.
+    pub(crate) fn select_mask(&mut self, mask: CardMask) -> Result<(), GameError> {
+        if mask.count() as usize > self.config.selected_max {
+            return Err(GameError::InvalidSelectCard);
+        }
+        self.available.select_mask(mask)
     }
 
     pub(crate) fn move_card(
@@ -285,6 +299,7 @@ impl Game {
         self.discarded.extend(self.available.selected());
         let removed = self.available.remove_selected();
         self.draw(removed);
+        self.reorder_actions_taken = 0;
         for card in scored.hand.cards() {
             if card.enhancement == Some(Enhancement::Glass) && self.prob_roll(1, 4) {
                 self.destroy_card(card.id);
@@ -306,6 +321,7 @@ impl Game {
         self.discarded.extend(discarded.clone());
         let removed = self.available.remove_selected();
         self.draw(removed);
+        self.reorder_actions_taken = 0;
 
         // Check for purple seals
         for card in &discarded {
@@ -639,6 +655,11 @@ impl Game {
         score
     }
 
+    /// Log-scale view of `self.score`
+    pub fn score_log10(&self) -> f64 {
+        ((self.score + 1) as f64).log10()
+    }
+
     pub fn required_score(&self) -> usize {
         let base = self.ante_current.base();
         match self.blind {
@@ -699,7 +720,8 @@ impl Game {
         self.stage = Stage::Shop();
         let planetarium = self.planetarium.clone();
         let held_consumables = self.consumables.clone();
-        let held_jokers = self.jokers.clone();
+        let mut held_jokers = self.jokers.clone();
+        held_jokers.extend(self.config.joker_pool_excluded());
         self.shop.refresh(
             &planetarium,
             &held_consumables,
@@ -726,6 +748,7 @@ impl Game {
         held.extend(self.shop.consumables.clone());
         let mut held_jokers = self.jokers.clone();
         held_jokers.extend(self.shop.jokers.clone());
+        held_jokers.extend(self.config.joker_pool_excluded());
         self.shop.refresh_cards(
             &planetarium,
             &held,
@@ -1152,8 +1175,35 @@ impl Game {
                 true => self.discard_selected(),
                 false => Err(GameError::InvalidAction),
             },
+            Action::PlayHand(mask) => match self.stage.is_blind() {
+                true => {
+                    self.select_mask(mask)?;
+                    self.play_selected()
+                }
+                false => Err(GameError::InvalidAction),
+            },
+            Action::DiscardHand(mask) => match self.stage.is_blind() {
+                true => {
+                    self.select_mask(mask)?;
+                    self.discard_selected()
+                }
+                false => Err(GameError::InvalidAction),
+            },
             Action::MoveCard(dir, card) => {
-                if self.stage.is_blind() || matches!(self.stage, Stage::TarotHand(_)) {
+                if self.stage.is_blind() {
+                    if self
+                        .config
+                        .max_reorder_actions
+                        .is_some_and(|max| self.reorder_actions_taken >= max)
+                    {
+                        return Err(GameError::ReorderBudgetExceeded);
+                    }
+                    let res = self.move_card(dir, card);
+                    if res.is_ok() {
+                        self.reorder_actions_taken += 1;
+                    }
+                    res
+                } else if matches!(self.stage, Stage::TarotHand(_)) {
                     self.move_card(dir, card)
                 } else {
                     Err(GameError::InvalidAction)
@@ -1200,7 +1250,15 @@ impl Game {
             },
             Action::SortHand(sort_by) => {
                 if self.stage.is_blind() {
+                    if self
+                        .config
+                        .max_reorder_actions
+                        .is_some_and(|max| self.reorder_actions_taken >= max)
+                    {
+                        return Err(GameError::ReorderBudgetExceeded);
+                    }
                     self.available.sort(sort_by);
+                    self.reorder_actions_taken += 1;
                     Ok(())
                 } else {
                     Err(GameError::InvalidAction)
@@ -1784,6 +1842,72 @@ mod tests {
         ace.enhancement = Some(Enhancement::Glass);
         let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
         assert_eq!(g.calc_score(hand), 32);
+    }
+
+    #[test]
+    fn test_reorder_via_move_card_changes_score() {
+        // A pair of Kings, one Glass (mult *= 2, multiplicative) and one
+        // Mult (mult += 4, additive). `calc_score_inner` accumulates mult
+        // strictly left-to-right in hand-position order, so which one is
+        // processed first changes the final mult.
+        // Pair base: chips=10, mult=2 (see test_enhancement_steel_held).
+        // Chips: 10 + 10 (king) + 10 (king) = 30, unaffected by order.
+        let mut king_mult = Card::new(Value::King, Suit::Heart);
+        king_mult.enhancement = Some(Enhancement::Mult);
+        let mut king_glass = Card::new(Value::King, Suit::Diamond);
+        king_glass.enhancement = Some(Enhancement::Glass);
+
+        // Order A: Mult scores first, then Glass: mult = (2 + 4) * 2 = 12.
+        let mut g = Game::default();
+        g.available.extend(vec![king_mult, king_glass]);
+        g.select_card(king_mult).unwrap();
+        g.select_card(king_glass).unwrap();
+        let hand_a = SelectHand::new(g.available.selected()).best_hand().unwrap();
+        let score_a = g.calc_score(hand_a);
+        assert_eq!(score_a, 30 * 12);
+
+        // Order B: swap via MoveCard so Glass scores first, then Mult:
+        // mult = (2 * 2) + 4 = 8.
+        let mut g2 = Game::default();
+        g2.available.extend(vec![king_mult, king_glass]);
+        g2.move_card(MoveDirection::Left, king_glass).unwrap();
+        g2.select_card(king_mult).unwrap();
+        g2.select_card(king_glass).unwrap();
+        let hand_b = SelectHand::new(g2.available.selected())
+            .best_hand()
+            .unwrap();
+        let score_b = g2.calc_score(hand_b);
+        assert_eq!(score_b, 30 * 8);
+
+        assert_ne!(score_a, score_b);
+    }
+
+    #[test]
+    fn test_playhand_action_respects_current_hand_order() {
+        // End-to-end version of the above through Action::PlayHand, proving
+        // the atomic action preserves order-sensitivity too (not just the
+        // lower-level calc_score/Available plumbing).
+        let mut king_mult = Card::new(Value::King, Suit::Heart);
+        king_mult.enhancement = Some(Enhancement::Mult);
+        let mut king_glass = Card::new(Value::King, Suit::Diamond);
+        king_glass.enhancement = Some(Enhancement::Glass);
+
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+        // Ante::Two's requirement (800) comfortably exceeds this hand's
+        // score either way it's ordered, so the blind isn't cleared
+        // mid-test and `g.score` reflects this play in isolation.
+        g.ante_current = Ante::Two;
+        g.available.empty();
+        g.available.extend(vec![king_mult, king_glass]);
+
+        let score_before = g.score;
+        g.handle_action(Action::PlayHand(CardMask::from_positions(&[0, 1])))
+            .expect("play hand");
+        // Mult-then-Glass: chips 30 * mult 12 = 360.
+        assert_eq!(g.score - score_before, 30 * 12);
     }
 
     #[test]
@@ -2379,6 +2503,36 @@ mod tests {
         assert_eq!(g.available.cards().len(), hand_size_before);
         // Glass card must be permanently gone (not hiding in discarded to return next deal)
         assert!(g.discarded.iter().all(|c| c.id != glass_id));
+    }
+
+    #[test]
+    fn test_reorder_cap_does_not_leak_into_tarot_hand_stage() {
+        // Regression test: an exhausted blind-phase reorder budget must not
+        // reject MoveCard in Stage::TarotHand — that stage has its own,
+        // separate, uncapped move-card generator (`gen_actions_tarot_hand`),
+        // and `handle_action`'s cap check previously applied to both stages
+        // uniformly, causing exactly this generator/handler mismatch bug.
+        let config = Config {
+            max_reorder_actions: Some(1),
+            ..Config::default()
+        };
+        let mut g = Game::new(config);
+        g.stage = Stage::Blind(Blind::Small);
+        g.deal();
+
+        let card = g.available.cards()[1];
+        g.handle_action(Action::MoveCard(MoveDirection::Left, card))
+            .expect("first reorder action is within the blind-phase budget");
+        let card = g.available.cards()[0];
+        assert!(matches!(
+            g.handle_action(Action::MoveCard(MoveDirection::Right, card)),
+            Err(GameError::ReorderBudgetExceeded)
+        ));
+
+        g.stage = Stage::TarotHand(Tarot::Magician);
+        let card = g.available.cards()[0];
+        g.handle_action(Action::MoveCard(MoveDirection::Right, card))
+            .expect("TarotHand's move actions are unaffected by the blind-phase cap");
     }
 
     #[test]

@@ -1,9 +1,9 @@
-use balatro_rs::action::Action;
+use balatro_rs::action::{Action, CardMask};
 use balatro_rs::card::Card;
-use balatro_rs::config::Config;
+use balatro_rs::config::{Config, RngMode};
 use balatro_rs::error::GameError;
 use balatro_rs::game::Game;
-use balatro_rs::joker::Jokers;
+use balatro_rs::joker::{JokerState, Jokers, Rarity, SelectorValue};
 use balatro_rs::stage::{End, Stage};
 use pyo3::prelude::*;
 
@@ -36,6 +36,12 @@ impl GameEngine {
 
     fn handle_action_index(&mut self, index: usize) -> Result<(), GameError> {
         self.game.handle_action_index(index)
+    }
+
+    fn clone(&self) -> Self {
+        GameEngine {
+            game: self.game.clone(),
+        }
     }
 
     #[getter]
@@ -107,6 +113,10 @@ impl GameState {
         self.game.required_score()
     }
     #[getter]
+    fn score_log10(&self) -> f64 {
+        self.game.score_log10()
+    }
+    #[getter]
     fn jokers(&self) -> Vec<Jokers> {
         self.game.jokers.clone()
     }
@@ -141,6 +151,14 @@ fn pylatro(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<GameEngine>()?;
     m.add_class::<GameState>()?;
     m.add_class::<Stage>()?;
+    m.add_class::<RngMode>()?;
+    m.add_class::<CardMask>()?;
+    m.add_class::<Rarity>()?;
+    m.add_class::<JokerState>()?;
+    m.add_class::<SelectorValue>()?;
+    m.add_class::<Card>()?;
+    m.add_class::<Jokers>()?;
+    m.add_class::<Action>()?;
     m.add_function(wrap_pyfunction!(seed_from_str, m)?)?;
     Ok(())
 }

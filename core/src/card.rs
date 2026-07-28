@@ -1,7 +1,7 @@
 #[cfg(feature = "colored")]
 use colored::Colorize;
 #[cfg(feature = "python")]
-use pyo3::pyclass;
+use pyo3::prelude::*;
 use std::{
     fmt,
     sync::atomic::{AtomicUsize, Ordering},
@@ -88,6 +88,35 @@ impl Card {
             Value::King => 10,
             Value::Ace => 11,
         }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Card {
+    #[getter]
+    fn get_value(&self) -> Value {
+        self.value
+    }
+    #[getter]
+    fn get_suit(&self) -> Suit {
+        self.suit
+    }
+    #[getter]
+    fn get_id(&self) -> usize {
+        self.id
+    }
+    #[getter]
+    fn get_edition(&self) -> Edition {
+        self.edition
+    }
+    #[getter]
+    fn get_enhancement(&self) -> Option<Enhancement> {
+        self.enhancement
+    }
+    #[getter]
+    fn get_seal(&self) -> Option<Seal> {
+        self.seal
     }
 }
 

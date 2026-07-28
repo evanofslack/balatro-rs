@@ -40,6 +40,12 @@ const PACK_CONTENTS_MAX: usize = 5;
 //
 // We end up with a vector of length 103 where each index
 // represents a potential action.
+//
+// Bump this whenever the layout above changes (new action slot, reordered
+// indices, etc.) so training/eval scripts can assert compatibility against
+// saved configs/replays instead of silently reading shifted indices.
+pub const ACTION_SPACE_VERSION: u32 = 1;
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
 #[derive(Debug, PartialEq, Eq, Clone, Hash)]

@@ -1,10 +1,11 @@
-use crate::action::{Action, MoveDirection, SortBy};
+use crate::action::{Action, CardMask, MoveDirection, SortBy};
 use crate::card::Edition;
 use crate::consumable::Consumable;
 use crate::game::Game;
 use crate::pack::PackContent;
 use crate::space::ActionSpace;
 use crate::stage::{Blind, BlindExt, Stage};
+use itertools::Itertools;
 
 impl Game {
     // Get all legal SelectCard actions that can be executed given current state
@@ -74,8 +75,58 @@ impl Game {
         Some(combos)
     }
 
+    // Get all legal atomic PlayHand(mask) actions: every subset of the
+    // currently-held cards (by hand position, size 1..=selected_max) that
+    // could be played this turn.
+    fn gen_actions_play_hand(&self) -> Option<impl Iterator<Item = Action>> {
+        if !self.stage.is_blind() {
+            return None;
+        }
+        if self.plays == 0 {
+            return None;
+        }
+        let n = self.available.cards().len();
+        if n == 0 {
+            return None;
+        }
+        let max_k = self.config.selected_max.min(n);
+        let masks: Vec<Action> = (1..=max_k)
+            .flat_map(move |k| (0..n).combinations(k))
+            .map(|combo| Action::PlayHand(CardMask::from_positions(&combo)))
+            .collect();
+        Some(masks.into_iter())
+    }
+
+    // Get all legal atomic DiscardHand(mask) actions — mirrors
+    // `gen_actions_play_hand`, gated on discards remaining instead of plays.
+    fn gen_actions_discard_hand(&self) -> Option<impl Iterator<Item = Action>> {
+        if !self.stage.is_blind() {
+            return None;
+        }
+        if self.discards == 0 {
+            return None;
+        }
+        let n = self.available.cards().len();
+        if n == 0 {
+            return None;
+        }
+        let max_k = self.config.selected_max.min(n);
+        let masks: Vec<Action> = (1..=max_k)
+            .flat_map(move |k| (0..n).combinations(k))
+            .map(|combo| Action::DiscardHand(CardMask::from_positions(&combo)))
+            .collect();
+        Some(masks.into_iter())
+    }
+
     fn gen_actions_sort_hand(&self) -> Option<impl Iterator<Item = Action>> {
         if !self.stage.is_blind() {
+            return None;
+        }
+        if self
+            .config
+            .max_reorder_actions
+            .is_some_and(|max| self.reorder_actions_taken >= max)
+        {
             return None;
         }
         Some(
@@ -91,6 +142,13 @@ impl Game {
     fn gen_actions_move_card(&self) -> Option<impl Iterator<Item = Action>> {
         // Can only move cards during blinds
         if !self.stage.is_blind() {
+            return None;
+        }
+        if self
+            .config
+            .max_reorder_actions
+            .is_some_and(|max| self.reorder_actions_taken >= max)
+        {
             return None;
         }
         let left = self
@@ -373,6 +431,8 @@ impl Game {
         let deselect_cards = self.gen_actions_deselect_card();
         let plays = self.gen_actions_play();
         let discards = self.gen_actions_discard();
+        let play_hands = self.gen_actions_play_hand();
+        let discard_hands = self.gen_actions_discard_hand();
         let move_cards = self.gen_actions_move_card();
         let sort_hands = self.gen_actions_sort_hand();
         let cash_outs = self.gen_actions_cash_out();
@@ -396,6 +456,8 @@ impl Game {
             .chain(deselect_cards.into_iter().flatten())
             .chain(plays.into_iter().flatten())
             .chain(discards.into_iter().flatten())
+            .chain(play_hands.into_iter().flatten())
+            .chain(discard_hands.into_iter().flatten())
             .chain(move_cards.into_iter().flatten())
             .chain(sort_hands.into_iter().flatten())
             .chain(cash_outs.into_iter().flatten())
@@ -453,6 +515,13 @@ impl Game {
 
     fn unmask_action_space_move_cards(&self, space: &mut ActionSpace) {
         if !self.stage.is_blind() {
+            return;
+        }
+        if self
+            .config
+            .max_reorder_actions
+            .is_some_and(|max| self.reorder_actions_taken >= max)
+        {
             return;
         }
         // move left
@@ -649,6 +718,13 @@ impl Game {
 
     fn unmask_action_space_sort_hand(&self, space: &mut ActionSpace) {
         if !self.stage.is_blind() {
+            return;
+        }
+        if self
+            .config
+            .max_reorder_actions
+            .is_some_and(|max| self.reorder_actions_taken >= max)
+        {
             return;
         }
         space
@@ -918,6 +994,80 @@ mod tests {
         }
         for i in 0..available - 1 {
             assert!(space.move_card_right[i] == 1);
+        }
+    }
+
+    #[test]
+    fn test_max_reorder_actions_caps_move_and_sort() {
+        let config = crate::config::Config {
+            max_reorder_actions: Some(1),
+            ..crate::config::Config::default()
+        };
+        let mut g = Game::new(config);
+        g.stage = Stage::Blind(Blind::Small);
+        g.deal();
+
+        // Budget starts fresh after deal(): move/sort actions are offered
+        // and legal.
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(actions.iter().any(|a| matches!(a, Action::MoveCard(..))));
+        assert!(actions.iter().any(|a| matches!(a, Action::SortHand(..))));
+
+        let card = g.available.cards()[1];
+        g.handle_action(Action::MoveCard(MoveDirection::Left, card))
+            .expect("first reorder action is within budget");
+
+        // Budget exhausted: neither action is offered nor accepted anymore.
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(!actions.iter().any(|a| matches!(a, Action::MoveCard(..))));
+        assert!(!actions.iter().any(|a| matches!(a, Action::SortHand(..))));
+
+        let card = g.available.cards()[0];
+        let res = g.handle_action(Action::MoveCard(MoveDirection::Right, card));
+        assert!(matches!(
+            res,
+            Err(crate::error::GameError::ReorderBudgetExceeded)
+        ));
+
+        // A real Play() resets the budget for the next hand.
+        for c in g.available.cards()[0..5].to_vec() {
+            g.select_card(c).unwrap();
+        }
+        g.handle_action(Action::Play()).expect("play resets budget");
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(actions.iter().any(|a| matches!(a, Action::MoveCard(..))));
+    }
+
+    #[test]
+    fn test_max_reorder_actions_caps_fixed_action_space_too() {
+        // Regression test: gen_action_space()'s fixed mask must agree with
+        // gen_actions()/handle_action once the reorder budget is hit, or a
+        // caller driving the mask (handle_action_index) gets an index the
+        // mask claims is legal but handle_action then rejects.
+        let config = crate::config::Config {
+            max_reorder_actions: Some(1),
+            ..crate::config::Config::default()
+        };
+        let mut g = Game::new(config);
+        g.stage = Stage::Blind(Blind::Small);
+        g.deal();
+
+        let card = g.available.cards()[1];
+        g.handle_action(Action::MoveCard(MoveDirection::Left, card))
+            .expect("first reorder action is within budget");
+
+        let space = g.gen_action_space();
+        for i in 0..space.move_card_left.len() {
+            assert_eq!(space.move_card_left[i], 0, "move left {i} should be masked");
+        }
+        for i in 0..space.move_card_right.len() {
+            assert_eq!(
+                space.move_card_right[i], 0,
+                "move right {i} should be masked"
+            );
+        }
+        for i in 0..space.sort_hand.len() {
+            assert_eq!(space.sort_hand[i], 0, "sort hand {i} should be masked");
         }
     }
 
