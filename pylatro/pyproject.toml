@@ -11,5 +11,10 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 dynamic = ["version"]
+dependencies = ["gymnasium>=0.29", "numpy>=1.24"]
+
+[project.optional-dependencies]
+dev = ["matplotlib", "tqdm", "pytest"]
+
 [tool.maturin]
 features = ["pyo3/extension-module"]
