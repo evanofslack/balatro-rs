@@ -5,15 +5,49 @@ point the medium-term plan is aimed at.
     python eval.py --agent random
     python eval.py --agent mcts --sims 100
     python eval.py --agent mcts --sims 100 --out results/mcts_100.json
+    python eval.py --agent mcts --sims 100 --workers 10 --out results/mcts_100.json
+
+--workers >1 runs episodes across a process pool, not threads — pyo3 never
+releases the GIL around clone()/handle_action() here, so threads wouldn't
+overlap at all (see docs/mcts.md's Rust-vs-Python check-in). Each episode is
+fully independent (own env, own agent), so this is a pure wall-clock win with
+no change to search behavior — see --workers' help text for the one caveat
+(per-episode RNG derivation differs slightly from the --workers=1 path).
 """
 
 import argparse
 import time
+from concurrent.futures import ProcessPoolExecutor
 from typing import Optional
 
 from env import BalatroEnv
 from eval_seeds import EVAL_SEEDS
-from logging_utils import print_report, record_episode, save_results
+from logging_utils import EpisodeLog, print_report, record_episode, save_results
+
+
+def _build_agent(agent_name: str, sims: int, agent_seed: Optional[int]):
+    if agent_name == "random":
+        from agents.random_agent import RandomAgent
+
+        return RandomAgent()
+    elif agent_name == "mcts":
+        from agents.mcts_agent import MctsAgent
+
+        return MctsAgent(n_simulations=sims, agent_seed=agent_seed)
+    else:
+        raise ValueError(f"unknown agent: {agent_name}")
+
+
+def _run_one(
+    agent_name: str, seed: int, sims: int, max_steps: int, agent_seed: Optional[int]
+) -> EpisodeLog:
+    """Runs one episode in isolation — own env, own agent. This is what makes
+    an episode a valid unit of work for a process pool: no state is shared
+    with any other episode, so workers can't step on each other."""
+    env = BalatroEnv(max_steps=max_steps)
+    agent = _build_agent(agent_name, sims, agent_seed)
+    agent.run_episode(env, seed, max_steps)
+    return record_episode(env, seed)
 
 
 def run_agent(
@@ -23,32 +57,56 @@ def run_agent(
     episodes: int,
     out: Optional[str] = None,
     agent_seed: Optional[int] = None,
+    workers: int = 1,
 ):
     print(
-        f"starting {episodes} episodes with {sims} sims for agent {agent_name}, out={out}"
+        f"starting {episodes} episodes with {sims} sims for agent {agent_name}, "
+        f"out={out}, workers={workers}"
     )
 
-    env = BalatroEnv(max_steps=max_steps)
-
     if agent_name == "random":
-        from agents.random_agent import AGENT_VERSION, RandomAgent
-
-        agent = RandomAgent()
-        run_episode = lambda seed: agent.run_episode(env, seed, max_steps)
+        from agents.random_agent import AGENT_VERSION
     elif agent_name == "mcts":
-        from agents.mcts_agent import AGENT_VERSION, MctsAgent
-
-        agent = MctsAgent(n_simulations=sims, agent_seed=agent_seed)
-        run_episode = lambda seed: agent.run_episode(env, seed, max_steps)
+        from agents.mcts_agent import AGENT_VERSION
     else:
         raise ValueError(f"unknown agent: {agent_name}")
 
-    logs = []
     seeds = EVAL_SEEDS[:episodes]
     start = time.perf_counter()
-    for seed in seeds:
-        run_episode(seed)
-        logs.append(record_episode(env, seed))
+
+    if workers <= 1:
+        # Unchanged from before parallelism was added: one agent instance
+        # (and its RNG stream) reused across all episodes in sequence. Kept
+        # bit-identical so `--agent-seed` still reproduces every saved
+        # results/*.json generated before this flag existed.
+        env = BalatroEnv(max_steps=max_steps)
+        agent = _build_agent(agent_name, sims, agent_seed)
+        logs = []
+        for seed in seeds:
+            agent.run_episode(env, seed, max_steps)
+            logs.append(record_episode(env, seed))
+    else:
+        # Each worker process needs its own agent (a Python object, and its
+        # RNG, can't be shared across a process boundary) — so a single
+        # continuous RNG stream across all episodes isn't possible here.
+        # Each episode instead gets its own derived-but-deterministic seed
+        # (agent_seed + position in the eval set), so --agent-seed is still
+        # fully reproducible run-to-run, just not identical to the
+        # --workers=1 stream for the same --agent-seed value.
+        per_episode_seeds = [
+            None if agent_seed is None else agent_seed + i for i in range(len(seeds))
+        ]
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            logs = list(
+                pool.map(
+                    _run_one,
+                    [agent_name] * len(seeds),
+                    seeds,
+                    [sims] * len(seeds),
+                    [max_steps] * len(seeds),
+                    per_episode_seeds,
+                )
+            )
     elapsed = time.perf_counter() - start
 
     print(
@@ -65,6 +123,7 @@ def run_agent(
             "episodes": episodes,
             "elapsed_sec": elapsed,
             "agent_seed": agent_seed,
+            "workers": workers,
         }
         save_results(out, logs, summary, meta)
         print(f"saved to {out}")
@@ -88,6 +147,16 @@ if __name__ == "__main__":
         help="seed the mcts agent's own rng for reproducible A/B comparisons "
         "(default: unseeded)",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="run episodes across N processes instead of serially (default: 1, "
+        "unchanged/bit-identical behavior). With --agent-seed set, results "
+        "are still fully reproducible for a given --workers value, but a "
+        "--workers=1 run and a --workers>1 run of the same --agent-seed will "
+        "not produce identical per-episode outcomes (see module docstring).",
+    )
     args = parser.parse_args()
     run_agent(
         args.agent,
@@ -96,4 +165,5 @@ if __name__ == "__main__":
         args.episodes,
         args.out,
         args.agent_seed,
+        args.workers,
     )

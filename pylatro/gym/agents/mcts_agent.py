@@ -19,7 +19,7 @@ from typing import Optional
 import pylatro
 from joker_pool import apply_to_config
 
-AGENT_VERSION = "6"  # 1 = original baseline (results/mcts_*.json, pre-versioning)
+AGENT_VERSION = "8"  # 1 = original baseline (results/mcts_*.json, pre-versioning)
 # 2 = exclude SkipBlind from search tree
 # 3 = margin-aware terminal loss value (heuristic_value)
 # 4 = rank PlayHand candidates by one-ply lookahead score
@@ -28,6 +28,10 @@ AGENT_VERSION = "6"  # 1 = original baseline (results/mcts_*.json, pre-versionin
 #     fixing the TarotHand dead end
 # 6 = heuristic_value() rescaled to [0.0, 1.0]; non-terminal branch
 #     reweighted so clearing the next blind (state.round) dominates
+# 7 = isolate v6's [0,1] rescale from its round-dominance reweight —
+#     v5's original weights, just bounded (docs/mcts.md v7)
+# 8 = retune UCB1's exploration constant to match v7's compressed value
+#     scale (docs/mcts.md v8) — only change from v7
 
 # Stage::TarotHand's Stage.int() encoding (core/src/stage.rs) — the one
 # stage where SelectCard/DeselectCard aren't dominated by anything atomic.
@@ -145,20 +149,18 @@ TERMINAL_WIN_VALUE = 1.0
 TERMINAL_LOSE_FLOOR = 0.0  # never scored a chip
 TERMINAL_LOSE_CEILING = 0.2  # ran out of plays one point short of clearing
 
-# Non-terminal branch: bounded so a live state is never valued below a loss
-# or above a win. Weighted so clearing the next blind (state.round)
-# dominates progress/money/jokers — see docs/mcts.md (v6) for the derivation.
+# v7 isolates the [0,1] rescale from v6's round-dominance reweight (see
+# docs/mcts.md v6/v7) — this pass deliberately keeps v5's original relative
+# weights, just bounded, to test the rescale alone.
 NONTERMINAL_FLOOR = 0.05
 NONTERMINAL_CEILING = 0.9
-ROUND_WEIGHT = 0.5
-PROGRESS_WEIGHT = 0.05
-MONEY_WEIGHT = 0.002
-JOKER_WEIGHT = 0.02
+RAW_MIN = -3.0  # ~ boss blind (required=600), score=0: log10(1)-log10(601)
+RAW_MAX = 3.5  # ~ round=2, near-max money/jokers, progress near 0
 
 
 def heuristic_value(game) -> float:
     """Bounded [0.0, 1.0] state-value estimate for the rollout leaf/UCB1
-    backprop — see docs/mcts.md (v6) for why it's scaled this way."""
+    backprop — see docs/mcts.md (v7) for why it's scaled this way."""
     if game.is_over:
         if game.is_win:
             return TERMINAL_WIN_VALUE
@@ -171,13 +173,23 @@ def heuristic_value(game) -> float:
         )
     state = game.state
     progress = state.score_log10 - math.log10(state.required_score + 1)
-    raw = (
-        ROUND_WEIGHT * state.round
-        + PROGRESS_WEIGHT * progress
-        + MONEY_WEIGHT * state.money
-        + JOKER_WEIGHT * len(state.jokers)
-    )
-    return max(NONTERMINAL_FLOOR, min(raw, NONTERMINAL_CEILING))
+    raw = progress + 0.01 * state.money + 0.3 * len(state.jokers) + 0.5 * state.round
+    frac = max(0.0, min((raw - RAW_MIN) / (RAW_MAX - RAW_MIN), 1.0))
+    return NONTERMINAL_FLOOR + frac * (NONTERMINAL_CEILING - NONTERMINAL_FLOOR)
+
+
+# v8: v7's bounding compressed the non-terminal branch's raw span
+# (RAW_MAX - RAW_MIN = 6.5) down to (NONTERMINAL_CEILING - NONTERMINAL_FLOOR)
+# = 0.85 — a ~7.6x compression — while UCB1's exploration bonus was left at
+# the textbook math.sqrt(2), calibrated for an uncompressed [0,1] reward.
+# Scaled proportionally: sqrt(2) * (0.85 / 6.5) =~ 0.185. The terminal
+# branch compressed by a different ratio (~60x, [-10,50] -> [0,1]) than the
+# non-terminal branch — this constant is tuned toward the non-terminal
+# branch specifically, since bounded rollouts reach a true terminal state
+# far less often. See docs/mcts.md (v8).
+EXPLORATION_CONSTANT = math.sqrt(2) * (NONTERMINAL_CEILING - NONTERMINAL_FLOOR) / (
+    RAW_MAX - RAW_MIN
+)
 
 
 class Node:
@@ -206,7 +218,7 @@ class MctsAgent:
     def __init__(
         self,
         n_simulations: int = 100,
-        exploration: float = math.sqrt(2),
+        exploration: float = EXPLORATION_CONSTANT,
         agent_seed: Optional[int] = None,
     ):
         self.n_simulations = n_simulations

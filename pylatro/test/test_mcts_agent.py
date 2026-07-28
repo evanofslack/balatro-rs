@@ -56,31 +56,28 @@ def test_heuristic_value_win_and_bounds():
     assert TERMINAL_LOSE_FLOOR <= never_scored < mid < near_miss <= TERMINAL_LOSE_CEILING
 
 
-def test_heuristic_value_round_dominates_and_stays_bounded():
-    round_0_states = [
+def test_heuristic_value_stays_bounded():
+    # v7 deliberately does not reweight (see docs/mcts.md v7) — it keeps v5's
+    # original relative weights and only bounds the output, so a round=1
+    # state does not necessarily beat every round=0 state here (unlike v6).
+    # That property is deferred to whenever v8 reintroduces the reweight on
+    # top of this bounding.
+    states = [
         _fake_game(
             is_over=False,
             score=s,
             required_score=300,
-            round=0,
+            round=r,
             money=m,
             jokers=[None] * j,
         )
         for s in (0, 150, 299)
         for m in (0, 40)
         for j in (0, 5)
+        for r in (0, 1, 2)
     ]
-    round_1_state = _fake_game(
-        is_over=False, score=0, required_score=450, round=1, money=0, jokers=[]
-    )
-
-    round_0_values = [heuristic_value(g) for g in round_0_states]
-    round_1_value = heuristic_value(round_1_state)
-
-    assert all(0.0 <= v <= 1.0 for v in round_0_values + [round_1_value])
-    # a state that's cleared one more blind beats every sampled round-0 state,
-    # even ones with far more money/jokers/within-blind progress.
-    assert round_1_value > max(round_0_values)
+    values = [heuristic_value(g) for g in states]
+    assert all(0.0 <= v <= 1.0 for v in values)
 
 
 def test_no_skip_blind_in_episode():
