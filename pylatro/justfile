@@ -9,9 +9,11 @@ develop:
     {{maturin}} develop
 
 # vanilla MCTS eval against the fixed 100-seed set
-# saves results/mcts_<sims>_v<version>.json
-mcts version sims="100" seed="0":
-    {{python}} gym/eval.py --agent mcts --sims {{sims}} --agent-seed {{seed}} --out results/mcts_{{sims}}_v{{version}}.json
+# saves results/mcts_<sims>_v<version>_s<seed>.json — seed is in the filename
+# so re-running the same version at a different seed can't silently clobber
+# an earlier run's saved results (bit us once already).
+mcts version sims="100" seed="0" workers="1":
+    {{python}} gym/eval.py --agent mcts --sims {{sims}} --agent-seed {{seed}} --workers {{workers}} --out results/mcts_{{sims}}_v{{version}}_s{{seed}}.json
 
 # random baseline (floor)
 random:
@@ -20,6 +22,10 @@ random:
 # diff two saved eval.py --out runs
 compare a b:
     {{python}} gym/compare.py {{a}} {{b}}
+
+# average N same-version eval.py --out runs into one summary (see aggregate.py)
+aggregate out *runs:
+    {{python}} gym/aggregate.py {{runs}} --out {{out}}
 
 # throughput numbers: steps/sec, episodes/sec, isolated clone() cost
 bench:

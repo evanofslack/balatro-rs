@@ -50,6 +50,20 @@ Deliberate simplifications, documented as they were added:
   episodes did exactly this, ~290 MoveCard actions each, ~40% of that
   run's entire action budget). SelectCard/DeselectCard are therefore only
   excluded during the Blind stage now — see _excluded_kinds().
+- Once ApplyTarot() becomes legal in Stage::TarotHand (selected_count
+  already satisfies min_targets()), SelectCard/DeselectCard are forced out
+  in favor of it too (_force_apply_tarot()) — otherwise the same
+  free-action-beats-real-risk trap as SkipBlind recurs one layer deeper:
+  heuristic_value() can't distinguish "still selecting" from "resolved"
+  (score/money/jokers/round untouched by any of the three for most tarots),
+  and a rollout that actually resolves risks a real terminal loss (running
+  out of plays via uniform-random PlayHand/DiscardHand before reaching
+  required_score) that dithering never risks. Confirmed empirically against
+  the exact seed (1025) that first surfaced the bug: a leaf-value nudge
+  toward ApplyTarot was tried first and rejected — its branch's average
+  rollout value came out *worse* than dithering's, because the downside of
+  landing in the terminal-loss range ([-10, -2]) outweighs any reasonably
+  sized nudge. See docs/mcts.md's "ApplyTarot never chosen" entry.
 """
 
 import math
@@ -59,7 +73,7 @@ from typing import Optional
 import pylatro
 from joker_pool import apply_to_config
 
-AGENT_VERSION = "6"  # 1 = original baseline (results/mcts_*.json, pre-versioning)
+AGENT_VERSION = "7"  # 1 = original baseline (results/mcts_*.json, pre-versioning)
 # 2 = exclude SkipBlind from search tree
 # 3 = margin-aware terminal loss value (heuristic_value)
 # 4 = rank PlayHand candidates by one-ply lookahead score
@@ -69,6 +83,11 @@ AGENT_VERSION = "6"  # 1 = original baseline (results/mcts_*.json, pre-versionin
 # 6 = score every legal PlayHand mask at tree expansion instead of a random
 #     60-of-218 pre-sample, so a flush/straight/full-house completion can't
 #     be missed by sampling luck before it's even ranked
+# 7 = force ApplyTarot once legal (drop SelectCard/DeselectCard from the
+#     tree), fixing the ApplyTarot dead end (see docs/mcts.md) — same
+#     dominated-action-exclusion pattern as SkipBlind/MoveCard/SortHand, not
+#     a heuristic_value() reweight (tried first, empirically insufficient:
+#     see docs/mcts.md)
 
 # Stage::TarotHand's Stage.int() encoding (core/src/stage.rs) — the one
 # stage where SelectCard/DeselectCard aren't dominated by anything atomic.
@@ -100,6 +119,33 @@ def _excluded_kinds(game) -> set:
     return ALWAYS_EXCLUDED_KINDS | BLIND_ONLY_EXCLUDED_KINDS
 
 
+def _force_apply_tarot(game, kept: list) -> list:
+    """Once ApplyTarot() is legal (selected_count already satisfies
+    min_targets()), drop SelectCard/DeselectCard and force it — fixes the
+    "ApplyTarot never chosen" dead end (docs/mcts.md). heuristic_value()
+    can't distinguish "still selecting" from "resolved": SelectCard/
+    DeselectCard/ApplyTarot don't move score/money/jokers/round for most
+    tarots (core/src/tarot.rs). Worse, a leaf-value nudge alone doesn't fix
+    it either (tried and empirically rejected against seed 1025): a
+    _rollout() that actually resolves the tarot risks landing in
+    Stage::Blind and exhausting plays/discards via uniform-random PlayHand/
+    DiscardHand picks before reaching required_score, hitting the real
+    terminal-loss range ([-10, -2]) — a downside SelectCard/DeselectCard
+    dithering never risks, since it never consumes a play. That's the same
+    "free/safe action beats risking real play" shape as the SkipBlind
+    exploit (see EXCLUDED_KINDS above), just one layer deeper, and the same
+    fix applies: remove the dithering option from the tree once resolution
+    is possible, rather than trying to out-shape the heuristic against a
+    risk it can't see coming. Trade-off: this forces resolving with exactly
+    min_targets() selected rather than exploring extra targets up to
+    max_targets() (e.g. Star can target up to 3) — acceptable since nothing
+    in heuristic_value() can currently tell the difference anyway."""
+    if game.state.stage.int() != TAROT_HAND_STAGE:
+        return kept
+    apply_actions = [a for a in kept if _action_kind(a) == "ApplyTarot"]
+    return apply_actions or kept
+
+
 def search_actions(game, rng):
     excluded = _excluded_kinds(game)
     kept = []
@@ -115,6 +161,7 @@ def search_actions(game, rng):
             discard_hands.append(action)
         else:
             kept.append(action)
+    kept = _force_apply_tarot(game, kept)
     if len(play_hands) > MAX_PLAY_HAND_CANDIDATES:
         play_hands = rng.sample(play_hands, MAX_PLAY_HAND_CANDIDATES)
     if len(discard_hands) > MAX_DISCARD_HAND_CANDIDATES:
@@ -181,6 +228,7 @@ def expansion_actions(game, rng):
             discard_hands.append(action)
         else:
             kept.append(action)
+    kept = _force_apply_tarot(game, kept)
 
     if len(play_hands) > MAX_PLAY_HAND_CANDIDATES:
         ranked = sorted(
