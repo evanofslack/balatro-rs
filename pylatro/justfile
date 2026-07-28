@@ -1,0 +1,30 @@
+# ML training/eval workflow. Run from pylatro/ — needs .env/ set up first
+# (see README.md: ./setup.sh, or maturin develop after any core/src change).
+
+python := ".env/bin/python"
+maturin := ".env/bin/maturin"
+
+# rebuild the extension after a core/balatro-types/pylatro/src change
+develop:
+    {{maturin}} develop
+
+# vanilla MCTS eval against the fixed 100-seed set
+# saves results/mcts_<sims>_v<version>.json
+mcts version sims="100" seed="0":
+    {{python}} gym/eval.py --agent mcts --sims {{sims}} --agent-seed {{seed}} --out results/mcts_{{sims}}_v{{version}}.json
+
+# random baseline (floor)
+random:
+    {{python}} gym/eval.py --agent random --out results/random.json
+
+# diff two saved eval.py --out runs
+compare a b:
+    {{python}} gym/compare.py {{a}} {{b}}
+
+# throughput numbers: steps/sec, episodes/sec, isolated clone() cost
+bench:
+    {{python}} gym/bench.py
+
+# pytest suite (gym/ + test_env.py + test_mcts_agent.py)
+test:
+    {{python}} -m pytest test/
