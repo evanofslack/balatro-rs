@@ -1,3 +1,7 @@
+#[cfg(feature = "python")]
+use pyo3::pyclass;
+#[cfg(feature = "python")]
+use pyo3::pymethods;
 use strum::EnumIter;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -11,6 +15,7 @@ pub struct Level {
 
 /// All the different possible hand ranks.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "python", pyclass(eq))]
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Hash, Copy, EnumIter)]
 pub enum HandRank {
     HighCard,
@@ -80,6 +85,20 @@ impl HandRank {
             HandRank::RoyalFlush => HandRank::StraightFlush,
             other => *other,
         }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl HandRank {
+    #[pyo3(name = "id")]
+    fn py_id(&self) -> &'static str {
+        self.id()
+    }
+    #[staticmethod]
+    #[pyo3(name = "from_id")]
+    fn py_from_id(s: &str) -> Option<Self> {
+        Self::from_id(s)
     }
 }
 
