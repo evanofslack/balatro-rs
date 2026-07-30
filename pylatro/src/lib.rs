@@ -4,6 +4,7 @@ use balatro_rs::config::{Config, RngMode};
 use balatro_rs::error::GameError;
 use balatro_rs::game::Game;
 use balatro_rs::joker::{JokerState, Jokers, Rarity, SelectorValue};
+use balatro_rs::rank::HandRank;
 use balatro_rs::stage::{End, Stage};
 use pyo3::prelude::*;
 
@@ -41,6 +42,13 @@ impl GameEngine {
     fn clone(&self) -> Self {
         GameEngine {
             game: self.game.clone(),
+        }
+    }
+
+    /// An independent alternate future from this exact state
+    fn fork(&mut self) -> Self {
+        GameEngine {
+            game: self.game.fork(),
         }
     }
 
@@ -94,6 +102,10 @@ impl GameState {
     #[getter]
     fn discarded(&self) -> Vec<Card> {
         self.game.discarded.clone()
+    }
+    #[getter]
+    fn played_hands(&self) -> Vec<HandRank> {
+        self.game.played_hands.clone()
     }
     #[getter]
     fn plays(&self) -> usize {
@@ -159,6 +171,7 @@ fn pylatro(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Card>()?;
     m.add_class::<Jokers>()?;
     m.add_class::<Action>()?;
+    m.add_class::<HandRank>()?;
     m.add_function(wrap_pyfunction!(seed_from_str, m)?)?;
     Ok(())
 }

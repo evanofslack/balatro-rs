@@ -56,7 +56,7 @@ pub(crate) trait RngBackend {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
 pub(crate) struct FastBackend {
-    rng: ChaCha8Rng,
+    pub(crate) rng: ChaCha8Rng,
     joker_gen: JokerGenerator,
     consumable_gen: ConsumableGenerator,
     pack_gen: PackGenerator,
@@ -70,6 +70,11 @@ impl FastBackend {
             consumable_gen: ConsumableGenerator::new(),
             pack_gen: PackGenerator {},
         }
+    }
+
+    /// Reseeds the shop/pack stream in place (used by fork)
+    pub(crate) fn reseed(&mut self, seed: u64) {
+        self.rng = ChaCha8Rng::seed_from_u64(seed);
     }
 }
 

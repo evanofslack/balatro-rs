@@ -35,6 +35,11 @@ fn default_backend() -> Backend {
     Backend::Fast(FastBackend::new(ChaCha8Rng::from_entropy()))
 }
 
+#[cfg(feature = "serde")]
+fn default_fork_seed_rng() -> ChaCha8Rng {
+    ChaCha8Rng::from_entropy()
+}
+
 fn default_reroll_cost() -> usize {
     5
 }
@@ -48,6 +53,8 @@ pub struct Game {
     pub deck: Deck,
     pub available: Available,
     pub discarded: Vec<Card>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub played_hands: Vec<HandRank>, // for py logging
     pub tags: Vec<Tag>,
     pub small_blind_tag: Tag,
     pub big_blind_tag: Tag,
@@ -107,6 +114,9 @@ pub struct Game {
     // `rng` above regardless of RngMode TODO.
     #[cfg_attr(feature = "serde", serde(default = "default_backend"))]
     pub(crate) backend: Backend,
+    // dedicated stream used only to mint child seeds for fork()
+    #[cfg_attr(feature = "serde", serde(default = "default_fork_seed_rng"))]
+    pub(crate) fork_seed_rng: ChaCha8Rng,
     // track stage so we can come back to it after temp tarot stage
     pub(crate) tarot_prev_stage: Option<Stage>,
 
@@ -146,6 +156,7 @@ impl Game {
             deck: Deck::default(),
             available: Available::default(),
             discarded: Vec::new(),
+            played_hands: Vec::new(),
             tags: Vec::new(),
             small_blind_tag: Tag::Uncommon,
             big_blind_tag: Tag::Uncommon,
@@ -180,10 +191,23 @@ impl Game {
             seed_str,
             rng,
             backend,
+            fork_seed_rng: ChaCha8Rng::seed_from_u64(seed ^ 0x9E37_79B9_7F4A_7C15),
             config,
         };
         game.draw_ante_tags();
         game
+    }
+
+    /// Returns an independent alternate future from this exact state
+    pub fn fork(&mut self) -> Self {
+        let mut child = self.clone();
+        let deck_seed: u64 = self.fork_seed_rng.gen();
+        child.rng = ChaCha8Rng::seed_from_u64(deck_seed);
+        if let Backend::Fast(ref mut backend) = child.backend {
+            let backend_seed: u64 = self.fork_seed_rng.gen();
+            backend.reseed(backend_seed);
+        }
+        child
     }
 
     pub fn start(&mut self) {
@@ -290,6 +314,7 @@ impl Game {
         let best = selected.best_hand()?;
         let scored = best.clone();
         let score = self.calc_score(best);
+        self.played_hands.push(scored.rank);
         let clear_blind = self.handle_score(score)?;
         // must run before the discard/redraw below: self.available still reflects
         // the cards actually held when the round ended, not their replacements.
@@ -1911,6 +1936,28 @@ mod tests {
     }
 
     #[test]
+    fn test_playhand_action_records_played_hand_rank() {
+        // played_hands is descriptive/logging-only (most-played-hand-type
+        // reporting) — confirms handle_action(PlayHand) actually appends
+        // the resolved HandRank, in order, once per real play.
+        let king_a = Card::new(Value::King, Suit::Heart);
+        let king_b = Card::new(Value::King, Suit::Diamond);
+
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+        g.ante_current = Ante::Two;
+        g.available.empty();
+        g.available.extend(vec![king_a, king_b]);
+
+        assert!(g.played_hands.is_empty());
+        g.handle_action(Action::PlayHand(CardMask::from_positions(&[0, 1])))
+            .expect("play hand");
+        assert_eq!(g.played_hands, vec![HandRank::OnePair]);
+    }
+
+    #[test]
     fn test_enhancement_stone_as_kicker() {
         // [Ace, Stone] -> High Card Ace; Stone kicker always scores +50
         // (5 + 11 + 50) * 1 = 66
@@ -3003,6 +3050,74 @@ mod tests {
         g.reroll().expect("second reroll");
         assert_eq!(g.reroll_cost, 7);
         assert_eq!(g.money, 9); // 20 - 5 - 6
+    }
+
+    #[test]
+    fn test_fork_children_are_independent() {
+        // Two forks from the same live parent must not replay the same
+        // redraw — this is the entire reason fork() exists instead of
+        // reusing clone() (which copies rng state bit-for-bit).
+        let config = Config {
+            seed: Some(1),
+            ..Config::default()
+        };
+        let mut g = Game::new(config);
+        let mut child_a = g.fork();
+        let mut child_b = g.fork();
+        let a: u64 = child_a.rng.gen();
+        let b: u64 = child_b.rng.gen();
+        assert_ne!(a, b);
+
+        let Backend::Fast(backend_a) = &mut child_a.backend else {
+            panic!("expected Fast backend");
+        };
+        let Backend::Fast(backend_b) = &mut child_b.backend else {
+            panic!("expected Fast backend");
+        };
+        let backend_a_val: u64 = backend_a.rng.gen();
+        let backend_b_val: u64 = backend_b.rng.gen();
+        assert_ne!(backend_a_val, backend_b_val);
+    }
+
+    #[test]
+    fn test_fork_is_deterministic_for_same_seed() {
+        // Same root seed -> same fork_seed_rng derivation -> same sequence
+        // of minted child seeds, so results stay reproducible end-to-end
+        // from Config.seed alone, same as every other RNG-derived behavior
+        // in this engine.
+        let config1 = Config {
+            seed: Some(42),
+            ..Config::default()
+        };
+        let config2 = Config {
+            seed: Some(42),
+            ..Config::default()
+        };
+        let mut g1 = Game::new(config1);
+        let mut g2 = Game::new(config2);
+        let mut child1 = g1.fork();
+        let mut child2 = g2.fork();
+        let v1: u64 = child1.rng.gen();
+        let v2: u64 = child2.rng.gen();
+        assert_eq!(v1, v2);
+    }
+
+    #[test]
+    fn test_fork_does_not_perturb_parents_own_rng() {
+        // fork() must only advance fork_seed_rng — the parent's own rng/
+        // backend stream (what live gameplay on that instance continues to
+        // use) must be untouched, or every fork() call would silently
+        // reroll the parent's own future.
+        let config = Config {
+            seed: Some(7),
+            ..Config::default()
+        };
+        let mut g = Game::new(config);
+        let mut baseline = g.clone();
+        let _ = g.fork();
+        let expected: u64 = baseline.rng.gen();
+        let actual: u64 = g.rng.gen();
+        assert_eq!(expected, actual);
     }
 
     #[test]
