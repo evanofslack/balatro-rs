@@ -227,8 +227,39 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
         value(game.round.to_string(), Color::White),
     ]));
 
+    // Engine cost of the last step, always visible; `m` opens the full
+    // breakdown. Cheap to keep on screen and it's the number you watch
+    // most while judging whether a change made stepping slower.
+    if let Some(last) = &app.metrics.last_action {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("⏱ ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                truncate(last.kind, 11),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                crate::metrics::fmt_ns(last.ns),
+                Style::default().fg(Color::Magenta),
+            ),
+        ]));
+        lines.push(Line::from(Span::styled(
+            format!("  {} legal · m", last.legal_actions),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
     let para = Paragraph::new(Text::from(lines));
     f.render_widget(para, inner);
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..max.saturating_sub(1)])
+    }
 }
 
 fn ante_num(ante: balatro_rs::ante::Ante) -> usize {

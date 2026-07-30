@@ -28,6 +28,7 @@ pub fn render(f: &mut Frame, _app: &mut crate::app::AppState, area: Rect) {
     let lines = vec![
         Line::from(""),
         bind("?", "Show controls"),
+        bind("m", "Engine metrics (timings, action mask)"),
         bind("r", "Run info (Deck, Poker Hands, Vouchers)"),
         bind("e", "Export game"),
         bind("q", "Quit"),
