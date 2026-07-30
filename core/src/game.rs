@@ -1212,6 +1212,12 @@ impl Game {
         }
         self.blind = Some(blind);
         self.stage = Stage::Blind(blind);
+        // Per-round resources are set here, at the start of the round, not
+        // only in `clear_blind` at the end of the previous one — anything
+        // bought in the shop in between (Grabber, Wasteful, Hieroglyph...)
+        // has to count for the round it was bought for.
+        self.plays = self.plays_per_round();
+        self.discards = self.discards_per_round();
         self.deal();
         Ok(())
     }
@@ -3244,6 +3250,60 @@ mod tests {
         g.clear_blind();
         assert_eq!(g.plays, g.config.plays + 1);
         assert_eq!(g.discards, g.config.discards + 1);
+    }
+
+    // Regression: `clear_blind` resets the per-round counters when a blind
+    // is *finished*, which happens before the shop opens. A voucher bought
+    // in that shop was landing on an already-set counter and appeared to do
+    // nothing until the round after next.
+    #[test]
+    fn test_hand_vouchers_apply_to_the_very_next_blind() {
+        let mut g = game_in_shop(100);
+        let base_plays = g.config.plays;
+        let base_discards = g.config.discards;
+
+        redeem(&mut g, Voucher::Grabber);
+        redeem(&mut g, Voucher::Wasteful);
+
+        g.handle_action(Action::NextRound()).expect("next round");
+        g.handle_action(Action::SelectBlind(Blind::Small))
+            .expect("select blind");
+
+        assert_eq!(g.plays, base_plays + 1, "Grabber must count this round");
+        assert_eq!(
+            g.discards,
+            base_discards + 1,
+            "Wasteful must count this round"
+        );
+    }
+
+    // Same path, but for the vouchers that *cost* a resource.
+    #[test]
+    fn test_hieroglyph_costs_a_hand_on_the_very_next_blind() {
+        let mut g = game_in_shop(100);
+        let base_plays = g.config.plays;
+        g.ante_current = Ante::Three;
+
+        redeem(&mut g, Voucher::Hieroglyph);
+        g.handle_action(Action::NextRound()).expect("next round");
+        g.handle_action(Action::SelectBlind(Blind::Small))
+            .expect("select blind");
+
+        assert_eq!(g.plays, base_plays - 1);
+        assert_eq!(g.ante_current, Ante::Two);
+    }
+
+    #[test]
+    fn test_paint_brush_deals_a_bigger_hand_on_the_very_next_blind() {
+        let mut g = game_in_shop(100);
+        let base_hand = g.config.available;
+
+        redeem(&mut g, Voucher::PaintBrush);
+        g.handle_action(Action::NextRound()).expect("next round");
+        g.handle_action(Action::SelectBlind(Blind::Small))
+            .expect("select blind");
+
+        assert_eq!(g.available.cards().len(), base_hand + 1);
     }
 
     #[test]

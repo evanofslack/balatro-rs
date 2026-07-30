@@ -913,6 +913,28 @@ mod tests {
         ));
     }
 
+    // The bug this guards: per-round counters used to be set only when a
+    // blind was *finished*, so a voucher bought in the shop afterwards
+    // showed no effect on the very next blind. Driven through the real key
+    // handlers, since that is where it was reported from.
+    #[test]
+    fn test_grabber_bought_in_shop_shows_up_on_the_next_blind() {
+        let mut app = shop_app(Voucher::Grabber);
+        let base_plays = app.game.config.plays;
+
+        app.focus = FocusZone::ShopPacks;
+        app.cursor = app.game.shop.packs.len();
+        handle_key(&mut app, key(KeyCode::Enter));
+        assert!(app.game.vouchers.has(Voucher::Grabber));
+
+        handle_key(&mut app, key(KeyCode::Char('n'))); // next round
+        assert_eq!(app.game.stage, Stage::PreBlind());
+        handle_key(&mut app, key(KeyCode::Enter)); // select the small blind
+
+        assert!(matches!(app.game.stage, Stage::Blind(_)));
+        assert_eq!(app.game.plays, base_plays + 1);
+    }
+
     #[test]
     fn test_magic_trick_cards_are_buyable_from_the_cards_zone() {
         let mut app = shop_app(Voucher::MagicTrick);

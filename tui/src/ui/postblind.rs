@@ -54,8 +54,10 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     let total = app.game.reward;
     let blind_base = app.game.blind.map(|b| b.reward()).unwrap_or(0);
     let hands_bonus = app.game.plays * app.game.config.money_per_hand;
-    let interest = ((app.game.money as f32 * app.game.config.interest_rate) as usize)
-        .min(app.game.config.interest_max);
+    // Seed Money / Money Tree raise the cap, so read the effective one.
+    let interest_cap = app.game.interest_max();
+    let interest =
+        ((app.game.money as f32 * app.game.config.interest_rate) as usize).min(interest_cap);
 
     let block = Block::default()
         .title(Span::styled(
@@ -78,7 +80,7 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     let interest_per = (1.0 / app.game.config.interest_rate).round() as usize;
     let interest_label = format!(
         "  Interest ($1 per ${}, max {})",
-        interest_per, app.game.config.interest_max
+        interest_per, interest_cap
     );
 
     let lines = vec![
