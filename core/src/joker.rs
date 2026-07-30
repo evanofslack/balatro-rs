@@ -178,7 +178,7 @@ impl JokerEffects for Jokers {
             }
             Self::JokerStencil(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    let empty = g.config.joker_slots.saturating_sub(g.jokers.len());
+                    let empty = g.joker_slots().saturating_sub(g.jokers.len());
                     if empty > 0 {
                         g.mult *= empty;
                     }

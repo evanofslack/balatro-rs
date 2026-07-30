@@ -3,6 +3,7 @@ use crate::consumable::Consumable;
 use crate::joker::{joker_display, Jokers};
 use crate::pack::{Pack, PackContent};
 use crate::stage::{blind_display, Blind};
+use crate::voucher::Voucher;
 #[cfg(feature = "python")]
 use pyo3::pyclass;
 use std::fmt;
@@ -48,6 +49,10 @@ pub enum Action {
     CashOut(usize),
     BuyJoker(Jokers),
     BuyConsumable(Consumable),
+    BuyVoucher(Voucher),
+    // Only reachable with the Magic Trick voucher redeemed — it is what
+    // puts playing cards in the shop at all.
+    BuyPlayingCard(Card),
     UseConsumable(Consumable),
     NextRound(),
     SelectBlind(Blind),
@@ -88,6 +93,12 @@ impl fmt::Display for Action {
             }
             Self::BuyConsumable(consumable) => {
                 write!(f, "BuyConsumable: {}", consumable.name())
+            }
+            Self::BuyVoucher(voucher) => {
+                write!(f, "BuyVoucher: {}", voucher.name())
+            }
+            Self::BuyPlayingCard(card) => {
+                write!(f, "BuyPlayingCard: {}", card)
             }
             Self::UseConsumable(consumable) => {
                 write!(f, "UseConsumable: {}", consumable.name())

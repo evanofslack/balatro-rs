@@ -1,5 +1,5 @@
 use crate::app::{AppState, FocusZone, WidgetId};
-use crate::ui::cards::{CARD_H, CARD_W, SLOT_W};
+use crate::ui::cards::{rank_str, suit_char, suit_color, CARD_H, CARD_W, SLOT_W};
 use crate::ui::{joker_strip, sidebar};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -76,6 +76,7 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
 
     let jokers = app.game.shop.jokers.clone();
     let consumables = app.game.shop.consumables.clone();
+    let cards = app.game.shop.cards.clone();
     let focused = app.focus == FocusZone::ShopJokers;
     let inner_w = (CARD_W as usize).saturating_sub(2);
 
@@ -92,7 +93,8 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         };
 
         let is_cursor = focused && app.cursor == i;
-        let can_afford = app.game.money >= joker.cost();
+        let price = app.game.price(joker.cost());
+        let can_afford = app.game.money >= price;
 
         let border_type = if is_cursor {
             BorderType::Double
@@ -138,7 +140,7 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
             ),
             Span::raw(" "),
             Span::styled(
-                format!("${}", joker.cost()),
+                format!("${}", price),
                 Style::default()
                     .fg(if can_afford {
                         Color::Yellow
@@ -169,7 +171,8 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         };
 
         let is_cursor = focused && app.cursor == slot;
-        let can_afford = app.game.money >= consumable.cost();
+        let price = app.game.price(consumable.cost());
+        let can_afford = app.game.money >= price;
         let fg = consumable_color(consumable);
 
         let border_type = if is_cursor {
@@ -206,7 +209,7 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
             lines.push(Line::from(""));
         }
         lines.push(Line::from(Span::styled(
-            format!("${}", consumable.cost()),
+            format!("${}", price),
             Style::default()
                 .fg(if can_afford {
                     Color::Yellow
@@ -220,6 +223,72 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         f.render_widget(para, item_rect);
         app.widget_rects
             .insert(WidgetId::ShopConsumable(ci), item_rect);
+    }
+
+    // Playing cards only ever appear here with the Magic Trick voucher.
+    let before_cards = joker_count + consumables.len();
+    for (di, card) in cards.iter().enumerate() {
+        let slot = before_cards + di;
+        let x = area.x + 1 + slot as u16 * SLOT_W;
+        if x + CARD_W > area.x + area.width {
+            break;
+        }
+        let item_rect = Rect {
+            x,
+            y: area.y + 1,
+            width: CARD_W,
+            height: CARD_H,
+        };
+
+        let is_cursor = focused && app.cursor == slot;
+        let price = app.game.price(card.shop_cost());
+        let can_afford = app.game.money >= price;
+        let fg = suit_color(card.suit);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(if is_cursor {
+                BorderType::Double
+            } else {
+                BorderType::Plain
+            })
+            .border_style(Style::default().fg(if is_cursor {
+                Color::Yellow
+            } else if can_afford {
+                fg
+            } else {
+                Color::DarkGray
+            }));
+
+        let mut lines = vec![
+            Line::from(Span::styled(
+                format!("{}{}", rank_str(card.value), suit_char(card.suit)),
+                Style::default().fg(fg).add_modifier(Modifier::BOLD),
+            )),
+            Line::from(Span::styled(
+                card.enhancement
+                    .map(|e| format!("{:?}", e))
+                    .unwrap_or_default(),
+                Style::default().fg(Color::Cyan),
+            )),
+        ];
+        while lines.len() < (CARD_H as usize).saturating_sub(2) {
+            lines.push(Line::from(""));
+        }
+        lines.push(Line::from(Span::styled(
+            format!("${}", price),
+            Style::default()
+                .fg(if can_afford {
+                    Color::Yellow
+                } else {
+                    Color::DarkGray
+                })
+                .add_modifier(Modifier::BOLD),
+        )));
+
+        let para = Paragraph::new(Text::from(lines)).block(block);
+        f.render_widget(para, item_rect);
+        app.widget_rects.insert(WidgetId::ShopCard(di), item_rect);
     }
 }
 
@@ -253,7 +322,8 @@ fn render_packs_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         };
 
         let is_cursor = focused && app.cursor == i;
-        let can_afford = app.game.money >= pack.cost();
+        let price = app.game.price(pack.cost());
+        let can_afford = app.game.money >= price;
         let category_color = pack_category_color(&pack.category);
 
         let border_type = if is_cursor {
@@ -294,7 +364,7 @@ fn render_packs_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
             lines.push(Line::from(""));
         }
         lines.push(Line::from(Span::styled(
-            format!("${}", pack.cost()),
+            format!("${}", price),
             Style::default()
                 .fg(if can_afford {
                     Color::Yellow
@@ -308,6 +378,94 @@ fn render_packs_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
         f.render_widget(para, item_rect);
         app.widget_rects.insert(WidgetId::ShopPack(i), item_rect);
     }
+
+    render_voucher_for_sale(f, app, area, packs.len());
+}
+
+/// The ante's voucher offer, sharing the booster-pack row. It sits one
+/// slot past the packs and is selected as the last cursor position of the
+/// ShopPacks zone.
+fn render_voucher_for_sale(f: &mut Frame, app: &mut AppState, area: Rect, slot: usize) {
+    let Some(voucher) = app.game.shop.voucher else {
+        return;
+    };
+    let x = area.x + 2 + (slot + 1) as u16 * SLOT_W;
+    if x + CARD_W > area.x + area.width {
+        return;
+    }
+
+    let label = Paragraph::new(Span::styled(
+        "Voucher",
+        Style::default().fg(Color::DarkGray),
+    ));
+    f.render_widget(
+        label,
+        Rect {
+            x,
+            y: area.y,
+            width: 10,
+            height: 1,
+        },
+    );
+
+    let item_rect = Rect {
+        x,
+        y: area.y + 1,
+        width: CARD_W,
+        height: CARD_H,
+    };
+    let is_cursor = app.focus == FocusZone::ShopPacks && app.cursor == slot;
+    // Vouchers are exempt from Clearance Sale / Liquidation.
+    let can_afford = app.game.money >= voucher.cost();
+    let inner_w = (CARD_W as usize).saturating_sub(2);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(if is_cursor {
+            BorderType::Double
+        } else {
+            BorderType::Plain
+        })
+        .border_style(Style::default().fg(if is_cursor {
+            Color::Yellow
+        } else if can_afford {
+            Color::LightGreen
+        } else {
+            Color::DarkGray
+        }));
+
+    let (line1, line2) = wrap_name(voucher.name(), inner_w);
+    let mut lines = vec![
+        Line::from(Span::styled(
+            line1,
+            Style::default()
+                .fg(Color::LightGreen)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            line2,
+            Style::default()
+                .fg(Color::LightGreen)
+                .add_modifier(Modifier::BOLD),
+        )),
+    ];
+    while lines.len() < (CARD_H as usize).saturating_sub(2) {
+        lines.push(Line::from(""));
+    }
+    lines.push(Line::from(Span::styled(
+        format!("${}", voucher.cost()),
+        Style::default()
+            .fg(if can_afford {
+                Color::Yellow
+            } else {
+                Color::DarkGray
+            })
+            .add_modifier(Modifier::BOLD),
+    )));
+
+    let para = Paragraph::new(Text::from(lines)).block(block);
+    f.render_widget(para, item_rect);
+    app.widget_rects.insert(WidgetId::ShopVoucher, item_rect);
 }
 
 fn consumable_color(consumable: &balatro_rs::consumable::Consumable) -> Color {

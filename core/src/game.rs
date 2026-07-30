@@ -14,10 +14,11 @@ use crate::planet::Planetarium;
 use crate::rank::HandRank;
 use crate::rng::{Backend, FastBackend, RealBackend, RngBackend};
 use crate::score::{ScoreSource, ScoreStep, ScoreTrace};
-use crate::shop::Shop;
+use crate::shop::{Shop, ShopContext};
 use crate::stage::{Blind, BlindExt, End, Stage};
 use crate::tag::Tag;
 use crate::tarot::{Tarot, TarotEffect};
+use crate::voucher::{Voucher, Vouchers};
 
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
@@ -58,6 +59,14 @@ pub struct Game {
     pub ante_current: Ante,
     pub action_history: Vec<Action>,
     pub round: usize,
+
+    // vouchers redeemed this run, and the ante whose voucher offer
+    // currently sits in the shop (the offer survives rerolls and every
+    // shop visit of that ante, so it can't be regenerated per refresh)
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub vouchers: Vouchers,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) voucher_ante: Option<Ante>,
 
     // jokers and their effects
     pub jokers: Vec<Jokers>,
@@ -147,6 +156,8 @@ impl Game {
             small_blind_tag: Tag::Uncommon,
             big_blind_tag: Tag::Uncommon,
             action_history: Vec::new(),
+            vouchers: Vouchers::new(),
+            voucher_ante: None,
             jokers: Vec::new(),
             effect_registry: EffectRegistry::new(),
             consumables: Vec::new(),
@@ -197,6 +208,89 @@ impl Game {
         self.result().is_some()
     }
 
+    // --- voucher-adjusted limits ---
+    //
+    // Vouchers are never applied to `Config` in place; every limit below
+    // is `Config`'s baseline plus what the redeemed set implies. Derived
+    // rather than mutated so the effects survive save/load and can't be
+    // double-applied. (`config.joker_slots` is the exception, mutated by
+    // Negative-edition jokers, which predates vouchers.)
+
+    /// Hand size dealt each round — Paint Brush / Palette raise it.
+    pub fn hand_size(&self) -> usize {
+        (self.config.available + self.vouchers.hand_size_bonus()).min(self.config.available_max)
+    }
+
+    /// Joker slots — Antimatter adds one on top of any Negative-edition
+    /// jokers already counted in `config.joker_slots`.
+    pub fn joker_slots(&self) -> usize {
+        (self.config.joker_slots + self.vouchers.joker_slot_bonus())
+            .min(self.config.joker_slots_max)
+    }
+
+    /// Consumable slots — Crystal Ball adds one.
+    pub fn consumable_slots(&self) -> usize {
+        self.config.consumable_slots + self.vouchers.consumable_slot_bonus()
+    }
+
+    /// Hands per round — Grabber/Nacho Tong add, Hieroglyph subtracts.
+    /// Never drops below one; a run with no hands is unplayable.
+    pub fn plays_per_round(&self) -> usize {
+        Self::apply_delta(self.config.plays, self.vouchers.hands_delta()).max(1)
+    }
+
+    /// Discards per round — Wasteful/Recyclomancy add, Petroglyph
+    /// subtracts. May legitimately reach zero.
+    pub fn discards_per_round(&self) -> usize {
+        Self::apply_delta(self.config.discards, self.vouchers.discards_delta())
+    }
+
+    /// Interest cap at cash out — Seed Money / Money Tree raise it.
+    pub fn interest_max(&self) -> usize {
+        self.config.interest_max + self.vouchers.interest_cap_bonus()
+    }
+
+    /// What the next reroll in a fresh shop costs, before the per-reroll
+    /// escalation. Reroll Surplus / Reroll Glut take $2 off each.
+    pub fn base_reroll_cost(&self) -> usize {
+        default_reroll_cost().saturating_sub(self.vouchers.reroll_discount())
+    }
+
+    /// Price of a shop item after Clearance Sale / Liquidation. Vouchers
+    /// themselves are never discounted.
+    pub fn price(&self, cost: usize) -> usize {
+        self.vouchers.discounted(cost)
+    }
+
+    fn apply_delta(base: usize, delta: isize) -> usize {
+        if delta >= 0 {
+            base + delta as usize
+        } else {
+            base.saturating_sub(delta.unsigned_abs())
+        }
+    }
+
+    /// Bundles what shop generation reads off the game. Borrowing rules
+    /// mean callers clone the pieces first, then pass them in — see
+    /// `cashout`.
+    fn shop_context<'a>(
+        &self,
+        planetarium: &'a Planetarium,
+        held_consumables: &'a [Consumable],
+        held_jokers: &'a [Jokers],
+        vouchers: &'a Vouchers,
+    ) -> ShopContext<'a> {
+        ShopContext {
+            planetarium,
+            held_consumables,
+            held_jokers,
+            vouchers,
+            prob_mult: self.prob_mult,
+            ante: self.ante_current as i32,
+            most_played: self.most_played_hand_rank(),
+        }
+    }
+
     // Fires when the round that just ended cleared the blind, before played
     // cards are swapped out and replacements drawn in. `self.available` still
     // reflects what was actually held in hand at the moment the round ended.
@@ -209,9 +303,7 @@ impl Game {
 
         let planetarium = self.planetarium.clone();
         for card in self.available.not_selected() {
-            if card.seal == Some(Seal::Blue)
-                && self.consumables.len() < self.config.consumable_slots
-            {
+            if card.seal == Some(Seal::Blue) && self.consumables.len() < self.consumable_slots() {
                 let gen = crate::shop::ConsumableGenerator::new();
                 let planet = gen.gen_planet_consumable(&planetarium, &[], &mut self.rng);
                 self.consumables.push(planet);
@@ -221,8 +313,8 @@ impl Game {
 
     pub(crate) fn clear_blind(&mut self) {
         self.score = self.config.base_score;
-        self.plays = self.config.plays;
-        self.discards = self.config.discards;
+        self.plays = self.plays_per_round();
+        self.discards = self.discards_per_round();
         self.hand_ranks_played_this_round.clear();
         self.deck.append(&mut self.discarded);
         self.deck.extend(self.available.cards());
@@ -243,7 +335,7 @@ impl Game {
         self.deck.extend(self.available.cards());
         self.available.empty();
         self.deck.shuffle(&mut self.rng);
-        self.draw(self.config.available);
+        self.draw(self.hand_size());
     }
 
     /// Reshuffles discarded/held cards back into the deck and redraws a
@@ -309,9 +401,7 @@ impl Game {
 
         // Check for purple seals
         for card in &discarded {
-            if card.seal == Some(Seal::Purple)
-                && self.consumables.len() < self.config.consumable_slots
-            {
+            if card.seal == Some(Seal::Purple) && self.consumables.len() < self.consumable_slots() {
                 let excl: Vec<Tarot> = self
                     .consumables
                     .iter()
@@ -474,6 +564,29 @@ impl Game {
             mult_before,
             false,
         );
+
+        // Observatory: every held Planet card whose own hand is the one
+        // being scored multiplies Mult by 1.5. Applied straight after the
+        // hand level, before any card or joker contribution.
+        if self.vouchers.observatory() {
+            let matching = self
+                .consumables
+                .iter()
+                .filter(|c| matches!(c, Consumable::Planet(p) if p.hand_rank() == hand.rank))
+                .count();
+            for _ in 0..matching {
+                let chips_before = self.chips;
+                let mult_before = self.mult;
+                self.mult += self.mult / 2;
+                self.record_step(
+                    &mut trace,
+                    ScoreSource::Voucher(Voucher::Observatory),
+                    chips_before,
+                    mult_before,
+                    false,
+                );
+            }
+        }
 
         // first card in original play order that's actually used in scoring:
         // either part of the made hand, or a stone kicker (which always scores).
@@ -651,8 +764,9 @@ impl Game {
 
     fn calc_reward(&mut self, blind: Blind) -> Result<usize, GameError> {
         let mut interest = (self.money as f32 * self.config.interest_rate).floor() as usize;
-        if interest > self.config.interest_max {
-            interest = self.config.interest_max
+        let interest_max = self.interest_max();
+        if interest > interest_max {
+            interest = interest_max
         }
         let base = blind.reward();
         let hand_bonus = self.plays * self.config.money_per_hand;
@@ -695,21 +809,32 @@ impl Game {
         }
         self.money += self.reward;
         self.reward = 0;
-        self.reroll_cost = default_reroll_cost();
+        self.reroll_cost = self.base_reroll_cost();
         self.stage = Stage::Shop();
+        self.refresh_voucher_offer();
         let planetarium = self.planetarium.clone();
         let held_consumables = self.consumables.clone();
         let held_jokers = self.jokers.clone();
-        self.shop.refresh(
-            &planetarium,
-            &held_consumables,
-            false,
-            self.prob_mult,
-            &held_jokers,
-            self.ante_current as i32,
-            &mut self.backend,
-        );
+        let vouchers = self.vouchers.clone();
+        let ctx = self.shop_context(&planetarium, &held_consumables, &held_jokers, &vouchers);
+        self.shop.refresh(&ctx, &mut self.backend);
         Ok(())
+    }
+
+    /// Draws this ante's voucher the first time its shop opens. Within an
+    /// ante the offer is left alone: it survives rerolls, and once bought
+    /// the slot stays empty until the next ante.
+    fn refresh_voucher_offer(&mut self) {
+        // Strictly forward: Hieroglyph/Petroglyph walk the ante backwards,
+        // and an ante already drawn for must not offer a second voucher.
+        if self.voucher_ante.is_some_and(|a| self.ante_current <= a) {
+            return;
+        }
+        self.voucher_ante = Some(self.ante_current);
+        let vouchers = self.vouchers.clone();
+        self.shop.voucher = self
+            .backend
+            .gen_voucher(self.ante_current as i32, &vouchers);
     }
 
     pub(crate) fn reroll(&mut self) -> Result<(), GameError> {
@@ -726,14 +851,11 @@ impl Game {
         held.extend(self.shop.consumables.clone());
         let mut held_jokers = self.jokers.clone();
         held_jokers.extend(self.shop.jokers.clone());
-        self.shop.refresh_cards(
-            &planetarium,
-            &held,
-            self.prob_mult,
-            &held_jokers,
-            self.ante_current as i32,
-            &mut self.backend,
-        );
+        let vouchers = self.vouchers.clone();
+        // Note: `refresh_cards`, not `refresh` — rerolls leave the packs
+        // and the voucher offer untouched.
+        let ctx = self.shop_context(&planetarium, &held, &held_jokers, &vouchers);
+        self.shop.refresh_cards(&ctx, &mut self.backend);
         Ok(())
     }
 
@@ -785,14 +907,14 @@ impl Game {
             self.config.joker_slots =
                 (self.config.joker_slots + 1).min(self.config.joker_slots_max);
         }
-        if self.jokers.len() >= self.config.joker_slots {
+        if self.jokers.len() >= self.joker_slots() {
             return Err(GameError::NoAvailableSlot);
         }
-        if joker.cost() > self.money {
+        if self.price(joker.cost()) > self.money {
             return Err(GameError::InvalidBalance);
         }
         self.shop.buy_joker(&joker)?;
-        self.money -= joker.cost();
+        self.money -= self.price(joker.cost());
         self.backend.on_joker_bought(&joker);
         self.jokers.push(joker);
         self.effect_registry
@@ -804,15 +926,77 @@ impl Game {
         if self.stage != Stage::Shop() {
             return Err(GameError::InvalidStage);
         }
-        if self.consumables.len() >= self.config.consumable_slots {
+        if self.consumables.len() >= self.consumable_slots() {
             return Err(GameError::NoAvailableSlot);
         }
-        if consumable.cost() > self.money {
+        if self.price(consumable.cost()) > self.money {
             return Err(GameError::InvalidBalance);
         }
         self.shop.buy_consumable(&consumable)?;
-        self.money -= consumable.cost();
+        self.money -= self.price(consumable.cost());
         self.consumables.push(consumable);
+        Ok(())
+    }
+
+    /// Redeems the shop's voucher offer. Permanent for the run — there is
+    /// no sell action, and the slot stays empty until the next ante.
+    pub(crate) fn buy_voucher(&mut self, voucher: Voucher) -> Result<(), GameError> {
+        if self.stage != Stage::Shop() {
+            return Err(GameError::InvalidStage);
+        }
+        if self.vouchers.has(voucher) {
+            return Err(GameError::VoucherAlreadyRedeemed);
+        }
+        // Vouchers are exempt from Clearance Sale / Liquidation.
+        if voucher.cost() > self.money {
+            return Err(GameError::InvalidBalance);
+        }
+        self.shop.buy_voucher(&voucher)?;
+        self.money -= voucher.cost();
+        self.vouchers.redeem(voucher);
+        self.backend.on_voucher_bought(&voucher);
+        self.apply_voucher(voucher);
+        Ok(())
+    }
+
+    /// The parts of a voucher that aren't derived from the redeemed set on
+    /// demand (see `voucher.rs`) — one-shot changes to live game state.
+    fn apply_voucher(&mut self, voucher: Voucher) {
+        // "-1 Ante" (Hieroglyph/Petroglyph): the run steps back an ante,
+        // making every remaining blind easier but adding a round.
+        if Vouchers::lowers_ante(voucher) {
+            if let Some(prev) = self.ante_current.prev() {
+                self.ante_current = prev;
+            }
+        }
+        // Reroll discounts apply to the shop the player is standing in,
+        // not just the next one.
+        if matches!(voucher, Voucher::RerollSurplus | Voucher::RerollGlut) {
+            self.reroll_cost = self.reroll_cost.saturating_sub(2);
+        }
+        // Overstock widens the current shop immediately: top up the new
+        // slots rather than making the player wait for the next round.
+        let planetarium = self.planetarium.clone();
+        let mut held = self.consumables.clone();
+        held.extend(self.shop.consumables.clone());
+        let mut held_jokers = self.jokers.clone();
+        held_jokers.extend(self.shop.jokers.clone());
+        let vouchers = self.vouchers.clone();
+        let ctx = self.shop_context(&planetarium, &held, &held_jokers, &vouchers);
+        self.shop.top_up_cards(&ctx, &mut self.backend);
+    }
+
+    pub(crate) fn buy_playing_card(&mut self, card: Card) -> Result<(), GameError> {
+        if self.stage != Stage::Shop() {
+            return Err(GameError::InvalidStage);
+        }
+        let cost = self.price(card.shop_cost());
+        if cost > self.money {
+            return Err(GameError::InvalidBalance);
+        }
+        let bought = self.shop.buy_card(&card)?;
+        self.money -= cost;
+        self.deck.push(bought);
         Ok(())
     }
 
@@ -845,7 +1029,7 @@ impl Game {
                     let prev = self.stage;
                     self.tarot_prev_stage = Some(prev);
                     self.stage = Stage::TarotHand(t);
-                    self.draw(self.config.available);
+                    self.draw(self.hand_size());
                 } else {
                     t.apply(self)?;
                     if t != Tarot::Fool {
@@ -904,15 +1088,15 @@ impl Game {
         if self.stage != Stage::Shop() {
             return Err(GameError::InvalidStage);
         }
-        if pack.cost() > self.money {
+        if self.price(pack.cost()) > self.money {
             return Err(GameError::InvalidBalance);
         }
         self.shop.buy_pack(&pack)?;
-        self.money -= pack.cost();
+        self.money -= self.price(pack.cost());
 
         // Arcana packs draw a hand for the player to apply tarots against
         if pack.category == PackCategory::Arcana {
-            self.draw(self.config.available);
+            self.draw(self.hand_size());
         }
 
         self.open_pack = Some(OpenPackState {
@@ -961,7 +1145,7 @@ impl Game {
                     self.config.joker_slots =
                         (self.config.joker_slots + 1).min(self.config.joker_slots_max);
                 }
-                if self.jokers.len() >= self.config.joker_slots {
+                if self.jokers.len() >= self.joker_slots() {
                     return Err(GameError::NoAvailableSlot);
                 }
                 self.jokers.push(j);
@@ -1028,6 +1212,12 @@ impl Game {
         }
         self.blind = Some(blind);
         self.stage = Stage::Blind(blind);
+        // Per-round resources are set here, at the start of the round, not
+        // only in `clear_blind` at the end of the previous one — anything
+        // bought in the shop in between (Grabber, Wasteful, Hieroglyph...)
+        // has to count for the round it was bought for.
+        self.plays = self.plays_per_round();
+        self.discards = self.discards_per_round();
         self.deal();
         Ok(())
     }
@@ -1171,6 +1361,14 @@ impl Game {
                 Stage::Shop() => self.buy_consumable(consumable),
                 _ => Err(GameError::InvalidAction),
             },
+            Action::BuyVoucher(voucher) => match self.stage {
+                Stage::Shop() => self.buy_voucher(voucher),
+                _ => Err(GameError::InvalidAction),
+            },
+            Action::BuyPlayingCard(card) => match self.stage {
+                Stage::Shop() => self.buy_playing_card(card),
+                _ => Err(GameError::InvalidAction),
+            },
             Action::UseConsumable(consumable) => match self.stage {
                 Stage::End(_) | Stage::TarotHand(_) => Err(GameError::InvalidAction),
                 _ => self.use_consumable(consumable),
@@ -1260,6 +1458,12 @@ impl fmt::Display for Game {
                 .collect();
             writeln!(f, "consumables: {}", parts.join(", "))?;
         }
+        if self.vouchers.is_empty() {
+            writeln!(f, "vouchers: (none)")?;
+        } else {
+            let names: Vec<&str> = self.vouchers.owned().iter().map(|v| v.name()).collect();
+            writeln!(f, "vouchers: {}", names.join(", "))?;
+        }
         writeln!(f, "planetarium: {}", self.planetarium)?;
         writeln!(f, "stage: {:?}", self.stage)?;
         writeln!(f, "ante: {:?}", self.ante_current)?;
@@ -1346,8 +1550,9 @@ mod tests {
         let mut g = Game::new(config);
 
         let planetarium = g.planetarium.clone();
-        g.shop
-            .refresh(&planetarium, &[], false, 1, &[], 1, &mut g.backend);
+        let vouchers = Vouchers::new();
+        let ctx = ShopContext::for_test(&planetarium, &vouchers, 1);
+        g.shop.refresh(&ctx, &mut g.backend);
 
         assert_eq!(g.shop.jokers.len(), 1);
         assert_eq!(g.shop.jokers[0].name(), "Ice Cream");
@@ -1383,8 +1588,9 @@ mod tests {
             let planetarium = g.planetarium.clone();
             let mut antes = Vec::new();
             for ante in 1..=4 {
-                g.shop
-                    .refresh(&planetarium, &[], false, 1, &[], ante, &mut g.backend);
+                let vouchers = Vouchers::new();
+                let ctx = ShopContext::for_test(&planetarium, &vouchers, ante);
+                g.shop.refresh(&ctx, &mut g.backend);
                 let jokers: Vec<String> =
                     g.shop.jokers.iter().map(|j| j.name().to_string()).collect();
                 let consumables: Vec<String> = g
@@ -1423,21 +1629,20 @@ mod tests {
         g.money = 1000;
 
         let planetarium = g.planetarium.clone();
-        g.shop
-            .refresh(&planetarium, &[], false, 1, &[], 1, &mut g.backend);
+        let vouchers = Vouchers::new();
+        let ctx = ShopContext::for_test(&planetarium, &vouchers, 1);
+        g.shop.refresh(&ctx, &mut g.backend);
         let bought = g.shop.jokers[0].clone();
         g.buy_joker(bought.clone()).expect("buy joker");
 
         for ante in 1..=50 {
-            g.shop.refresh(
-                &planetarium,
-                &[],
-                false,
-                1,
-                &g.jokers.clone(),
-                ante,
-                &mut g.backend,
-            );
+            let vouchers = Vouchers::new();
+            let held_jokers = g.jokers.clone();
+            let ctx = ShopContext {
+                held_jokers: &held_jokers,
+                ..ShopContext::for_test(&planetarium, &vouchers, ante)
+            };
+            g.shop.refresh(&ctx, &mut g.backend);
             assert!(
                 g.shop
                     .jokers
@@ -1463,16 +1668,17 @@ mod tests {
         g.money = 1000;
 
         let planetarium = g.planetarium.clone();
-        g.shop
-            .refresh(&planetarium, &[], false, 1, &[], 1, &mut g.backend);
+        let vouchers = Vouchers::new();
+        let ctx = ShopContext::for_test(&planetarium, &vouchers, 1);
+        g.shop.refresh(&ctx, &mut g.backend);
         let bought = g.shop.jokers[0].clone();
         g.buy_joker(bought.clone()).expect("buy joker");
         g.sell_joker(0).expect("sell joker");
 
         let mut reappeared = false;
         for ante in 1..=500 {
-            g.shop
-                .refresh(&planetarium, &[], false, 1, &[], ante, &mut g.backend);
+            let ctx = ShopContext::for_test(&planetarium, &vouchers, ante);
+            g.shop.refresh(&ctx, &mut g.backend);
             if g.shop
                 .jokers
                 .iter()
@@ -2868,5 +3074,378 @@ mod tests {
             .iter()
             .any(|j| std::mem::discriminant(j) == std::mem::discriminant(&old_joker));
         assert!(!still_present);
+    }
+
+    // --- vouchers ---
+
+    /// A game sitting in a freshly-stocked shop, having cashed out (so the
+    /// ante's voucher offer has been drawn), with `money` to spend.
+    fn game_in_shop(money: usize) -> Game {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::PostBlind();
+        g.handle_action(Action::CashOut(0)).expect("cash out");
+        g.money = money;
+        g
+    }
+
+    fn redeem(g: &mut Game, voucher: Voucher) {
+        g.shop.voucher = Some(voucher);
+        g.money = g.money.max(voucher.cost());
+        g.handle_action(Action::BuyVoucher(voucher))
+            .expect("buy voucher");
+    }
+
+    #[test]
+    fn test_shop_offers_a_voucher_after_cashout() {
+        let g = game_in_shop(0);
+        let offered = g.shop.voucher.expect("ante 1 offers a voucher");
+        // Only tier-1 vouchers can show up before anything is redeemed.
+        assert_eq!(offered.requires(), None);
+    }
+
+    #[test]
+    fn test_voucher_offer_survives_reroll_but_not_purchase() {
+        let mut g = game_in_shop(50);
+        let offered = g.shop.voucher.expect("voucher offered");
+
+        g.reroll().expect("reroll");
+        assert_eq!(g.shop.voucher, Some(offered), "reroll must not touch it");
+
+        g.handle_action(Action::BuyVoucher(offered))
+            .expect("buy voucher");
+        assert_eq!(g.shop.voucher, None);
+        assert!(g.vouchers.has(offered));
+        assert_eq!(g.money, 50 - 5 - offered.cost(), "reroll then voucher");
+    }
+
+    #[test]
+    fn test_voucher_offer_stays_gone_for_the_rest_of_the_ante() {
+        let mut g = game_in_shop(50);
+        let offered = g.shop.voucher.expect("voucher offered");
+        g.handle_action(Action::BuyVoucher(offered))
+            .expect("buy voucher");
+
+        // Next round, same ante: no new offer.
+        g.handle_action(Action::NextRound()).expect("next round");
+        g.stage = Stage::PostBlind();
+        g.handle_action(Action::CashOut(0)).expect("cash out");
+        assert_eq!(g.shop.voucher, None);
+
+        // New ante: a fresh offer, and never the one already redeemed.
+        g.ante_current = Ante::Two;
+        g.stage = Stage::PostBlind();
+        g.handle_action(Action::CashOut(0)).expect("cash out");
+        let next = g.shop.voucher.expect("ante 2 offers a voucher");
+        assert_ne!(next, offered);
+    }
+
+    #[test]
+    fn test_cannot_buy_voucher_twice_or_without_funds() {
+        let mut g = game_in_shop(0);
+        let offered = g.shop.voucher.expect("voucher offered");
+        assert!(matches!(
+            g.handle_action(Action::BuyVoucher(offered)),
+            Err(GameError::InvalidBalance)
+        ));
+
+        redeem(&mut g, offered);
+        g.shop.voucher = Some(offered);
+        g.money = 100;
+        assert!(matches!(
+            g.handle_action(Action::BuyVoucher(offered)),
+            Err(GameError::VoucherAlreadyRedeemed)
+        ));
+    }
+
+    #[test]
+    fn test_upgrade_voucher_only_offered_once_base_is_owned() {
+        let mut g = game_in_shop(100);
+        // Fast mode draws from the offerable pool, so with only the
+        // upgrade's base missing it can never surface the upgrade.
+        for _ in 0..50 {
+            g.voucher_ante = None;
+            g.ante_current = Ante::One;
+            g.refresh_voucher_offer();
+            let offered = g.shop.voucher.expect("voucher offered");
+            assert_eq!(offered.requires(), None, "upgrade offered with no base");
+        }
+
+        redeem(&mut g, Voucher::Overstock);
+        assert!(g.vouchers.is_offerable(Voucher::OverstockPlus));
+    }
+
+    #[test]
+    fn test_overstock_widens_the_shop() {
+        let mut g = game_in_shop(100);
+        let before = g.shop.jokers.len() + g.shop.consumables.len() + g.shop.cards.len();
+        assert_eq!(before, 2);
+
+        redeem(&mut g, Voucher::Overstock);
+        // Applied to the shop the player is standing in, not just the next.
+        let after = g.shop.jokers.len() + g.shop.consumables.len() + g.shop.cards.len();
+        assert_eq!(after, 3);
+
+        // ...and to every later refresh.
+        g.reroll().expect("reroll");
+        assert_eq!(
+            g.shop.jokers.len() + g.shop.consumables.len() + g.shop.cards.len(),
+            3
+        );
+    }
+
+    #[test]
+    fn test_clearance_sale_discounts_cards_and_packs_but_not_vouchers() {
+        let mut g = game_in_shop(100);
+        redeem(&mut g, Voucher::ClearanceSale);
+
+        let joker = crate::joker::jokers_by_rarity(crate::joker::Rarity::Common)[0].clone();
+        g.shop.jokers = vec![joker.clone()];
+        g.jokers.clear();
+        let full = joker.cost();
+        let money_before = g.money;
+        g.buy_joker(joker).expect("buy joker");
+        assert_eq!(g.money, money_before - (full * 3 / 4));
+
+        // Vouchers keep their sticker price.
+        g.shop.voucher = Some(Voucher::Blank);
+        let money_before = g.money;
+        g.handle_action(Action::BuyVoucher(Voucher::Blank))
+            .expect("buy voucher");
+        assert_eq!(g.money, money_before - Voucher::Blank.cost());
+    }
+
+    #[test]
+    fn test_reroll_vouchers_cut_the_price_immediately() {
+        let mut g = game_in_shop(100);
+        assert_eq!(g.reroll_cost, 5);
+        redeem(&mut g, Voucher::RerollSurplus);
+        assert_eq!(g.reroll_cost, 3, "current shop gets the discount too");
+        assert_eq!(g.base_reroll_cost(), 3);
+
+        redeem(&mut g, Voucher::RerollGlut);
+        assert_eq!(g.reroll_cost, 1);
+    }
+
+    #[test]
+    fn test_slot_and_resource_vouchers() {
+        let mut g = game_in_shop(100);
+        let slots = g.consumable_slots();
+        redeem(&mut g, Voucher::CrystalBall);
+        assert_eq!(g.consumable_slots(), slots + 1);
+
+        let joker_slots = g.joker_slots();
+        redeem(&mut g, Voucher::Antimatter);
+        assert_eq!(g.joker_slots(), joker_slots + 1);
+
+        let hand_size = g.hand_size();
+        redeem(&mut g, Voucher::PaintBrush);
+        assert_eq!(g.hand_size(), hand_size + 1);
+
+        // Per-round resources take effect at the start of the next round.
+        redeem(&mut g, Voucher::Grabber);
+        redeem(&mut g, Voucher::Wasteful);
+        assert_eq!(g.plays_per_round(), g.config.plays + 1);
+        assert_eq!(g.discards_per_round(), g.config.discards + 1);
+        g.clear_blind();
+        assert_eq!(g.plays, g.config.plays + 1);
+        assert_eq!(g.discards, g.config.discards + 1);
+    }
+
+    // Regression: `clear_blind` resets the per-round counters when a blind
+    // is *finished*, which happens before the shop opens. A voucher bought
+    // in that shop was landing on an already-set counter and appeared to do
+    // nothing until the round after next.
+    #[test]
+    fn test_hand_vouchers_apply_to_the_very_next_blind() {
+        let mut g = game_in_shop(100);
+        let base_plays = g.config.plays;
+        let base_discards = g.config.discards;
+
+        redeem(&mut g, Voucher::Grabber);
+        redeem(&mut g, Voucher::Wasteful);
+
+        g.handle_action(Action::NextRound()).expect("next round");
+        g.handle_action(Action::SelectBlind(Blind::Small))
+            .expect("select blind");
+
+        assert_eq!(g.plays, base_plays + 1, "Grabber must count this round");
+        assert_eq!(
+            g.discards,
+            base_discards + 1,
+            "Wasteful must count this round"
+        );
+    }
+
+    // Same path, but for the vouchers that *cost* a resource.
+    #[test]
+    fn test_hieroglyph_costs_a_hand_on_the_very_next_blind() {
+        let mut g = game_in_shop(100);
+        let base_plays = g.config.plays;
+        g.ante_current = Ante::Three;
+
+        redeem(&mut g, Voucher::Hieroglyph);
+        g.handle_action(Action::NextRound()).expect("next round");
+        g.handle_action(Action::SelectBlind(Blind::Small))
+            .expect("select blind");
+
+        assert_eq!(g.plays, base_plays - 1);
+        assert_eq!(g.ante_current, Ante::Two);
+    }
+
+    #[test]
+    fn test_paint_brush_deals_a_bigger_hand_on_the_very_next_blind() {
+        let mut g = game_in_shop(100);
+        let base_hand = g.config.available;
+
+        redeem(&mut g, Voucher::PaintBrush);
+        g.handle_action(Action::NextRound()).expect("next round");
+        g.handle_action(Action::SelectBlind(Blind::Small))
+            .expect("select blind");
+
+        assert_eq!(g.available.cards().len(), base_hand + 1);
+    }
+
+    #[test]
+    fn test_hieroglyph_lowers_the_ante_and_costs_a_hand() {
+        let mut g = game_in_shop(100);
+        g.ante_current = Ante::Three;
+        let hands = g.plays_per_round();
+
+        redeem(&mut g, Voucher::Hieroglyph);
+        assert_eq!(g.ante_current, Ante::Two);
+        assert_eq!(g.plays_per_round(), hands - 1);
+        assert_eq!(g.discards_per_round(), g.config.discards);
+    }
+
+    #[test]
+    fn test_seed_money_raises_the_interest_cap() {
+        let mut g = game_in_shop(100);
+        assert_eq!(g.interest_max(), g.config.interest_max);
+        redeem(&mut g, Voucher::SeedMoney);
+        assert_eq!(g.interest_max(), g.config.interest_max + 5);
+        redeem(&mut g, Voucher::MoneyTree);
+        assert_eq!(g.interest_max(), g.config.interest_max + 15);
+    }
+
+    #[test]
+    fn test_observatory_multiplies_mult_for_held_planets() {
+        use crate::planet::Planets;
+
+        // Two Kings = OnePair: 10 chips + 10 per King, 2 mult -> 30 * 2 = 60.
+        let cards = vec![
+            Card::new(Value::King, Suit::Heart),
+            Card::new(Value::King, Suit::Spade),
+        ];
+        let hand = SelectHand::new(cards).best_hand().unwrap();
+
+        let mut g = Game::default();
+        assert_eq!(g.calc_score(hand.clone()), 60);
+
+        // Mercury is OnePair's planet, so Observatory applies: mult 2 -> 3.
+        g.consumables.push(Consumable::Planet(Planets::Mercury));
+        g.vouchers.redeem(Voucher::Observatory);
+        assert_eq!(g.calc_score(hand.clone()), 90);
+
+        // A planet for a different hand does nothing.
+        g.consumables = vec![Consumable::Planet(Planets::Jupiter)];
+        assert_eq!(g.calc_score(hand), 60);
+    }
+
+    #[test]
+    fn test_telescope_puts_the_most_played_planet_in_celestial_packs() {
+        use crate::pack::{PackCategory, PackContent};
+        use crate::planet::Planets;
+
+        let mut g = game_in_shop(100);
+        // Make Flush the most played hand, then take Telescope.
+        for _ in 0..5 {
+            g.planetarium.play(HandRank::Flush);
+        }
+        redeem(&mut g, Voucher::Telescope);
+        assert_eq!(g.most_played_hand_rank(), HandRank::Flush);
+
+        let mut saw_celestial = false;
+        for _ in 0..200 {
+            g.stage = Stage::PostBlind();
+            g.handle_action(Action::CashOut(0)).expect("cash out");
+            for pack in &g.shop.packs {
+                if pack.category != PackCategory::Celestial {
+                    continue;
+                }
+                saw_celestial = true;
+                assert!(
+                    pack.contents
+                        .contains(&PackContent::Planet(Planets::Jupiter)),
+                    "Celestial pack without the most played hand's planet: {:?}",
+                    pack.contents
+                );
+            }
+        }
+        assert!(saw_celestial, "no Celestial pack generated in 200 shops");
+    }
+
+    #[test]
+    fn test_magic_trick_puts_buyable_playing_cards_in_the_shop() {
+        let mut g = game_in_shop(100);
+        redeem(&mut g, Voucher::MagicTrick);
+
+        // Playing cards are one of four outcomes per slot; reroll until seen.
+        let mut card = None;
+        for _ in 0..500 {
+            if let Some(c) = g.shop.cards.first().copied() {
+                card = Some(c);
+                break;
+            }
+            g.money = 100;
+            g.reroll().expect("reroll");
+        }
+        let card = card.expect("Magic Trick never produced a shop playing card");
+        // Without Illusion, shop cards are plain.
+        assert!(card.enhancement.is_none() && card.seal.is_none());
+        assert_eq!(card.edition, Edition::Base);
+
+        let deck_before = g.deck.len();
+        g.money = 100;
+        g.handle_action(Action::BuyPlayingCard(card))
+            .expect("buy playing card");
+        assert_eq!(g.deck.len(), deck_before + 1);
+        assert!(g.deck.cards().iter().any(|c| c.id == card.id));
+        assert!(!g.shop.cards.iter().any(|c| c.id == card.id));
+        assert_eq!(g.money, 100 - card.shop_cost());
+    }
+
+    #[test]
+    fn test_buy_voucher_round_trips_through_the_action_space() {
+        let mut g = game_in_shop(100);
+        let offered = g.shop.voucher.expect("voucher offered");
+        let space = g.gen_action_space();
+        let index = space
+            .to_vec()
+            .iter()
+            .enumerate()
+            .find_map(|(i, _)| match space.to_action(i, &g) {
+                Ok(Action::BuyVoucher(v)) if v == offered => Some(i),
+                _ => None,
+            })
+            .expect("BuyVoucher is unmasked in the shop");
+        g.handle_action_index(index).expect("handle action index");
+        assert!(g.vouchers.has(offered));
+    }
+
+    #[test]
+    fn test_vouchers_survive_a_save_load_round_trip() {
+        let mut g = game_in_shop(100);
+        redeem(&mut g, Voucher::CrystalBall);
+        redeem(&mut g, Voucher::Grabber);
+        let slots = g.consumable_slots();
+        let plays = g.plays_per_round();
+
+        let json = g.to_json().expect("serialize");
+        let loaded = Game::from_json(&json).expect("deserialize");
+        assert_eq!(loaded.vouchers.owned(), g.vouchers.owned());
+        // Derived, not baked into Config — so no double application.
+        assert_eq!(loaded.consumable_slots(), slots);
+        assert_eq!(loaded.plays_per_round(), plays);
     }
 }

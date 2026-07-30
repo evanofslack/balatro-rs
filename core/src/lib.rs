@@ -30,6 +30,7 @@ pub mod space;
 pub mod stage;
 pub mod tag;
 pub mod tarot;
+pub mod voucher;
 
 #[cfg(test)]
 mod tests {

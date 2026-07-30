@@ -74,17 +74,58 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     match app.run_info_tab {
         RunInfoTab::Deck => deck::render_body(f, app, chunks[2]),
         RunInfoTab::PokerHands => poker_hands::render_body(f, app, chunks[2]),
-        RunInfoTab::Vouchers => {
-            f.render_widget(
-                Paragraph::new(Span::styled(
-                    "  Coming soon",
-                    Style::default().fg(Color::DarkGray),
-                )),
-                chunks[2],
-            );
+        RunInfoTab::Vouchers => render_vouchers(f, app, chunks[2]),
+    }
+
+    render_footer(f, app, chunks[3]);
+}
+
+/// Vouchers redeemed this run, in purchase order, plus whatever this
+/// ante still has on offer.
+fn render_vouchers(f: &mut Frame, app: &AppState, area: Rect) {
+    let mut lines: Vec<Line> = Vec::new();
+
+    if app.game.vouchers.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  No vouchers redeemed yet",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for voucher in app.game.vouchers.owned() {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("  {:<16}", voucher.name()),
+                    Style::default()
+                        .fg(Color::LightGreen)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    voucher.description().to_string(),
+                    Style::default().fg(Color::White),
+                ),
+            ]));
         }
     }
 
+    if let Some(offered) = app.game.shop.voucher {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("  In shop: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                offered.name().to_string(),
+                Style::default().fg(Color::Yellow),
+            ),
+            Span::styled(
+                format!(" (${})", offered.cost()),
+                Style::default().fg(Color::DarkGray),
+            ),
+        ]));
+    }
+
+    f.render_widget(Paragraph::new(lines), area);
+}
+
+fn render_footer(f: &mut Frame, app: &AppState, area: Rect) {
     let seed_label = app
         .game
         .seed_str
@@ -96,7 +137,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     let footer = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Min(0), Constraint::Length(seed_w)])
-        .split(chunks[3]);
+        .split(area);
     f.render_widget(
         Paragraph::new(Span::styled(
             "  Tab next  ←/→ deck view  Esc / r close",

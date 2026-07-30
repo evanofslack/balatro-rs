@@ -158,6 +158,35 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
             lines.push(close_line());
             (title, lines)
         }
+        InspectTarget::Voucher(voucher) => {
+            let title = format!(" {} ", voucher.name());
+            let mut lines = vec![
+                Line::from(""),
+                Line::from(vec![
+                    Span::raw("  Cost:  "),
+                    Span::styled(
+                        format!("${}", voucher.cost()),
+                        Style::default().fg(Color::Yellow),
+                    ),
+                ]),
+            ];
+            if let Some(base) = voucher.requires() {
+                lines.push(Line::from(vec![
+                    Span::raw("  Needs: "),
+                    Span::styled(base.name().to_string(), Style::default().fg(Color::Cyan)),
+                ]));
+            }
+            lines.push(Line::from(""));
+            for word_line in wrap(voucher.description(), w as usize - 4) {
+                lines.push(Line::from(Span::styled(
+                    format!("  {}", word_line),
+                    Style::default().fg(Color::White),
+                )));
+            }
+            lines.push(Line::from(""));
+            lines.push(close_line());
+            (title, lines)
+        }
         InspectTarget::Tag(tag) => {
             let title = format!(" {} ", tag.name());
             let desc = tag.description();

@@ -164,10 +164,10 @@ impl Game {
             return None;
         }
         // Cannot buy if all joker slots full
-        if self.jokers.len() >= self.config.joker_slots {
+        if self.jokers.len() >= self.joker_slots() {
             return None;
         }
-        self.shop.gen_moves_buy_joker(self.money)
+        self.shop.gen_moves_buy_joker(self.money, &self.vouchers)
     }
 
     // Get buy consumable actions
@@ -177,8 +177,9 @@ impl Game {
         }
         self.shop.gen_moves_buy_consumable(
             self.money,
-            self.config.consumable_slots,
+            self.consumable_slots(),
             self.consumables.len(),
+            &self.vouchers,
         )
     }
 
@@ -249,12 +250,34 @@ impl Game {
         Some(actions.into_iter())
     }
 
+    // Get buy voucher actions. The offer sits in its own slot, is
+    // never discounted, and can only be bought once per ante.
+    fn gen_actions_buy_voucher(&self) -> Option<impl Iterator<Item = Action>> {
+        if self.stage != Stage::Shop() {
+            return None;
+        }
+        self.shop.gen_moves_buy_voucher(self.money)
+    }
+
+    // Get buy playing card actions (Magic Trick)
+    fn gen_actions_buy_playing_card(&self) -> Option<impl Iterator<Item = Action>> {
+        if self.stage != Stage::Shop() {
+            return None;
+        }
+        if self.deck.len() + self.available.cards().len() + self.discarded.len()
+            >= self.config.deck_max
+        {
+            return None;
+        }
+        self.shop.gen_moves_buy_card(self.money, &self.vouchers)
+    }
+
     // Get buy pack actions
     fn gen_actions_buy_pack(&self) -> Option<impl Iterator<Item = Action>> {
         if self.stage != Stage::Shop() {
             return None;
         }
-        self.shop.gen_moves_buy_pack(self.money)
+        self.shop.gen_moves_buy_pack(self.money, &self.vouchers)
     }
 
     // Get pick pack card actions (active while a pack is open)
@@ -263,7 +286,7 @@ impl Game {
             return None;
         }
         let state = self.open_pack.as_ref()?;
-        let joker_slots = self.config.joker_slots;
+        let joker_slots = self.joker_slots();
         let joker_count = self.jokers.len();
         let picks: Vec<Action> = state
             .contents
@@ -381,6 +404,8 @@ impl Game {
         let skip_blinds = self.gen_actions_skip_blind();
         let buy_jokers = self.gen_actions_buy_joker();
         let buy_consumables = self.gen_actions_buy_consumable();
+        let buy_vouchers = self.gen_actions_buy_voucher();
+        let buy_playing_cards = self.gen_actions_buy_playing_card();
         let use_consumables = self.gen_actions_use_consumable();
         let tarot_hand = self.gen_actions_tarot_hand();
         let sell_jokers = self.gen_actions_sell_joker();
@@ -404,6 +429,8 @@ impl Game {
             .chain(skip_blinds.into_iter().flatten())
             .chain(buy_jokers.into_iter().flatten())
             .chain(buy_consumables.into_iter().flatten())
+            .chain(buy_vouchers.into_iter().flatten())
+            .chain(buy_playing_cards.into_iter().flatten())
             .chain(use_consumables.into_iter().flatten())
             .chain(tarot_hand.into_iter().flatten())
             .chain(sell_jokers.into_iter().flatten())
@@ -523,7 +550,7 @@ impl Game {
             .jokers
             .iter()
             .enumerate()
-            .filter(|(_i, j)| j.cost() <= self.money)
+            .filter(|(_i, j)| self.price(j.cost()) <= self.money)
             .for_each(|(i, _j)| {
                 space
                     .unmask_buy_joker(i)
@@ -535,14 +562,14 @@ impl Game {
         if self.stage != Stage::Shop() {
             return;
         }
-        if self.consumables.len() >= self.config.consumable_slots {
+        if self.consumables.len() >= self.consumable_slots() {
             return;
         }
         self.shop
             .consumables
             .iter()
             .enumerate()
-            .filter(|(_i, c)| c.cost() <= self.money)
+            .filter(|(_i, c)| self.price(c.cost()) <= self.money)
             .for_each(|(i, _c)| {
                 space
                     .unmask_buy_consumable(i)
@@ -608,9 +635,40 @@ impl Game {
             .packs
             .iter()
             .enumerate()
-            .filter(|(_, p)| p.cost() <= self.money)
+            .filter(|(_, p)| self.price(p.cost()) <= self.money)
             .for_each(|(i, _)| {
                 space.unmask_buy_pack(i).expect("valid index for buy pack");
+            });
+    }
+
+    fn unmask_action_space_buy_voucher(&self, space: &mut ActionSpace) {
+        if self.stage != Stage::Shop() {
+            return;
+        }
+        if self.shop.voucher.is_none_or(|v| v.cost() > self.money) {
+            return;
+        }
+        space.unmask_buy_voucher();
+    }
+
+    fn unmask_action_space_buy_playing_card(&self, space: &mut ActionSpace) {
+        if self.stage != Stage::Shop() {
+            return;
+        }
+        if self.deck.len() + self.available.cards().len() + self.discarded.len()
+            >= self.config.deck_max
+        {
+            return;
+        }
+        self.shop
+            .cards
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| self.price(c.shop_cost()) <= self.money)
+            .for_each(|(i, _)| {
+                space
+                    .unmask_buy_playing_card(i)
+                    .expect("valid index for buy playing card");
             });
     }
 
@@ -622,7 +680,7 @@ impl Game {
             return;
         };
         let joker_count = self.jokers.len();
-        let joker_slots = self.config.joker_slots;
+        let joker_slots = self.joker_slots();
         state
             .contents
             .iter()
@@ -727,6 +785,8 @@ impl Game {
         self.unmask_action_space_skip_blind(&mut space);
         self.unmask_action_space_buy_joker(&mut space);
         self.unmask_action_space_buy_consumable(&mut space);
+        self.unmask_action_space_buy_voucher(&mut space);
+        self.unmask_action_space_buy_playing_card(&mut space);
         self.unmask_action_space_use_consumable(&mut space);
         self.unmask_action_space_tarot_hand(&mut space);
         self.unmask_action_space_sell_joker(&mut space);

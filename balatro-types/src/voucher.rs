@@ -1,3 +1,5 @@
+#[cfg(feature = "python")]
+use pyo3::pyclass;
 use strum::EnumIter;
 
 /// Vouchers come in 16 base/upgrade pairs
@@ -5,6 +7,7 @@ use strum::EnumIter;
 /// once its base voucher has been purchased.
 /// See `requires`.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "python", pyclass(eq))]
 #[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EnumIter)]
 pub enum Voucher {
     Overstock,

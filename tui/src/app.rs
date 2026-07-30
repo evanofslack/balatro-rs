@@ -1,6 +1,6 @@
 use balatro_rs::{
     action::SortBy, card::Card, consumable::Consumable, game::Game, joker::Jokers, pack::Pack,
-    tag::Tag,
+    tag::Tag, voucher::Voucher,
 };
 use ratatui::layout::Rect;
 use std::collections::HashMap;
@@ -13,7 +13,9 @@ pub enum WidgetId {
     ConsumableSlot(usize),
     ShopJoker(usize),
     ShopConsumable(usize),
+    ShopCard(usize),
     ShopPack(usize),
+    ShopVoucher,
     PackContent(usize),
     SkipPackButton,
     BlindOption(usize),
@@ -52,6 +54,7 @@ pub enum InspectTarget {
     Consumable(Consumable),
     Pack(Pack),
     Tag(Tag),
+    Voucher(Voucher),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
