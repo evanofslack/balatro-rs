@@ -34,6 +34,10 @@ pub enum GameError {
     NoJokerMatch,
     #[error("No consumable match")]
     NoConsumableMatch,
+    #[error("No voucher match")]
+    NoVoucherMatch,
+    #[error("Voucher already redeemed")]
+    VoucherAlreadyRedeemed,
     #[error("Invalid move direction")]
     InvalidMoveDirection,
     #[error("No available slot")]

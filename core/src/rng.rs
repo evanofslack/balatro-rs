@@ -8,46 +8,51 @@ use crate::card::Card;
 use crate::consumable::Consumable;
 use crate::joker::Jokers;
 use crate::pack::{Pack, PackCategory, PackContent, PackSize};
-use crate::planet::{Planetarium, Planets};
-use crate::shop::{ConsumableGenerator, JokerGenerator, PackGenerator};
+use crate::planet::Planets;
+use crate::shop::{
+    gen_shop_playing_card, ConsumableGenerator, JokerGenerator, PackGenerator, ShopContext,
+};
 use crate::tarot::Tarot;
+use crate::voucher::{Voucher, Vouchers};
 use balatro_seed::Instance;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 
-/// What a single shop-item generation call produced. The joker/consumable
-/// split has to happen inside the backend, since `Real` mode's category
-/// roll is bundled into one `Instance::next_shop_item` call.
+/// What a single shop-item generation call produced. The category split
+/// has to happen inside the backend, since `Real` mode's category roll is
+/// bundled into one `Instance::next_shop_item` call.
 pub(crate) enum GeneratedItem {
     Joker(Jokers),
     Consumable(Consumable),
+    /// Only ever produced with the Magic Trick voucher redeemed.
+    PlayingCard(Card),
 }
 
 pub(crate) trait RngBackend {
     fn gen_shop_item(
         &mut self,
-        ante: i32,
-        planetarium: &Planetarium,
-        prob_mult: u32,
+        ctx: &ShopContext,
         exclude_jokers: &[Jokers],
         exclude_tarots: &[Tarot],
         exclude_planets: &[Planets],
     ) -> GeneratedItem;
 
-    fn gen_pack(
-        &mut self,
-        ante: i32,
-        planetarium: &Planetarium,
-        prob_mult: u32,
-        exclude: Option<(&PackCategory, &PackSize)>,
-        held_jokers: &[Jokers],
-    ) -> Pack;
+    fn gen_pack(&mut self, ctx: &ShopContext, exclude: Option<(&PackCategory, &PackSize)>) -> Pack;
+
+    /// This ante's voucher offer, drawn from the vouchers still
+    /// offerable (see `Vouchers::offerable`). `None` once all 32 are
+    /// redeemed.
+    fn gen_voucher(&mut self, ante: i32, vouchers: &Vouchers) -> Option<Voucher>;
 
     /// Owned-joker dedup hook: called on buy/sell so `Real` mode's lock
     /// table stays accurate. No-op for `Fast` mode.
     fn on_joker_bought(&mut self, joker: &Jokers);
     fn on_joker_sold(&mut self, joker: &Jokers);
+    /// Redeemed-voucher hook: `Real` mode's draw rates read straight off
+    /// its own active-voucher list, so it has to be told. No-op for
+    /// `Fast` mode, which reads `ShopContext::vouchers` per call instead.
+    fn on_voucher_bought(&mut self, voucher: &Voucher);
     /// Jokers::Showman's real effect. No call site yet — see `jokers.md`.
     #[allow(dead_code)]
     fn set_showman(&mut self, owned: bool);
@@ -76,19 +81,23 @@ impl FastBackend {
 impl RngBackend for FastBackend {
     fn gen_shop_item(
         &mut self,
-        _ante: i32,
-        planetarium: &Planetarium,
-        prob_mult: u32,
+        ctx: &ShopContext,
         exclude_jokers: &[Jokers],
         exclude_tarots: &[Tarot],
         exclude_planets: &[Planets],
     ) -> GeneratedItem {
-        // Joker=20, Tarot=4, Planet=4.
-        let weights = [20u32, 4, 4];
-        let dist = WeightedIndex::new(weights).unwrap();
+        // Joker=20, Tarot/Planet=4 each before the Merchant/Tycoon
+        // vouchers raise them; playing cards weigh 0 until Magic Trick.
+        let weights = [
+            20.0,
+            ctx.vouchers.tarot_rate(),
+            ctx.vouchers.planet_rate(),
+            ctx.vouchers.playing_card_rate(),
+        ];
+        let dist = WeightedIndex::new(weights).expect("shop item weights are finite and nonzero");
         match dist.sample(&mut self.rng) {
             0 => GeneratedItem::Joker(self.joker_gen.gen_joker(
-                prob_mult,
+                ctx.edition_prob_mult(),
                 exclude_jokers,
                 &mut self.rng,
             )),
@@ -96,28 +105,40 @@ impl RngBackend for FastBackend {
                 self.consumable_gen
                     .gen_tarot_consumable(exclude_tarots, &mut self.rng),
             ),
-            _ => GeneratedItem::Consumable(self.consumable_gen.gen_planet_consumable(
-                planetarium,
+            2 => GeneratedItem::Consumable(self.consumable_gen.gen_planet_consumable(
+                ctx.planetarium,
                 exclude_planets,
+                &mut self.rng,
+            )),
+            _ => GeneratedItem::PlayingCard(gen_shop_playing_card(
+                ctx.edition_prob_mult(),
+                ctx.vouchers.shop_cards_are_modified(),
                 &mut self.rng,
             )),
         }
     }
 
-    fn gen_pack(
-        &mut self,
-        _ante: i32,
-        planetarium: &Planetarium,
-        prob_mult: u32,
-        exclude: Option<(&PackCategory, &PackSize)>,
-        held_jokers: &[Jokers],
-    ) -> Pack {
-        self.pack_gen
-            .gen_pack(planetarium, prob_mult, exclude, held_jokers, &mut self.rng)
+    fn gen_pack(&mut self, ctx: &ShopContext, exclude: Option<(&PackCategory, &PackSize)>) -> Pack {
+        self.pack_gen.gen_pack(
+            ctx.planetarium,
+            ctx.edition_prob_mult(),
+            exclude,
+            ctx.held_jokers,
+            &mut self.rng,
+        )
+    }
+
+    fn gen_voucher(&mut self, _ante: i32, vouchers: &Vouchers) -> Option<Voucher> {
+        let offerable = vouchers.offerable();
+        if offerable.is_empty() {
+            return None;
+        }
+        Some(offerable[self.rng.gen_range(0..offerable.len())])
     }
 
     fn on_joker_bought(&mut self, _joker: &Jokers) {}
     fn on_joker_sold(&mut self, _joker: &Jokers) {}
+    fn on_voucher_bought(&mut self, _voucher: &Voucher) {}
     fn set_showman(&mut self, _owned: bool) {}
 }
 
@@ -125,12 +146,19 @@ impl RngBackend for FastBackend {
 #[derive(Debug, Clone)]
 pub(crate) struct RealBackend {
     instance: Instance,
+    /// Side channel for shop playing cards only. `balatro-seed`'s
+    /// `ShopItem::PlayingCard` is a marker that carries no card data, and
+    /// drawing one out of the `Instance` would advance nodes the real
+    /// game doesn't, desyncing every later draw. Seeded from the same
+    /// seed, so runs stay reproducible.
+    card_rng: ChaCha8Rng,
 }
 
 impl RealBackend {
     pub(crate) fn new(seed: &str) -> Self {
         RealBackend {
             instance: Instance::new(seed),
+            card_rng: ChaCha8Rng::seed_from_u64(crate::seed_from_str(seed)),
         }
     }
 
@@ -206,47 +234,60 @@ fn consumable_to_pack_content(c: Consumable) -> PackContent {
 }
 
 impl RngBackend for RealBackend {
-    // `planetarium` is unused: `Fast` mode uses it to gate secret planets
-    // behind discovery state, which isn't wired into `Real` mode TODO.
+    // `ctx.planetarium` is unused: `Fast` mode uses it to gate secret
+    // planets behind discovery state, which isn't wired into `Real` mode
+    // TODO. Voucher-driven rates come from the `Instance`'s own active
+    // list (kept current by `on_voucher_bought`), not `ctx.vouchers`.
     fn gen_shop_item(
         &mut self,
-        ante: i32,
-        _planetarium: &Planetarium,
-        _prob_mult: u32,
+        ctx: &ShopContext,
         _exclude_jokers: &[Jokers],
         _exclude_tarots: &[Tarot],
         _exclude_planets: &[Planets],
     ) -> GeneratedItem {
-        match self.instance.next_shop_item(ante) {
+        match self.instance.next_shop_item(ctx.ante) {
             balatro_seed::ShopItem::Joker(j) => GeneratedItem::Joker(seed_joker_with_id(j)),
             balatro_seed::ShopItem::Consumable(c) => GeneratedItem::Consumable(c),
             balatro_seed::ShopItem::PlayingCard => {
-                // Unreachable: needs Magic Trick active, and core has no
-                // voucher-shop mechanic to ever activate it.
-                panic!(
-                    "balatro-seed produced a shop playing card; core has no \
-                     voucher mechanic to ever enable Magic Trick's nonzero rate"
-                )
+                GeneratedItem::PlayingCard(gen_shop_playing_card(
+                    1,
+                    ctx.vouchers.shop_cards_are_modified(),
+                    &mut self.card_rng,
+                ))
             }
         }
     }
 
     fn gen_pack(
         &mut self,
-        ante: i32,
-        _planetarium: &Planetarium,
-        _prob_mult: u32,
+        ctx: &ShopContext,
         _exclude: Option<(&PackCategory, &PackSize)>,
-        _held_jokers: &[Jokers],
     ) -> Pack {
-        let (category, size) = self.instance.next_pack(ante);
+        let (category, size) = self.instance.next_pack(ctx.ante);
         let count = balatro_seed::pack_card_count(category, size);
-        let contents = self.gen_pack_contents(ante, category, count);
+        let contents = self.gen_pack_contents(ctx.ante, category, count);
         Pack {
             category,
             size,
             contents,
         }
+    }
+
+    // Unlike `Fast` mode this draws from the full pool and then filters:
+    // the draw has to consume the same node the real game would, whether
+    // or not the result is still offerable. A base voucher already owned
+    // is upgraded in place (`voucher_upgrade`), matching the real game.
+    fn gen_voucher(&mut self, ante: i32, vouchers: &Vouchers) -> Option<Voucher> {
+        let drawn = self.instance.next_voucher(ante);
+        let offer = if vouchers.has(drawn) {
+            balatro_seed::voucher_upgrade(drawn).filter(|u| vouchers.is_offerable(*u))
+        } else {
+            Some(drawn)
+        };
+        if let Some(v) = offer {
+            self.instance.lock(&v);
+        }
+        offer
     }
 
     fn on_joker_bought(&mut self, joker: &Jokers) {
@@ -257,6 +298,10 @@ impl RngBackend for RealBackend {
         self.instance.unlock(joker);
     }
 
+    fn on_voucher_bought(&mut self, voucher: &Voucher) {
+        self.instance.activate_voucher(voucher);
+    }
+
     fn set_showman(&mut self, owned: bool) {
         self.instance.params.showman = owned;
     }
@@ -264,6 +309,11 @@ impl RngBackend for RealBackend {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone)]
+// Both variants are inherently chunky — each owns an rng, and `Real` also
+// owns the seed `Instance`'s node and lock tables. Exactly one exists per
+// `Game`, so boxing would only trade a few hundred bytes for an
+// indirection on every draw.
+#[allow(clippy::large_enum_variant)]
 pub(crate) enum Backend {
     Fast(FastBackend),
     Real(RealBackend),
@@ -272,44 +322,32 @@ pub(crate) enum Backend {
 impl RngBackend for Backend {
     fn gen_shop_item(
         &mut self,
-        ante: i32,
-        planetarium: &Planetarium,
-        prob_mult: u32,
+        ctx: &ShopContext,
         exclude_jokers: &[Jokers],
         exclude_tarots: &[Tarot],
         exclude_planets: &[Planets],
     ) -> GeneratedItem {
         match self {
-            Backend::Fast(b) => b.gen_shop_item(
-                ante,
-                planetarium,
-                prob_mult,
-                exclude_jokers,
-                exclude_tarots,
-                exclude_planets,
-            ),
-            Backend::Real(b) => b.gen_shop_item(
-                ante,
-                planetarium,
-                prob_mult,
-                exclude_jokers,
-                exclude_tarots,
-                exclude_planets,
-            ),
+            Backend::Fast(b) => {
+                b.gen_shop_item(ctx, exclude_jokers, exclude_tarots, exclude_planets)
+            }
+            Backend::Real(b) => {
+                b.gen_shop_item(ctx, exclude_jokers, exclude_tarots, exclude_planets)
+            }
         }
     }
 
-    fn gen_pack(
-        &mut self,
-        ante: i32,
-        planetarium: &Planetarium,
-        prob_mult: u32,
-        exclude: Option<(&PackCategory, &PackSize)>,
-        held_jokers: &[Jokers],
-    ) -> Pack {
+    fn gen_pack(&mut self, ctx: &ShopContext, exclude: Option<(&PackCategory, &PackSize)>) -> Pack {
         match self {
-            Backend::Fast(b) => b.gen_pack(ante, planetarium, prob_mult, exclude, held_jokers),
-            Backend::Real(b) => b.gen_pack(ante, planetarium, prob_mult, exclude, held_jokers),
+            Backend::Fast(b) => b.gen_pack(ctx, exclude),
+            Backend::Real(b) => b.gen_pack(ctx, exclude),
+        }
+    }
+
+    fn gen_voucher(&mut self, ante: i32, vouchers: &Vouchers) -> Option<Voucher> {
+        match self {
+            Backend::Fast(b) => b.gen_voucher(ante, vouchers),
+            Backend::Real(b) => b.gen_voucher(ante, vouchers),
         }
     }
 
@@ -324,6 +362,13 @@ impl RngBackend for Backend {
         match self {
             Backend::Fast(b) => b.on_joker_sold(joker),
             Backend::Real(b) => b.on_joker_sold(joker),
+        }
+    }
+
+    fn on_voucher_bought(&mut self, voucher: &Voucher) {
+        match self {
+            Backend::Fast(b) => b.on_voucher_bought(voucher),
+            Backend::Real(b) => b.on_voucher_bought(voucher),
         }
     }
 
@@ -353,12 +398,14 @@ mod tests {
     #[test]
     fn real_backend_gen_pack_contents_match_category_and_count() {
         let mut backend = RealBackend::new("TESTSEED");
-        let planetarium = Planetarium::new();
+        let planetarium = crate::planet::Planetarium::new();
+        let vouchers = Vouchers::new();
         let mut seen_categories: std::collections::HashSet<PackCategory> =
             std::collections::HashSet::new();
 
         for ante in 1..=300 {
-            let pack = backend.gen_pack(ante, &planetarium, 1, None, &[]);
+            let ctx = ShopContext::for_test(&planetarium, &vouchers, ante);
+            let pack = backend.gen_pack(&ctx, None);
             seen_categories.insert(pack.category);
 
             let expected_count = balatro_seed::pack_card_count(pack.category, pack.size);

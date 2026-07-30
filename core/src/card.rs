@@ -89,6 +89,25 @@ impl Card {
             Value::Ace => 11,
         }
     }
+
+    /// Price when the Magic Trick voucher puts this card up for sale.
+    /// A plain card is $1; enhancements, seals, and editions add to that.
+    pub fn shop_cost(&self) -> usize {
+        let mut cost = 1;
+        if self.enhancement.is_some() {
+            cost += 1;
+        }
+        if self.seal.is_some() {
+            cost += 1;
+        }
+        cost += match self.edition {
+            Edition::Base => 0,
+            Edition::Foil => 2,
+            Edition::Holographic => 3,
+            Edition::Polychrome | Edition::Negative => 5,
+        };
+        cost
+    }
 }
 
 impl fmt::Debug for Card {

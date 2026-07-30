@@ -16,6 +16,7 @@ Main game engine library. All game logic lives here.
 | `rank.rs`      | `HandRank` enum with chip/mult values per level               |
 | `effect.rs`    | `EffectRegistry` — joker effect callbacks                     |
 | `shop.rs`      | `Shop`, `JokerGenerator` — shop inventory and buying          |
+| `voucher.rs`   | `Vouchers` — redeemed set and every modifier it implies       |
 | `card.rs`      | `Card` with `Value`, `Suit`, `Enhancement`, `Edition`, `Seal` |
 | `available.rs` | `Available` — hand of cards with selection state              |
 | `config.rs`    | `Config` — all game parameters                                |
@@ -31,6 +32,24 @@ The `make_jokers!` macro at the top of `joker.rs` generates the `Jokers` enum an
 3. Register it in `JokerGenerator` (in `shop.rs`) so it can appear in the shop.
 
 `effects(&self, game: &Game) -> Vec<Effects>` returns closures wrapped in `Arc<Mutex<dyn Fn>>` via the `Effects` enum variants. See existing jokers for patterns.
+
+## Vouchers
+
+`Game.vouchers` (a `Vouchers` set) is the source of truth. Effects are
+**derived, not applied**: limits are recomputed on demand via `Game`
+accessors — `hand_size()`, `joker_slots()`, `consumable_slots()`,
+`plays_per_round()`, `discards_per_round()`, `interest_max()`,
+`base_reroll_cost()`, `price()`. Read those instead of `config.*` when you
+need an effective limit, or vouchers silently stop applying.
+
+Shop generation reads a `ShopContext` (in `shop.rs`) rather than a long
+positional argument list; add new generation inputs there.
+
+Only three things mutate state at purchase time: Hieroglyph/Petroglyph's
+"-1 Ante", the reroll price drop, and Overstock topping up the live shop.
+Everything else stays derived so save/load can't double-apply it.
+
+`vouchers.md` tracks per-voucher status.
 
 ## Effect system
 

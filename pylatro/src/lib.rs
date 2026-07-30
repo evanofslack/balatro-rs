@@ -5,6 +5,7 @@ use balatro_rs::error::GameError;
 use balatro_rs::game::Game;
 use balatro_rs::joker::Jokers;
 use balatro_rs::stage::{End, Stage};
+use balatro_rs::voucher::Voucher;
 use pyo3::prelude::*;
 
 #[pyclass]
@@ -114,6 +115,16 @@ impl GameState {
     fn money(&self) -> usize {
         self.game.money
     }
+    /// Vouchers redeemed this run, in purchase order.
+    #[getter]
+    fn vouchers(&self) -> Vec<Voucher> {
+        self.game.vouchers.owned().to_vec()
+    }
+    /// The voucher this ante's shop is offering, if it's unsold.
+    #[getter]
+    fn shop_voucher(&self) -> Option<Voucher> {
+        self.game.shop.voucher
+    }
 
     #[getter]
     fn seed(&self) -> u64 {
@@ -141,6 +152,7 @@ fn pylatro(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<GameEngine>()?;
     m.add_class::<GameState>()?;
     m.add_class::<Stage>()?;
+    m.add_class::<Voucher>()?;
     m.add_function(wrap_pyfunction!(seed_from_str, m)?)?;
     Ok(())
 }

@@ -1,6 +1,7 @@
 use crate::card::Card;
 use crate::joker::Jokers;
 use crate::rank::HandRank;
+use crate::voucher::Voucher;
 
 /// What caused a `ScoreStep`'s chips/mult change.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -13,6 +14,8 @@ pub enum ScoreSource {
     StoneKicker(Card),
     HeldCard(Card),
     Joker(Jokers),
+    // Observatory is the only voucher that touches a scoring pass
+    Voucher(Voucher),
 }
 
 /// One step in a scoring pass
@@ -44,6 +47,7 @@ impl ScoreStep {
             ScoreSource::StoneKicker(c) => format!("{c} (stone kicker)"),
             ScoreSource::HeldCard(c) => format!("{c} (held)"),
             ScoreSource::Joker(j) => j.name().to_string(),
+            ScoreSource::Voucher(v) => v.name().to_string(),
         };
 
         let mut parts = Vec::new();

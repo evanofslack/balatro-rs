@@ -5,51 +5,98 @@ use crate::error::GameError;
 use crate::joker::{jokers_by_rarity, Jokers, Rarity};
 use crate::pack::{Pack, PackCategory, PackContent, PackSize};
 use crate::planet::{Planetarium, Planets};
+use crate::rank::HandRank;
 use crate::rng::{Backend, GeneratedItem, RngBackend};
 use crate::tarot::Tarot;
+use crate::voucher::{discounted, Voucher, Vouchers};
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use strum::IntoEnumIterator;
 
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone)]
-pub struct Shop {
-    pub jokers: Vec<Jokers>,
-    pub consumables: Vec<Consumable>,
-    pub packs: Vec<Pack>,
+/// Everything shop generation reads off the `Game`. Bundled into one
+/// struct because vouchers made the parameter list unreadable — every
+/// field here was already being threaded through positionally.
+pub(crate) struct ShopContext<'a> {
+    pub planetarium: &'a Planetarium,
+    /// Consumables the player already holds — excluded from the roll so
+    /// the shop doesn't offer a duplicate.
+    pub held_consumables: &'a [Consumable],
+    pub held_jokers: &'a [Jokers],
+    pub vouchers: &'a Vouchers,
+    pub prob_mult: u32,
+    pub ante: i32,
+    /// Which hand Telescope should guarantee a Planet card for.
+    pub most_played: HandRank,
 }
 
-impl Shop {
-    pub fn new() -> Self {
-        Shop {
-            jokers: Vec::new(),
-            consumables: Vec::new(),
-            packs: Vec::new(),
+impl ShopContext<'_> {
+    /// Card slots the shop fills, before packs: 2 by default, more with
+    /// Overstock.
+    pub(crate) fn card_slots(&self) -> usize {
+        DEFAULT_SHOP_CARD_SLOTS + self.vouchers.shop_card_slots_bonus()
+    }
+
+    /// Edition probabilities are scaled by both the game-wide probability
+    /// multiplier and Hone/Glow Up.
+    pub(crate) fn edition_prob_mult(&self) -> u32 {
+        self.prob_mult
+            .saturating_mul(self.vouchers.edition_rate_mult())
+    }
+}
+
+#[cfg(test)]
+impl<'a> ShopContext<'a> {
+    /// Bare context for tests: nothing held, no vouchers redeemed.
+    pub(crate) fn for_test(
+        planetarium: &'a Planetarium,
+        vouchers: &'a Vouchers,
+        ante: i32,
+    ) -> Self {
+        ShopContext {
+            planetarium,
+            held_consumables: &[],
+            held_jokers: &[],
+            vouchers,
+            prob_mult: 1,
+            ante,
+            most_played: HandRank::HighCard,
         }
     }
 }
 
-impl Default for Shop {
-    fn default() -> Self {
-        Self::new()
+const DEFAULT_SHOP_CARD_SLOTS: usize = 2;
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Clone, Default)]
+pub struct Shop {
+    pub jokers: Vec<Jokers>,
+    pub consumables: Vec<Consumable>,
+    /// Playing cards for sale. Always empty until Magic Trick is redeemed.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub cards: Vec<Card>,
+    pub packs: Vec<Pack>,
+    /// This ante's voucher offer, if it hasn't been bought yet. Unlike
+    /// everything else in the shop it survives rerolls and persists
+    /// across every shop visit of the ante.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub voucher: Option<Voucher>,
+}
+
+impl Shop {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
 impl Shop {
-    pub(crate) fn refresh_cards(
-        &mut self,
-        planetarium: &Planetarium,
-        held: &[Consumable],
-        prob_mult: u32,
-        held_jokers: &[Jokers],
-        ante: i32,
-        backend: &mut Backend,
-    ) {
+    pub(crate) fn refresh_cards(&mut self, ctx: &ShopContext, backend: &mut Backend) {
         self.jokers.clear();
         self.consumables.clear();
+        self.cards.clear();
 
-        let mut excl_jokers: Vec<Jokers> = held_jokers.to_vec();
-        let mut excl_tarots: Vec<Tarot> = held
+        let mut excl_jokers: Vec<Jokers> = ctx.held_jokers.to_vec();
+        let mut excl_tarots: Vec<Tarot> = ctx
+            .held_consumables
             .iter()
             .filter_map(|c| {
                 if let Consumable::Tarot(t) = c {
@@ -59,7 +106,8 @@ impl Shop {
                 }
             })
             .collect();
-        let mut excl_planets: Vec<Planets> = held
+        let mut excl_planets: Vec<Planets> = ctx
+            .held_consumables
             .iter()
             .filter_map(|c| {
                 if let Consumable::Planet(p) = c {
@@ -70,15 +118,8 @@ impl Shop {
             })
             .collect();
 
-        for _ in 0..2 {
-            match backend.gen_shop_item(
-                ante,
-                planetarium,
-                prob_mult,
-                &excl_jokers,
-                &excl_tarots,
-                &excl_planets,
-            ) {
+        for _ in 0..ctx.card_slots() {
+            match backend.gen_shop_item(ctx, &excl_jokers, &excl_tarots, &excl_planets) {
                 GeneratedItem::Joker(joker) => {
                     excl_jokers.push(joker.clone());
                     self.jokers.push(joker);
@@ -91,28 +132,57 @@ impl Shop {
                     }
                     self.consumables.push(c);
                 }
+                GeneratedItem::PlayingCard(card) => self.cards.push(card),
             }
         }
     }
 
-    #[allow(clippy::too_many_arguments)] // pre-existing shape (already at 7 pre-Real-mode); `ante` pushed it to 8
-    pub(crate) fn refresh(
-        &mut self,
-        planetarium: &Planetarium,
-        held: &[Consumable],
-        allow_duplicates: bool,
-        prob_mult: u32,
-        held_jokers: &[Jokers],
-        ante: i32,
-        backend: &mut Backend,
-    ) {
-        let _ = allow_duplicates;
-        self.refresh_cards(planetarium, held, prob_mult, held_jokers, ante, backend);
+    /// Fills any card slots the shop has gained since it was stocked,
+    /// leaving what's already on the shelf alone. Redeeming Overstock
+    /// mid-shop is the only thing that widens a live shop.
+    pub(crate) fn top_up_cards(&mut self, ctx: &ShopContext, backend: &mut Backend) {
+        let filled = self.jokers.len() + self.consumables.len() + self.cards.len();
+        let mut excl_jokers: Vec<Jokers> = ctx.held_jokers.to_vec();
+        excl_jokers.extend(self.jokers.clone());
+        let mut excl_tarots: Vec<Tarot> = Vec::new();
+        let mut excl_planets: Vec<Planets> = Vec::new();
+        for c in ctx.held_consumables.iter().chain(self.consumables.iter()) {
+            match c {
+                Consumable::Tarot(t) => excl_tarots.push(*t),
+                Consumable::Planet(p) => excl_planets.push(*p),
+                Consumable::Spectral(_) => {}
+            }
+        }
 
-        let p1 = backend.gen_pack(ante, planetarium, prob_mult, None, held_jokers);
+        for _ in filled..ctx.card_slots() {
+            match backend.gen_shop_item(ctx, &excl_jokers, &excl_tarots, &excl_planets) {
+                GeneratedItem::Joker(joker) => {
+                    excl_jokers.push(joker.clone());
+                    self.jokers.push(joker);
+                }
+                GeneratedItem::Consumable(c) => {
+                    match &c {
+                        Consumable::Tarot(t) => excl_tarots.push(*t),
+                        Consumable::Planet(p) => excl_planets.push(*p),
+                        Consumable::Spectral(_) => {}
+                    }
+                    self.consumables.push(c);
+                }
+                GeneratedItem::PlayingCard(card) => self.cards.push(card),
+            }
+        }
+    }
+
+    pub(crate) fn refresh(&mut self, ctx: &ShopContext, backend: &mut Backend) {
+        self.refresh_cards(ctx, backend);
+
+        let p1 = backend.gen_pack(ctx, None);
         let exclude = (&p1.category, &p1.size);
-        let p2 = backend.gen_pack(ante, planetarium, prob_mult, Some(exclude), held_jokers);
+        let p2 = backend.gen_pack(ctx, Some(exclude));
         self.packs = vec![p1, p2];
+        for pack in &mut self.packs {
+            apply_telescope(pack, ctx);
+        }
     }
 
     pub(crate) fn joker_from_index(&self, i: usize) -> Option<Jokers> {
@@ -125,6 +195,10 @@ impl Shop {
 
     pub(crate) fn pack_from_index(&self, i: usize) -> Option<Pack> {
         self.packs.get(i).cloned()
+    }
+
+    pub(crate) fn card_from_index(&self, i: usize) -> Option<Card> {
+        self.cards.get(i).copied()
     }
 
     pub(crate) fn buy_joker(&mut self, joker: &Jokers) -> Result<Jokers, GameError> {
@@ -157,18 +231,42 @@ impl Shop {
         Ok(self.packs.remove(i))
     }
 
+    pub(crate) fn buy_card(&mut self, card: &Card) -> Result<Card, GameError> {
+        let i = self
+            .cards
+            .iter()
+            .position(|c| c.id == card.id)
+            .ok_or(GameError::NoCardMatch)?;
+        Ok(self.cards.remove(i))
+    }
+
+    /// Takes the offered voucher off the shelf. Unlike the other buys it
+    /// clears the slot rather than removing from a list — there is only
+    /// ever one voucher on offer per ante.
+    pub(crate) fn buy_voucher(&mut self, voucher: &Voucher) -> Result<Voucher, GameError> {
+        match self.voucher {
+            Some(v) if v == *voucher => {
+                self.voucher = None;
+                Ok(v)
+            }
+            _ => Err(GameError::NoVoucherMatch),
+        }
+    }
+
     pub(crate) fn gen_moves_buy_joker(
         &self,
         balance: usize,
+        vouchers: &Vouchers,
     ) -> Option<impl Iterator<Item = Action>> {
         if self.jokers.is_empty() {
             return None;
         }
+        let discount = vouchers.discount_pct();
         let buys = self
             .jokers
             .clone()
             .into_iter()
-            .filter(move |j| j.cost() <= balance)
+            .filter(move |j| discounted(j.cost(), discount) <= balance)
             .map(Action::BuyJoker);
         Some(buys)
     }
@@ -178,15 +276,17 @@ impl Shop {
         balance: usize,
         consumable_slots: usize,
         held: usize,
+        vouchers: &Vouchers,
     ) -> Option<impl Iterator<Item = Action>> {
         if self.consumables.is_empty() || held >= consumable_slots {
             return None;
         }
+        let discount = vouchers.discount_pct();
         let buys = self
             .consumables
             .clone()
             .into_iter()
-            .filter(move |c| c.cost() <= balance)
+            .filter(move |c| discounted(c.cost(), discount) <= balance)
             .map(Action::BuyConsumable);
         Some(buys)
     }
@@ -194,17 +294,68 @@ impl Shop {
     pub(crate) fn gen_moves_buy_pack(
         &self,
         balance: usize,
+        vouchers: &Vouchers,
     ) -> Option<impl Iterator<Item = Action>> {
         if self.packs.is_empty() {
             return None;
         }
+        let discount = vouchers.discount_pct();
         let buys = self
             .packs
             .clone()
             .into_iter()
-            .filter(move |p| p.cost() <= balance)
+            .filter(move |p| discounted(p.cost(), discount) <= balance)
             .map(Action::BuyPack);
         Some(buys)
+    }
+
+    pub(crate) fn gen_moves_buy_card(
+        &self,
+        balance: usize,
+        vouchers: &Vouchers,
+    ) -> Option<impl Iterator<Item = Action>> {
+        if self.cards.is_empty() {
+            return None;
+        }
+        let discount = vouchers.discount_pct();
+        let buys = self
+            .cards
+            .clone()
+            .into_iter()
+            .filter(move |c| discounted(c.shop_cost(), discount) <= balance)
+            .map(Action::BuyPlayingCard);
+        Some(buys)
+    }
+
+    pub(crate) fn gen_moves_buy_voucher(
+        &self,
+        balance: usize,
+    ) -> Option<impl Iterator<Item = Action>> {
+        // Vouchers are never discounted, so no `Vouchers` argument here.
+        let voucher = self.voucher.filter(|v| v.cost() <= balance)?;
+        Some(std::iter::once(Action::BuyVoucher(voucher)))
+    }
+}
+
+/// Telescope guarantees the most played hand's Planet card in every
+/// Celestial Pack. Applied after generation so it works the same for both
+/// RNG backends.
+fn apply_telescope(pack: &mut Pack, ctx: &ShopContext) {
+    if !ctx.vouchers.telescope() || pack.category != PackCategory::Celestial {
+        return;
+    }
+    let Some(wanted) = Planets::iter().find(|p| p.hand_rank() == ctx.most_played) else {
+        return;
+    };
+    if pack
+        .contents
+        .iter()
+        .any(|c| matches!(c, PackContent::Planet(p) if *p == wanted))
+    {
+        return;
+    }
+    if let Some(first) = pack.contents.first_mut() {
+        *first = PackContent::Planet(wanted);
     }
 }
 
@@ -222,6 +373,20 @@ pub(crate) fn gen_edition(prob_mult: u32, rng: &mut impl Rng) -> Edition {
         return Edition::Foil;
     }
     Edition::Base
+}
+
+/// A shop playing card (Magic Trick). Plain unless Illusion is also
+/// redeemed, which is the only thing that lets it roll an enhancement,
+/// edition, or seal.
+pub(crate) fn gen_shop_playing_card(prob_mult: u32, illusion: bool, rng: &mut impl Rng) -> Card {
+    if illusion {
+        return gen_random_playing_card(prob_mult, rng);
+    }
+    let values: Vec<Value> = Value::iter().collect();
+    let suits: Vec<Suit> = Suit::iter().collect();
+    let v = values[rng.gen_range(0..values.len())];
+    let s = suits[rng.gen_range(0..suits.len())];
+    Card::new(v, s)
 }
 
 pub(crate) fn gen_random_playing_card(prob_mult: u32, rng: &mut impl Rng) -> Card {
@@ -481,7 +646,9 @@ mod tests {
         let planetarium = Planetarium::new();
         assert_eq!(shop.jokers.len(), 0);
         assert_eq!(shop.packs.len(), 0);
-        shop.refresh(&planetarium, &[], false, 1, &[], 1, &mut fast_backend());
+        let vouchers = Vouchers::new();
+        let ctx = ShopContext::for_test(&planetarium, &vouchers, 1);
+        shop.refresh(&ctx, &mut fast_backend());
         assert_eq!(shop.jokers.len() + shop.consumables.len(), 2);
         assert_eq!(shop.packs.len(), 2);
     }
@@ -529,7 +696,9 @@ mod tests {
     fn test_shop_buy_pack() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false, 1, &[], 1, &mut fast_backend());
+        let vouchers = Vouchers::new();
+        let ctx = ShopContext::for_test(&planetarium, &vouchers, 1);
+        shop.refresh(&ctx, &mut fast_backend());
         assert_eq!(shop.packs.len(), 2);
         let p1 = shop.packs[0].clone();
         let bought = shop.buy_pack(&p1).expect("buy pack");
@@ -557,9 +726,11 @@ mod tests {
     fn test_gen_moves_buy_consumable_slots_full() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false, 1, &[], 1, &mut fast_backend());
+        let vouchers = Vouchers::new();
+        let ctx = ShopContext::for_test(&planetarium, &vouchers, 1);
+        shop.refresh(&ctx, &mut fast_backend());
         // slots full (held == consumable_slots)
-        let moves = shop.gen_moves_buy_consumable(100, 2, 2);
+        let moves = shop.gen_moves_buy_consumable(100, 2, 2, &vouchers);
         assert!(moves.is_none());
     }
 
@@ -567,10 +738,13 @@ mod tests {
     fn test_gen_moves_buy_consumable_no_funds() {
         let mut shop = Shop::new();
         let planetarium = Planetarium::new();
-        shop.refresh(&planetarium, &[], false, 1, &[], 1, &mut fast_backend());
+        let vouchers = Vouchers::new();
+        let ctx = ShopContext::for_test(&planetarium, &vouchers, 1);
+        shop.refresh(&ctx, &mut fast_backend());
         // 0 money can't afford any planet ($3)
-        let moves: Option<Vec<Action>> =
-            shop.gen_moves_buy_consumable(0, 2, 0).map(|i| i.collect());
+        let moves: Option<Vec<Action>> = shop
+            .gen_moves_buy_consumable(0, 2, 0, &vouchers)
+            .map(|i| i.collect());
         assert!(moves.is_none_or(|v| v.is_empty()));
     }
 
@@ -618,6 +792,9 @@ mod tests {
             (300..800).contains(&uncommon),
             "expected ~25% Uncommon, got {uncommon}/{n}"
         );
-        assert!((10..250).contains(&rare), "expected ~5% Rare, got {rare}/{n}");
+        assert!(
+            (10..250).contains(&rare),
+            "expected ~5% Rare, got {rare}/{n}"
+        );
     }
 }
