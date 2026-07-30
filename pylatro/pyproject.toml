@@ -14,7 +14,7 @@ dynamic = ["version"]
 dependencies = ["gymnasium>=0.29", "numpy>=1.24"]
 
 [project.optional-dependencies]
-dev = ["matplotlib", "tqdm", "pytest", "optuna>=3.6"]
+dev = ["matplotlib", "tqdm", "pytest", "optuna>=3.6", "scikit-learn>=1.3"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

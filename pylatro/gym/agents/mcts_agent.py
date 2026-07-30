@@ -72,6 +72,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 import pylatro
+from data_sample import DecisionSample
+from features import state_features
 from joker_pool import apply_to_config
 
 AGENT_VERSION = "10"  # 1 = original baseline (results/mcts_*.json, pre-versioning)
@@ -411,6 +413,7 @@ class MctsAgent:
         agent_seed: Optional[int] = None,
         heuristic_params: Optional[HeuristicParams] = None,
         rollout_horizon: int = ROLLOUT_HORIZON,
+        value_fn=None,
     ):
         self.n_simulations = n_simulations
         self.exploration = exploration
@@ -424,6 +427,12 @@ class MctsAgent:
         # to today's hardcoded behavior exactly when omitted.
         self.heuristic_params = heuristic_params or DEFAULT_HEURISTIC_PARAMS
         self.rollout_horizon = rollout_horizon
+        # Stage 0 (docs/mcts.md): a learned-value-model leaf evaluator,
+        # swappable in for heuristic_value() below. `None` (the default)
+        # preserves today's exact behavior bit-for-bit — same
+        # injectable-with-old-default precedent as heuristic_params/
+        # rollout_horizon above. See agents/model_value.py.
+        self.value_fn = value_fn
 
     def search(self, game) -> "pylatro.Action":
         root = Node(game.clone())
@@ -473,6 +482,8 @@ class MctsAgent:
                 game.handle_action(action)
             except Exception:
                 break
+        if self.value_fn is not None:
+            return self.value_fn(game)
         return heuristic_value(game, self.heuristic_params)
 
     def _backpropagate(self, node: Node, value: float) -> None:
@@ -491,3 +502,125 @@ class MctsAgent:
             _, _, terminated, truncated, _ = env.step_action(action)
             steps += 1
         return env
+
+    def run_episode_with_logging(self, env, seed: int, max_steps: int = 300):
+        """Like run_episode, but also returns a list of `DecisionSample`s —
+        one per real decision point, feature-encoded via
+        features.state_features() and labeled with this episode's eventual
+        outcome (final_score/won/ante_reached) once it's known. Standard
+        Monte-Carlo-return credit assignment: every state the agent actually
+        saw gets the trajectory's final return as its training target.
+
+        A new sibling method, not a modification of run_episode (left
+        untouched for every other caller). Deliberately hooks only around
+        this loop, not search()/_select_and_expand()/_rollout() — those only
+        ever touch cloned/simulated states, never the real `env._game` this
+        method snapshots. See docs/mcts.md's "Stage 0" plan.
+        """
+        apply_to_config(env._config)
+        env.reset(seed=seed)
+        terminated = truncated = False
+        steps = 0
+        pending = []  # (feature_vector, step_index) pairs, outcome unknown yet
+        while not (terminated or truncated) and steps < max_steps:
+            feat = state_features(env._game.state, env._config)
+            action = self.search(env._game)
+            _, _, terminated, truncated, _ = env.step_action(action)
+            pending.append((feat, steps))
+            steps += 1
+
+        final_state = env._game.state
+        final_score = final_state.score
+        won = env._game.is_win
+        ante_reached = final_state.round
+        samples = [
+            DecisionSample(
+                features=feat.tolist(),
+                final_score=final_score,
+                won=won,
+                ante_reached=ante_reached,
+                seed=seed,
+                step_index=step_index,
+            )
+            for feat, step_index in pending
+        ]
+        return env, samples
+
+    def run_episode_with_mc_labeling(
+        self,
+        env,
+        seed: int,
+        max_steps: int = 300,
+        mc_k: int = 6,
+        mc_horizon: int = 80,
+        rng=None,
+    ):
+        """Stage 0 v2 (see docs/mcts.md's Stage 0 diagnosis): like
+        run_episode_with_logging, same real-episode walk and identical
+        starting-state population — but each real decision point is labeled
+        with a Monte-Carlo estimate of continued *rollout-policy* play
+        (rollout_value.mc_rollout_value()) instead of the real episode's
+        eventual outcome. v1's label reflected continued play by this
+        (full-strength, `n_simulations`-sim) agent, a mismatch with
+        model_value()'s actual call site inside `_rollout()`, which
+        evaluates leaves under continued *weak* rollout-policy play —
+        diagnosed directly (`gym/diagnose_value_model.py`): v1's model had
+        ~zero rank correlation with rollout-policy ground truth even on its
+        own training-distribution states. Deliberately changes only the
+        label formula, not the states, to keep this a clean, attributable
+        A/B against v1.
+
+        Also emits one bonus `DecisionSample` per Monte-Carlo replicate,
+        from that replicate's own terminal state (with its own exact,
+        already-computed log-score) — free byproducts of computing the
+        mean, and the fix for v1's other diagnosed gap: 0% terminal-state
+        training coverage despite `_rollout()`'s leaf being terminal 96.2%
+        of the time in practice.
+
+        `rollout_value` is imported lazily (here, not at module scope) to
+        avoid a circular import — it itself imports `search_actions`/
+        `ROLLOUT_HORIZON` from this module.
+        """
+        from rollout_value import mc_rollout_value
+
+        apply_to_config(env._config)
+        env.reset(seed=seed)
+        if rng is None:
+            rng = self._rng
+        terminated = truncated = False
+        steps = 0
+        samples = []
+        while not (terminated or truncated) and steps < max_steps:
+            state_feat = state_features(env._game.state, env._config)
+            starting_state = env._game.state
+            mean_log_score, terminal_clones = mc_rollout_value(
+                env._game, rng, k=mc_k, max_extra_steps=mc_horizon
+            )
+            samples.append(
+                DecisionSample(
+                    features=state_feat.tolist(),
+                    final_score=starting_state.score,
+                    won=env._game.is_win,
+                    ante_reached=starting_state.round,
+                    seed=seed,
+                    step_index=steps,
+                    mc_log_score=mean_log_score,
+                )
+            )
+            for clone, log_score in terminal_clones:
+                clone_state = clone.state
+                samples.append(
+                    DecisionSample(
+                        features=state_features(clone_state, env._config).tolist(),
+                        final_score=clone_state.score,
+                        won=clone.is_win,
+                        ante_reached=clone_state.round,
+                        seed=seed,
+                        step_index=steps,
+                        mc_log_score=log_score,
+                    )
+                )
+            action = self.search(env._game)
+            _, _, terminated, truncated, _ = env.step_action(action)
+            steps += 1
+        return env, samples
