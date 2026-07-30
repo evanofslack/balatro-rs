@@ -7,16 +7,36 @@ use crate::pack::{Pack, PackCategory, PackContent, PackSize};
 use crate::planet::{Planetarium, Planets};
 use crate::rng::{Backend, GeneratedItem, RngBackend};
 use crate::tarot::Tarot;
+#[cfg(feature = "python")]
+use pyo3::{pyclass, pymethods};
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use strum::IntoEnumIterator;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "python", pyclass)]
 #[derive(Debug, Clone)]
 pub struct Shop {
     pub jokers: Vec<Jokers>,
     pub consumables: Vec<Consumable>,
     pub packs: Vec<Pack>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Shop {
+    #[getter]
+    fn jokers(&self) -> Vec<Jokers> {
+        self.jokers.clone()
+    }
+    #[getter]
+    fn consumables(&self) -> Vec<Consumable> {
+        self.consumables.clone()
+    }
+    #[getter]
+    fn packs(&self) -> Vec<Pack> {
+        self.packs.clone()
+    }
 }
 
 impl Shop {

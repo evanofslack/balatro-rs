@@ -1,5 +1,5 @@
 #[cfg(feature = "python")]
-use pyo3::pyclass;
+use pyo3::{pyclass, pymethods};
 use strum::{EnumIter, EnumString};
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -201,6 +201,48 @@ impl Tarot {
 
     pub fn requires_targets(&self) -> bool {
         self.min_targets() > 0
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Tarot {
+    #[pyo3(name = "id")]
+    fn py_id(&self) -> &'static str {
+        self.id()
+    }
+    #[staticmethod]
+    #[pyo3(name = "from_id")]
+    fn py_from_id(s: &str) -> Option<Self> {
+        Self::from_id(s)
+    }
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> &str {
+        self.name()
+    }
+    #[pyo3(name = "description")]
+    fn py_description(&self) -> &str {
+        self.description()
+    }
+    #[pyo3(name = "cost")]
+    fn py_cost(&self) -> usize {
+        self.cost()
+    }
+    #[pyo3(name = "sell_value")]
+    fn py_sell_value(&self) -> usize {
+        self.sell_value()
+    }
+    #[pyo3(name = "min_targets")]
+    fn py_min_targets(&self) -> usize {
+        self.min_targets()
+    }
+    #[pyo3(name = "max_targets")]
+    fn py_max_targets(&self) -> usize {
+        self.max_targets()
+    }
+    #[pyo3(name = "requires_targets")]
+    fn py_requires_targets(&self) -> bool {
+        self.requires_targets()
     }
 }
 

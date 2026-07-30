@@ -4,7 +4,7 @@ use crate::planet::Planets;
 use crate::tarot::Tarot;
 use balatro_types::Spectral;
 #[cfg(feature = "python")]
-use pyo3::pyclass;
+use pyo3::{pyclass, pymethods};
 
 pub use balatro_types::{PackCategory, PackSize};
 
@@ -39,6 +39,50 @@ impl PackContent {
             Self::Planet(_) => "Planet",
             Self::PlayingCard(_) => "Card",
             Self::Spectral(_) => "Spectral",
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl PackContent {
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> String {
+        self.name()
+    }
+    #[pyo3(name = "type_label")]
+    fn py_type_label(&self) -> &str {
+        self.type_label()
+    }
+    /// Unwraps the payload if this is a `Tarot`, else `None` — Python has no
+    /// enum pattern-matching, so these `as_*` methods are the only way to
+    /// get from a `PackContent` to its payload.
+    fn as_tarot(&self) -> Option<Tarot> {
+        if let Self::Tarot(t) = self {
+            Some(*t)
+        } else {
+            None
+        }
+    }
+    fn as_joker(&self) -> Option<Jokers> {
+        if let Self::Joker(j) = self {
+            Some(j.clone())
+        } else {
+            None
+        }
+    }
+    fn as_planet(&self) -> Option<Planets> {
+        if let Self::Planet(p) = self {
+            Some(*p)
+        } else {
+            None
+        }
+    }
+    fn as_playing_card(&self) -> Option<Card> {
+        if let Self::PlayingCard(c) = self {
+            Some(c.clone())
+        } else {
+            None
         }
     }
 }
@@ -113,10 +157,61 @@ impl Pack {
     }
 }
 
+#[cfg(feature = "python")]
+#[pymethods]
+impl Pack {
+    #[pyo3(name = "cost")]
+    fn py_cost(&self) -> usize {
+        self.cost()
+    }
+    #[pyo3(name = "picks_allowed")]
+    fn py_picks_allowed(&self) -> usize {
+        self.picks_allowed()
+    }
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> String {
+        self.name()
+    }
+    #[pyo3(name = "description")]
+    fn py_description(&self) -> String {
+        self.description()
+    }
+    #[getter]
+    fn category(&self) -> PackCategory {
+        self.category
+    }
+    #[getter]
+    fn size(&self) -> PackSize {
+        self.size
+    }
+    #[getter]
+    fn contents(&self) -> Vec<PackContent> {
+        self.contents.clone()
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "python", pyclass)]
 #[derive(Debug, Clone)]
 pub struct OpenPackState {
     pub contents: Vec<PackContent>,
     pub picks_remaining: usize,
     pub description: String,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl OpenPackState {
+    #[getter]
+    fn contents(&self) -> Vec<PackContent> {
+        self.contents.clone()
+    }
+    #[getter]
+    fn picks_remaining(&self) -> usize {
+        self.picks_remaining
+    }
+    #[getter]
+    fn description(&self) -> String {
+        self.description.clone()
+    }
 }

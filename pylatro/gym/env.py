@@ -51,6 +51,113 @@ def encode_jokers(jokers, pad_to: int):
     return ids, editions, counters
 
 
+# Tarot/Planet identity encoding. Unlike jokers there's no curated-subset
+# concept here (all 22 tarots / 12 planets are always in play), so these are
+# plain fixed id tables, not a training-pool allow-list like joker_pool.py's.
+# Ids must match Tarot::id()/Planets::id() (balatro-types/src/{tarot,planet}.rs)
+# exactly — keyed by string id (not enum discriminant order) for stability
+# against Rust enum reordering, same reasoning as CURATED_JOKER_IDS.
+TAROT_IDS = [
+    "c_fool", "c_magician", "c_high_priestess", "c_empress", "c_emperor",
+    "c_heirophant", "c_lovers", "c_chariot", "c_justice", "c_hermit",
+    "c_wheel_of_fortune", "c_strength", "c_hanged_man", "c_death",
+    "c_temperance", "c_devil", "c_tower", "c_star", "c_moon", "c_sun",
+    "c_judgement", "c_world",
+]  # fmt: skip
+PLANET_IDS = [
+    "c_pluto", "c_mercury", "c_uranus", "c_venus", "c_saturn", "c_jupiter",
+    "c_earth", "c_mars", "c_neptune", "c_planet_x", "c_ceres", "c_eris",
+]  # fmt: skip
+TAROT_ID_TO_INDEX = {tid: i for i, tid in enumerate(TAROT_IDS)}
+PLANET_ID_TO_INDEX = {pid: i for i, pid in enumerate(PLANET_IDS)}
+NUM_TAROTS = len(TAROT_IDS)
+NUM_PLANETS = len(PLANET_IDS)
+
+# Shop always offers exactly 2 non-pack items (some mix of jokers/consumables)
+# and exactly 2 packs — see Shop::refresh_cards/refresh's hardcoded `0..2`
+# loops (core/src/shop.rs). NOT the same thing as Config.consumable_slots
+# (owned-consumable cap) or Config.store_consumable_slots_max (exists but is
+# not actually wired into shop generation — confirmed by reading shop.rs;
+# using it here would silently drift from the real shop size).
+SHOP_JOKERS_MAX = 2
+SHOP_CONSUMABLES_MAX = 2
+SHOP_PACKS_MAX = 2
+
+# Max pack contents, from Pack::description()'s count logic
+# (core/src/pack.rs): Buffoon-Normal=2, Buffoon-other=4, else-Normal=3,
+# else-Jumbo/Mega=5. Intrinsic to Pack's category/size combinatorics, not
+# Config-driven, so hardcoded here same as NUM_EDITIONS/NUM_SEALS above.
+PACK_CONTENTS_MAX = 5
+
+CONSUMABLE_FIELDS = 3  # [type_code, index, cost]; type_code: 0=Tarot, 1=Planet
+PACK_FIELDS = 3  # [category_ordinal, size_ordinal, cost]
+# [kind_code, card_value, card_suit, card_enh, card_edition, card_seal, index]
+# kind_code: 0=Tarot, 1=Joker, 2=Planet, 3=PlayingCard. One fixed-width row
+# covers all PackContent variants (PlayingCard needs the 5 card sub-fields;
+# Tarot/Joker/Planet just need `index`) rather than a ragged structure.
+PACK_CONTENT_FIELDS = CARD_FIELDS + 2
+EMPTY_CONSUMABLE = np.full(CONSUMABLE_FIELDS, -1, dtype=np.int32)
+EMPTY_PACK = np.full(PACK_FIELDS, -1, dtype=np.int32)
+EMPTY_PACK_CONTENT = np.full(PACK_CONTENT_FIELDS, -1, dtype=np.int32)
+
+
+def encode_consumable(c) -> np.ndarray:
+    tarot = c.as_tarot()
+    planet = c.as_planet()
+    if tarot is not None:
+        type_code, index = 0, TAROT_ID_TO_INDEX.get(tarot.id(), -1)
+    elif planet is not None:
+        type_code, index = 1, PLANET_ID_TO_INDEX.get(planet.id(), -1)
+    else:
+        type_code, index = -1, -1
+    return np.array([type_code, index, int(c.cost())], dtype=np.int32)
+
+
+def encode_consumables(consumables, pad_to: int) -> np.ndarray:
+    rows = [encode_consumable(c) for c in consumables[:pad_to]]
+    rows += [EMPTY_CONSUMABLE.copy() for _ in range(pad_to - len(rows))]
+    return np.stack(rows)
+
+
+def encode_pack(p) -> np.ndarray:
+    return np.array(
+        [int(p.category), int(p.size), int(p.cost())], dtype=np.int32
+    )
+
+
+def encode_packs(packs, pad_to: int) -> np.ndarray:
+    rows = [encode_pack(p) for p in packs[:pad_to]]
+    rows += [EMPTY_PACK.copy() for _ in range(pad_to - len(rows))]
+    return np.stack(rows)
+
+
+def encode_pack_content(content) -> np.ndarray:
+    tarot = content.as_tarot()
+    joker = content.as_joker()
+    planet = content.as_planet()
+    playing_card = content.as_playing_card()
+    row = EMPTY_PACK_CONTENT.copy()
+    if tarot is not None:
+        row[0] = 0
+        row[6] = TAROT_ID_TO_INDEX.get(tarot.id(), -1)
+    elif joker is not None:
+        row[0] = 1
+        row[6] = joker_index(joker)
+    elif planet is not None:
+        row[0] = 2
+        row[6] = PLANET_ID_TO_INDEX.get(planet.id(), -1)
+    elif playing_card is not None:
+        row[0] = 3
+        row[1:6] = encode_card(playing_card)
+    return row
+
+
+def encode_pack_contents(contents, pad_to: int) -> np.ndarray:
+    rows = [encode_pack_content(c) for c in contents[:pad_to]]
+    rows += [EMPTY_PACK_CONTENT.copy() for _ in range(pad_to - len(rows))]
+    return np.stack(rows)
+
+
 class BalatroEnv(gym.Env):
     def __init__(
         self,
@@ -134,6 +241,57 @@ class BalatroEnv(gym.Env):
                     shape=(config.joker_slots_max,),
                     dtype=np.float32,
                 ),
+                "shop_jokers_id": spaces.Box(
+                    low=-1,
+                    high=max(NUM_CURATED_JOKERS - 1, 0),
+                    shape=(SHOP_JOKERS_MAX,),
+                    dtype=np.int32,
+                ),
+                "shop_jokers_edition": spaces.Box(
+                    low=-1,
+                    high=NUM_EDITIONS - 1,
+                    shape=(SHOP_JOKERS_MAX,),
+                    dtype=np.int32,
+                ),
+                "shop_consumables": spaces.Box(
+                    low=-1,
+                    high=max(NUM_TAROTS, NUM_PLANETS),
+                    shape=(SHOP_CONSUMABLES_MAX, CONSUMABLE_FIELDS),
+                    dtype=np.int32,
+                ),
+                "shop_packs": spaces.Box(
+                    low=-1,
+                    high=8,
+                    shape=(SHOP_PACKS_MAX, PACK_FIELDS),
+                    dtype=np.int32,
+                ),
+                "reroll_cost": spaces.Box(
+                    low=0, high=1000, shape=(1,), dtype=np.float32
+                ),
+                "open_pack_contents": spaces.Box(
+                    low=-1,
+                    high=max(NUM_CURATED_JOKERS - 1, NUM_TAROTS, NUM_PLANETS),
+                    shape=(PACK_CONTENTS_MAX, PACK_CONTENT_FIELDS),
+                    dtype=np.int32,
+                ),
+                "open_pack_picks_remaining": spaces.Box(
+                    low=0, high=10, shape=(1,), dtype=np.float32
+                ),
+                "consumables": spaces.Box(
+                    low=-1,
+                    high=max(NUM_TAROTS, NUM_PLANETS),
+                    shape=(config.consumable_slots, CONSUMABLE_FIELDS),
+                    dtype=np.int32,
+                ),
+                "active_tarot_index": spaces.Box(
+                    low=-1, high=max(NUM_TAROTS - 1, 0), shape=(1,), dtype=np.int32
+                ),
+                "active_tarot_min_targets": spaces.Box(
+                    low=0, high=3, shape=(1,), dtype=np.int32
+                ),
+                "active_tarot_max_targets": spaces.Box(
+                    low=0, high=3, shape=(1,), dtype=np.int32
+                ),
             }
         )
         self.score_queue = []
@@ -144,6 +302,11 @@ class BalatroEnv(gym.Env):
         jokers_id, jokers_edition, jokers_counter = encode_jokers(
             state.jokers, self._config.joker_slots_max
         )
+        shop_jokers_id, shop_jokers_edition, _ = encode_jokers(
+            state.shop.jokers, SHOP_JOKERS_MAX
+        )
+        active_tarot = state.active_tarot
+        open_pack = state.open_pack
         return {
             "score_log10": np.array([state.score_log10], dtype=np.float32),
             "required_score_log10": np.array(
@@ -161,6 +324,34 @@ class BalatroEnv(gym.Env):
             "jokers_id": jokers_id,
             "jokers_edition": jokers_edition,
             "jokers_counter": jokers_counter,
+            "shop_jokers_id": shop_jokers_id,
+            "shop_jokers_edition": shop_jokers_edition,
+            "shop_consumables": encode_consumables(
+                state.shop.consumables, SHOP_CONSUMABLES_MAX
+            ),
+            "shop_packs": encode_packs(state.shop.packs, SHOP_PACKS_MAX),
+            "reroll_cost": np.array([state.reroll_cost], dtype=np.float32),
+            "open_pack_contents": encode_pack_contents(
+                open_pack.contents if open_pack is not None else [],
+                PACK_CONTENTS_MAX,
+            ),
+            "open_pack_picks_remaining": np.array(
+                [open_pack.picks_remaining if open_pack is not None else 0],
+                dtype=np.float32,
+            ),
+            "consumables": encode_consumables(
+                state.consumables, self._config.consumable_slots
+            ),
+            "active_tarot_index": np.array(
+                [TAROT_ID_TO_INDEX.get(active_tarot.id(), -1) if active_tarot else -1],
+                dtype=np.int32,
+            ),
+            "active_tarot_min_targets": np.array(
+                [active_tarot.min_targets() if active_tarot else 0], dtype=np.int32
+            ),
+            "active_tarot_max_targets": np.array(
+                [active_tarot.max_targets() if active_tarot else 0], dtype=np.int32
+            ),
         }
 
     def _get_info(self):

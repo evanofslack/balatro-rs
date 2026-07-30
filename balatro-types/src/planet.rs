@@ -1,6 +1,6 @@
 use crate::rank::{HandRank, Level};
 #[cfg(feature = "python")]
-use pyo3::pyclass;
+use pyo3::{pyclass, pymethods};
 use std::fmt;
 use strum::{EnumIter, EnumString};
 
@@ -129,6 +129,44 @@ impl Planets {
     /// in the shop by default.
     pub fn is_secret(&self) -> bool {
         matches!(self, Self::PlanetX | Self::Ceres | Self::Eris)
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Planets {
+    #[pyo3(name = "id")]
+    fn py_id(&self) -> &'static str {
+        self.id()
+    }
+    #[staticmethod]
+    #[pyo3(name = "from_id")]
+    fn py_from_id(s: &str) -> Option<Self> {
+        Self::from_id(s)
+    }
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> &'static str {
+        self.name()
+    }
+    #[pyo3(name = "cost")]
+    fn py_cost(&self) -> usize {
+        self.cost()
+    }
+    #[pyo3(name = "sell_value")]
+    fn py_sell_value(&self) -> usize {
+        self.sell_value()
+    }
+    #[pyo3(name = "desc")]
+    fn py_desc(&self) -> String {
+        self.desc()
+    }
+    #[pyo3(name = "hand_rank")]
+    fn py_hand_rank(&self) -> HandRank {
+        self.hand_rank()
+    }
+    #[pyo3(name = "is_secret")]
+    fn py_is_secret(&self) -> bool {
+        self.is_secret()
     }
 }
 

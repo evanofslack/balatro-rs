@@ -74,3 +74,33 @@ def test_truncation_independent_of_termination():
     obs, reward, terminated, truncated, info = env.step(int(legal[0]))
     if not terminated:
         assert truncated
+
+
+def test_observation_includes_shop_and_consumable_state():
+    """Fresh-game shape/dtype check for the new shop/consumable observation
+    keys — the fuller correctness check (values match the real shop/pack/
+    consumable state) is `observation_space.contains(obs)` in the tests
+    above, which already iterates every key generically."""
+    env = BalatroEnv()
+    obs, _ = env.reset(seed=6)
+    for key in (
+        "shop_jokers_id",
+        "shop_jokers_edition",
+        "shop_consumables",
+        "shop_packs",
+        "reroll_cost",
+        "open_pack_contents",
+        "open_pack_picks_remaining",
+        "consumables",
+        "active_tarot_index",
+        "active_tarot_min_targets",
+        "active_tarot_max_targets",
+    ):
+        assert key in obs
+        assert env.observation_space[key].contains(obs[key])
+
+    # A fresh game hasn't entered the shop/a pack/tarot-targeting yet.
+    assert (obs["shop_jokers_id"] == -1).all()
+    assert (obs["shop_consumables"] == -1).all()
+    assert (obs["open_pack_contents"] == -1).all()
+    assert obs["active_tarot_index"][0] == -1

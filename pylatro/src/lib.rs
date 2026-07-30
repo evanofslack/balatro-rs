@@ -1,11 +1,16 @@
 use balatro_rs::action::{Action, CardMask};
 use balatro_rs::card::Card;
 use balatro_rs::config::{Config, RngMode};
+use balatro_rs::consumable::Consumable;
 use balatro_rs::error::GameError;
 use balatro_rs::game::Game;
 use balatro_rs::joker::{JokerState, Jokers, Rarity, SelectorValue};
+use balatro_rs::pack::{OpenPackState, Pack, PackCategory, PackContent, PackSize};
+use balatro_rs::planet::Planets;
 use balatro_rs::rank::HandRank;
+use balatro_rs::shop::Shop;
 use balatro_rs::stage::{End, Stage};
+use balatro_rs::tarot::Tarot;
 use pyo3::prelude::*;
 
 #[pyclass]
@@ -147,6 +152,38 @@ impl GameState {
         self.game.seed_str.clone()
     }
 
+    #[getter]
+    fn shop(&self) -> Shop {
+        self.game.shop.clone()
+    }
+    #[getter]
+    fn reroll_cost(&self) -> usize {
+        self.game.reroll_cost
+    }
+    #[getter]
+    fn open_pack(&self) -> Option<OpenPackState> {
+        self.game.open_pack.clone()
+    }
+    #[getter]
+    fn consumables(&self) -> Vec<Consumable> {
+        self.game.consumables.clone()
+    }
+    #[getter]
+    fn last_consumable_used(&self) -> Option<Consumable> {
+        self.game.last_consumable_used.clone()
+    }
+    /// The tarot currently being targeted, if `stage` is `TarotHand` — the
+    /// only way from Python to see which tarot is active, since `Stage`'s
+    /// own `#[pymethods]` only exposes `int()`.
+    #[getter]
+    fn active_tarot(&self) -> Option<Tarot> {
+        if let Stage::TarotHand(t) = self.game.stage {
+            Some(t)
+        } else {
+            None
+        }
+    }
+
     fn __repr__(&self) -> String {
         format!("GameState:\n{}", self.game)
     }
@@ -172,6 +209,15 @@ fn pylatro(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Jokers>()?;
     m.add_class::<Action>()?;
     m.add_class::<HandRank>()?;
+    m.add_class::<Consumable>()?;
+    m.add_class::<Pack>()?;
+    m.add_class::<PackContent>()?;
+    m.add_class::<OpenPackState>()?;
+    m.add_class::<PackCategory>()?;
+    m.add_class::<PackSize>()?;
+    m.add_class::<Planets>()?;
+    m.add_class::<Tarot>()?;
+    m.add_class::<Shop>()?;
     m.add_function(wrap_pyfunction!(seed_from_str, m)?)?;
     Ok(())
 }

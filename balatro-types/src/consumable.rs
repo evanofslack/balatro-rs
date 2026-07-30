@@ -2,7 +2,7 @@ use crate::planet::Planets;
 use crate::spectral::Spectral;
 use crate::tarot::Tarot;
 #[cfg(feature = "python")]
-use pyo3::pyclass;
+use pyo3::{pyclass, pymethods};
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
@@ -69,6 +69,58 @@ impl Consumable {
             .map(Self::Planet)
             .or_else(|| Tarot::from_id(s).map(Self::Tarot))
             .or_else(|| Spectral::from_id(s).map(Self::Spectral))
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl Consumable {
+    #[pyo3(name = "id")]
+    fn py_id(&self) -> &'static str {
+        self.id()
+    }
+    #[staticmethod]
+    #[pyo3(name = "from_id")]
+    fn py_from_id(s: &str) -> Option<Self> {
+        Self::from_id(s)
+    }
+    #[pyo3(name = "cost")]
+    fn py_cost(&self) -> usize {
+        self.cost()
+    }
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> &str {
+        self.name()
+    }
+    #[pyo3(name = "type_label")]
+    fn py_type_label(&self) -> &str {
+        self.type_label()
+    }
+    #[pyo3(name = "description")]
+    fn py_description(&self) -> String {
+        self.description()
+    }
+    #[pyo3(name = "sell_value")]
+    fn py_sell_value(&self) -> usize {
+        self.sell_value()
+    }
+    /// Unwraps the payload if this is a `Tarot`, else `None` — Python has no
+    /// enum pattern-matching, so this is the only way to get from a
+    /// `Consumable` to its `Tarot` value.
+    fn as_tarot(&self) -> Option<Tarot> {
+        if let Self::Tarot(t) = self {
+            Some(*t)
+        } else {
+            None
+        }
+    }
+    /// Same as `as_tarot`, for the `Planet` payload.
+    fn as_planet(&self) -> Option<Planets> {
+        if let Self::Planet(p) = self {
+            Some(*p)
+        } else {
+            None
+        }
     }
 }
 
