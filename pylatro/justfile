@@ -41,6 +41,13 @@ tune-narrow best_json="results/tune_best.json" n-trials="75" episodes="60" sims=
 tune-validate best_json workers="10":
     {{python}} gym/tune.py --validate-only {{best_json}} --workers {{workers}}
 
+# sweep n_simulations at the current default HeuristicParams (5-seed x
+# 100-episode each, same methodology as every version comparison) — tests
+# whether search depth is a real lever now that the value function is
+# tuned/stable, see docs/mcts.md
+sims-sweep sims="100,250,500" workers="10":
+    {{python}} gym/sims_sweep.py --sims {{sims}} --workers {{workers}}
+
 # pytest suite (gym/ + test_env.py + test_mcts_agent.py)
 test:
     {{python}} -m pytest test/
