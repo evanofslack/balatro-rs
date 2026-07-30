@@ -143,6 +143,30 @@ def test_model_value_returns_float_for_live_and_terminal_states():
         )
 
 
+def test_model_value_rescale_multiplies_prediction():
+    """Stage 0 v3 (docs/mcts.md): rescale compensates for the value-scale/
+    exploration mismatch diagnosed in Stage 0 v2 — this just locks down that
+    it's a plain multiplier on the raw prediction, default 1.0 unchanged."""
+    samples = _synthetic_samples(n=60, feature_len=245)
+    model, _ = train_value_model.train(samples)
+
+    with tempfile.TemporaryDirectory() as d:
+        model_path = os.path.join(d, "model.joblib")
+        joblib.dump(model, model_path)
+
+        env = BalatroEnv(max_steps=200)
+        env.reset(seed=0)
+        base = model_value(env._game, model_path=model_path, config=env._config)
+        scaled = model_value(
+            env._game, model_path=model_path, config=env._config, rescale=30.0
+        )
+        default = model_value(
+            env._game, model_path=model_path, config=env._config, rescale=1.0
+        )
+        assert scaled == pytest.approx(base * 30.0)
+        assert default == pytest.approx(base)
+
+
 def test_model_value_uses_real_feature_length():
     """Confirms model_value's default feature_fn is features.state_features
     (not just any 245-length stand-in) by training on the actual real length

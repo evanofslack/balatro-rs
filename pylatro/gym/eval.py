@@ -32,13 +32,15 @@ def _build_agent(
     agent_seed: Optional[int],
     value_model: Optional[str] = None,
     config=None,
+    exploration: Optional[float] = None,
+    value_rescale: float = 1.0,
 ):
     if agent_name == "random":
         from agents.random_agent import RandomAgent
 
         return RandomAgent()
     elif agent_name == "mcts":
-        from agents.mcts_agent import MctsAgent
+        from agents.mcts_agent import DEFAULT_EXPLORATION, MctsAgent
 
         value_fn = None
         if value_model is not None:
@@ -47,12 +49,20 @@ def _build_agent(
             # constants the model's feature encoder needs — see
             # agents/model_value.py's docstring for why it can't be read off
             # `game`/`GameEngine` clones inside the search tree directly.
+            # `value_rescale` compensates for the value-scale/exploration
+            # mismatch diagnosed in Stage 0 v2 (docs/mcts.md) — see
+            # gym/tune_value_model.py.
             from agents.model_value import model_value
 
             value_fn = functools.partial(
-                model_value, model_path=value_model, config=config
+                model_value, model_path=value_model, config=config, rescale=value_rescale
             )
-        return MctsAgent(n_simulations=sims, agent_seed=agent_seed, value_fn=value_fn)
+        return MctsAgent(
+            n_simulations=sims,
+            agent_seed=agent_seed,
+            value_fn=value_fn,
+            exploration=DEFAULT_EXPLORATION if exploration is None else exploration,
+        )
     else:
         raise ValueError(f"unknown agent: {agent_name}")
 
@@ -64,12 +74,16 @@ def _run_one(
     max_steps: int,
     agent_seed: Optional[int],
     value_model: Optional[str] = None,
+    exploration: Optional[float] = None,
+    value_rescale: float = 1.0,
 ) -> EpisodeLog:
     """Runs one episode in isolation — own env, own agent. This is what makes
     an episode a valid unit of work for a process pool: no state is shared
     with any other episode, so workers can't step on each other."""
     env = BalatroEnv(max_steps=max_steps)
-    agent = _build_agent(agent_name, sims, agent_seed, value_model, env._config)
+    agent = _build_agent(
+        agent_name, sims, agent_seed, value_model, env._config, exploration, value_rescale
+    )
     agent.run_episode(env, seed, max_steps)
     return record_episode(env, seed)
 
@@ -83,6 +97,8 @@ def run_agent(
     agent_seed: Optional[int] = None,
     workers: int = 1,
     value_model: Optional[str] = None,
+    exploration: Optional[float] = None,
+    value_rescale: float = 1.0,
 ):
     print(
         f"starting {episodes} episodes with {sims} sims for agent {agent_name}, "
@@ -105,7 +121,9 @@ def run_agent(
         # bit-identical so `--agent-seed` still reproduces every saved
         # results/*.json generated before this flag existed.
         env = BalatroEnv(max_steps=max_steps)
-        agent = _build_agent(agent_name, sims, agent_seed, value_model, env._config)
+        agent = _build_agent(
+            agent_name, sims, agent_seed, value_model, env._config, exploration, value_rescale
+        )
         logs = []
         for seed in seeds:
             agent.run_episode(env, seed, max_steps)
@@ -131,6 +149,8 @@ def run_agent(
                     [max_steps] * len(seeds),
                     per_episode_seeds,
                     [value_model] * len(seeds),
+                    [exploration] * len(seeds),
+                    [value_rescale] * len(seeds),
                 )
             )
     elapsed = time.perf_counter() - start
@@ -151,6 +171,8 @@ def run_agent(
             "agent_seed": agent_seed,
             "workers": workers,
             "value_model": value_model,
+            "exploration": exploration,
+            "value_rescale": value_rescale,
         }
         save_results(out, logs, summary, meta)
         print(f"saved to {out}")
@@ -191,6 +213,23 @@ if __name__ == "__main__":
         "only) — swaps in the Stage 0 learned value function for "
         "heuristic_value() as MctsAgent's leaf evaluator. See docs/mcts.md.",
     )
+    parser.add_argument(
+        "--exploration",
+        type=float,
+        default=None,
+        help="override MctsAgent's UCB1 exploration constant (default: "
+        "DEFAULT_EXPLORATION, tuned for heuristic_value()'s scale — a "
+        "--value-model run almost certainly needs a different value here, "
+        "see gym/tune_value_model.py).",
+    )
+    parser.add_argument(
+        "--value-rescale",
+        type=float,
+        default=1.0,
+        help="multiplies --value-model's raw prediction before it reaches "
+        "MctsAgent (default: 1.0, the model's native scale). See Stage 0 v2's "
+        "value-scale/exploration mismatch diagnosis in docs/mcts.md.",
+    )
     args = parser.parse_args()
     run_agent(
         args.agent,
@@ -201,4 +240,6 @@ if __name__ == "__main__":
         args.agent_seed,
         args.workers,
         args.value_model,
+        args.exploration,
+        args.value_rescale,
     )

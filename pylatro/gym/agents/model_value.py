@@ -34,17 +34,27 @@ def _load_model(model_path: str):
     return model
 
 
-def model_value(game, model_path: str, config, feature_fn=state_features) -> float:
+def model_value(
+    game, model_path: str, config, feature_fn=state_features, rescale: float = 1.0
+) -> float:
     """Leaf-evaluation value for `game`, using the model at `model_path`.
     `config` supplies the padding-size constants state_features() needs
     (available_max/selected_max/joker_slots_max/consumable_slots) — game/
     GameEngine clones inside MctsAgent's search tree don't carry a Config
     reference of their own, so callers must thread the same Config the env
-    was built with (see eval.py's --value-model wiring)."""
+    was built with (see eval.py's --value-model wiring).
+
+    `rescale` multiplies the raw prediction before returning it. Default 1.0
+    preserves the model's native ~1.7-unit `mc_log_score` range — the Stage 0
+    v2 regression's diagnosed cause (docs/mcts.md): that range is ~97x more
+    compressed than heuristic_value()'s tuned scale, which MctsAgent's
+    exploration constant was calibrated against, so UCB1's exploration term
+    swamps the value signal almost everywhere. See gym/tune_value_model.py,
+    which searches this parameter jointly with exploration."""
     model = _load_model(model_path)
     feat = feature_fn(game.state, config).reshape(1, -1)
     log_score = model.predict(feat)[0]
-    return log_score
+    return log_score * rescale
 
 
 def score_to_log10(final_score: int) -> float:
