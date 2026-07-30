@@ -31,8 +31,16 @@ def compare(paths):
     fields = [
         ("win_rate", "{:.1%}"),
         ("avg_ante_reached", "{:.2f}"),
+        ("ante_reached_min", "{:.0f}"),
+        ("ante_reached_median", "{:.0f}"),
+        ("ante_reached_max", "{:.0f}"),
+        ("ante_reached_stdev", "{:.2f}"),
         ("avg_steps", "{:.1f}"),
         ("avg_final_score", "{:.1f}"),
+        ("final_score_min", "{:.0f}"),
+        ("final_score_median", "{:.0f}"),
+        ("final_score_max", "{:.0f}"),
+        ("final_score_stdev", "{:.1f}"),
         ("discard_rate", "{:.1%}"),
         ("skip_blind_rate", "{:.1%}"),
     ]
@@ -42,7 +50,11 @@ def compare(paths):
     for key, fmt in fields:
         row = []
         for r in runs:
-            value = skip_blind_rate(r["summary"]) if key == "skip_blind_rate" else r["summary"][key]
+            value = (
+                skip_blind_rate(r["summary"])
+                if key == "skip_blind_rate"
+                else r["summary"].get(key, 0)
+            )
             row.append(fmt.format(value))
         print(f"{key:<18}" + "".join(f"{v:>{col_w}}" for v in row))
 
@@ -50,6 +62,7 @@ def compare(paths):
     for path, r in zip(paths, runs):
         print(f"{path}: {r['summary']['episodes']} episodes, top jokers bought:",
               r["summary"]["top_jokers_bought"])
+        print(f"  best_episode: {r['summary'].get('best_episode')}")
         print(f"  action_kind_histogram: {r['summary']['action_kind_histogram']}")
         print(f"  hand_type_histogram: {r['summary'].get('hand_type_histogram', {})}")
 

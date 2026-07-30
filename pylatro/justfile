@@ -31,10 +31,11 @@ aggregate out *runs:
 bench:
     {{python}} gym/bench.py
 
-# auto-tune heuristic_value()'s weights (Optuna) against TUNING_SEEDS, then
-# validate the best config against the real held-out EVAL_SEEDS set
-tune n-trials="100" episodes="30" sims="100" workers="10":
+tune n-trials="250" episodes="15" sims="100" workers="10":
     {{python}} gym/tune.py --n-trials {{n-trials}} --episodes-per-trial {{episodes}} --sims {{sims}} --workers {{workers}} --out results/tune_best.json --validate
+
+tune-narrow best_json="results/tune_best.json" n-trials="75" episodes="60" sims="100" workers="10":
+    {{python}} gym/tune.py --n-trials {{n-trials}} --episodes-per-trial {{episodes}} --sims {{sims}} --workers {{workers}} --warm-start {{best_json}} --out results/tune_best_narrow.json --validate
 
 # re-run just the validation pass against a previously saved tune.py --out
 tune-validate best_json workers="10":

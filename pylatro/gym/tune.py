@@ -29,6 +29,7 @@ import optuna
 
 import compare
 from agents.mcts_agent import (
+    AGENT_VERSION,
     DEFAULT_EXPLORATION,
     DEFAULT_HEURISTIC_PARAMS,
     ROLLOUT_HORIZON,
@@ -96,27 +97,72 @@ def run_batch(
     return logs, summarize(logs)
 
 
-def build_params(trial: "optuna.Trial", tune_rollout_horizon: bool):
-    """Optuna search space. Returns (HeuristicParams, exploration, rollout_horizon)."""
-    lose_floor = trial.suggest_float("terminal_lose_floor", -30.0, -1.0)
+def _narrowed_bounds(center: float, low: float, high: float, window_frac: float) -> tuple:
+    """Narrows [low, high] to a window of width window_frac * (high - low),
+    centered on `center`, clipped back to [low, high]. Used for stage-2
+    (--warm-start) tuning runs to refine around a stage-1 result instead of
+    re-searching the full original range. Falls back to the full range if
+    the computed window is degenerate (e.g. center sits exactly on an edge
+    and window_frac is tiny)."""
+    span = (high - low) * window_frac
+    lo, hi = max(low, center - span / 2), min(high, center + span / 2)
+    return (low, high) if lo >= hi else (lo, hi)
+
+
+def build_params(
+    trial: "optuna.Trial",
+    tune_rollout_horizon: bool,
+    warm_start: Optional[dict] = None,
+    narrow_window_frac: float = 0.2,
+):
+    """Optuna search space. Returns (HeuristicParams, exploration, rollout_horizon).
+
+    If `warm_start` (a previous run's `params` dict, same shape as saved by
+    `--out`/loaded by `--validate-only`) is given, every parameter present in
+    it gets its range narrowed around that value (see _narrowed_bounds) —
+    the two-stage tuning workflow: a broad stage-1 search finds a region,
+    then a stage-2 run with --warm-start refines around it with more
+    episodes/trial for a less noisy estimate. Parameters absent from
+    warm_start (e.g. rollout_horizon, if stage 1 didn't tune it) fall back
+    to the full range unchanged."""
+
+    def bounds(name: str, low: float, high: float) -> tuple:
+        if warm_start is not None and name in warm_start:
+            return _narrowed_bounds(warm_start[name], low, high, narrow_window_frac)
+        return (low, high)
+
+    # Widened from the original (-30, -1)/(0.5, 15)/(20, 150) after the v10
+    # tuning run: terminal_lose_floor, lose_margin_bonus, and
+    # terminal_win_value all landed at or within ~10% of their edges (-28.06,
+    # 1.31, 137.09 respectively) — a standard sign the true optimum may sit
+    # past the original bounds. See docs/mcts.md.
+    lose_floor_lo, lose_floor_hi = bounds("terminal_lose_floor", -100.0, -1.0)
+    lose_floor = trial.suggest_float("terminal_lose_floor", lose_floor_lo, lose_floor_hi)
     # Sample a strictly-positive gap instead of the ceiling directly, so
     # terminal_lose_ceiling > terminal_lose_floor holds by construction, no
     # rejection sampling needed.
-    lose_margin = trial.suggest_float("lose_margin_bonus", 0.5, 15.0)
+    margin_lo, margin_hi = bounds("lose_margin_bonus", 0.05, 15.0)
+    lose_margin = trial.suggest_float("lose_margin_bonus", margin_lo, margin_hi)
+    win_lo, win_hi = bounds("terminal_win_value", 20.0, 400.0)
+    money_lo, money_hi = bounds("money_weight", 1e-4, 0.5)
+    joker_lo, joker_hi = bounds("joker_weight", 0.01, 2.0)
+    round_lo, round_hi = bounds("round_weight", 0.01, 2.0)
     params = HeuristicParams(
-        terminal_win_value=trial.suggest_float("terminal_win_value", 20.0, 150.0),
+        terminal_win_value=trial.suggest_float("terminal_win_value", win_lo, win_hi),
         terminal_lose_floor=lose_floor,
         terminal_lose_ceiling=lose_floor + lose_margin,
-        money_weight=trial.suggest_float("money_weight", 1e-4, 0.5, log=True),
-        joker_weight=trial.suggest_float("joker_weight", 0.01, 2.0, log=True),
-        round_weight=trial.suggest_float("round_weight", 0.01, 2.0, log=True),
+        money_weight=trial.suggest_float("money_weight", money_lo, money_hi, log=True),
+        joker_weight=trial.suggest_float("joker_weight", joker_lo, joker_hi, log=True),
+        round_weight=trial.suggest_float("round_weight", round_lo, round_hi, log=True),
     )
     # exploration is a tree-search parameter, not a leaf-value weight, so it
     # stays outside HeuristicParams — sampled alongside but passed as
     # MctsAgent's separate kwarg.
-    exploration = trial.suggest_float("exploration", 0.1, 4.0)
+    exp_lo, exp_hi = bounds("exploration", 0.1, 4.0)
+    exploration = trial.suggest_float("exploration", exp_lo, exp_hi)
     if tune_rollout_horizon:
-        rollout_horizon = trial.suggest_int("rollout_horizon", 5, 40)
+        rh_lo, rh_hi = bounds("rollout_horizon", 5, 40)
+        rollout_horizon = trial.suggest_int("rollout_horizon", round(rh_lo), round(rh_hi))
     else:
         rollout_horizon = ROLLOUT_HORIZON
     return params, exploration, rollout_horizon
@@ -147,13 +193,13 @@ OBJECTIVES = {
 }
 
 
-def make_objective(args):
+def make_objective(args, warm_start: Optional[dict] = None):
     seeds = TUNING_SEEDS[: args.episodes_per_trial]
     objective_fn = OBJECTIVES[args.objective]
 
     def objective(trial: "optuna.Trial") -> float:
         params, exploration, rollout_horizon = build_params(
-            trial, args.tune_rollout_horizon
+            trial, args.tune_rollout_horizon, warm_start, args.narrow_window_frac
         )
         _, summary = run_batch(
             params,
@@ -200,13 +246,18 @@ def run_validation(
         tuned_summary,
         {
             "agent": "mcts",
-            "agent_version": f"9-tuned-trial{trial_number}",
+            "agent_version": f"{AGENT_VERSION}-tuned-trial{trial_number}",
             "sims": 100,
             "episodes": episodes,
             "workers": workers,
         },
     )
 
+    # "default" here means whatever HeuristicParams/exploration/
+    # rollout_horizon are currently hardcoded in mcts_agent.py — after a
+    # tuning run's params get adopted (see docs/mcts.md), this comparison is
+    # against that adopted baseline, not necessarily the original hand-guessed
+    # v9 values.
     default_logs, default_summary = run_batch(
         DEFAULT_HEURISTIC_PARAMS, DEFAULT_EXPLORATION, ROLLOUT_HORIZON, seeds, 100, 300, workers
     )
@@ -217,7 +268,7 @@ def run_validation(
         default_summary,
         {
             "agent": "mcts",
-            "agent_version": "9",
+            "agent_version": AGENT_VERSION,
             "sims": 100,
             "episodes": episodes,
             "workers": workers,
@@ -258,6 +309,22 @@ if __name__ == "__main__":
         default=None,
         help="skip the search; load a saved --out JSON and just run --validate",
     )
+    parser.add_argument(
+        "--warm-start",
+        default=None,
+        help="two-stage tuning, stage 2: a previous --out JSON (e.g. a broad stage-1 "
+        "run's results/tune_best.json) to narrow this run's search space around, "
+        "instead of searching the full original bounds. See build_params()/"
+        "_narrowed_bounds().",
+    )
+    parser.add_argument(
+        "--narrow-window-frac",
+        type=float,
+        default=0.2,
+        help="with --warm-start: each parameter's search range is narrowed to a "
+        "window this fraction of the original range's width, centered on the "
+        "warm-start value (default 0.2 = 20%% of the original width)",
+    )
     args = parser.parse_args()
 
     if args.validate_only:
@@ -275,6 +342,11 @@ if __name__ == "__main__":
             best["best_trial_number"],
         )
     else:
+        warm_start = None
+        if args.warm_start:
+            with open(args.warm_start) as f:
+                warm_start = json.load(f)["params"]
+
         sampler = optuna.samplers.TPESampler(seed=args.sampler_seed)
         study = optuna.create_study(
             direction="maximize",
@@ -283,12 +355,24 @@ if __name__ == "__main__":
             storage=args.storage,
             load_if_exists=args.storage is not None,
         )
+        if warm_start is not None:
+            # Guarantees the stage-1 winner itself gets evaluated at least
+            # once at this (typically larger) episode count, before TPE
+            # explores the narrowed neighborhood around it — directly
+            # answers "does the winner hold up with less noise."
+            study.enqueue_trial(warm_start)
+            print(
+                f"warm-starting from {args.warm_start}, narrow_window_frac="
+                f"{args.narrow_window_frac}"
+            )
         print(
             f"tuning: {args.n_trials} trials x {args.episodes_per_trial} episodes, "
             f"objective={args.objective}, workers={args.workers}"
         )
         start = time.perf_counter()
-        study.optimize(make_objective(args), n_trials=args.n_trials, n_jobs=1)
+        study.optimize(
+            make_objective(args, warm_start), n_trials=args.n_trials, n_jobs=1
+        )
         elapsed = time.perf_counter() - start
 
         best_trial = study.best_trial

@@ -9,6 +9,7 @@ action-kind mix, discard rate.
 
 import json
 import math
+import statistics
 import time
 from collections import Counter
 from dataclasses import asdict, dataclass, field
@@ -87,13 +88,41 @@ def summarize(logs: List[EpisodeLog]) -> dict:
         )
         plays += log.action_counts.get("PlayHand", 0) + log.action_counts.get("Play", 0)
 
+    scores = [log.final_score for log in logs]
+    antes = [log.ante_reached for log in logs]
+    # Averages alone can't tell "9% win rate" apart from "9 solid wins" vs.
+    # "9 near-misses" — these min/median/max/stdev pairs, and the single
+    # best_episode, give that visibility. ante_reached is the actual
+    # win-progress metric (blinds/rounds cleared, per Game.round), so it's
+    # the primary sort key for best_episode; final_score is the tiebreak.
+    best_episode = max(
+        logs, key=lambda log: (log.ante_reached, log.final_score), default=None
+    )
+
     return {
         "episodes": n,
         "win_rate": rate,
         "win_rate_95ci": (lo, hi),
-        "avg_ante_reached": sum(log.ante_reached for log in logs) / n if n else 0.0,
+        "avg_ante_reached": sum(antes) / n if n else 0.0,
         "avg_steps": sum(log.steps for log in logs) / n if n else 0.0,
-        "avg_final_score": sum(log.final_score for log in logs) / n if n else 0.0,
+        "avg_final_score": sum(scores) / n if n else 0.0,
+        "final_score_min": min(scores) if scores else 0,
+        "final_score_median": statistics.median(scores) if scores else 0,
+        "final_score_max": max(scores) if scores else 0,
+        "final_score_stdev": statistics.stdev(scores) if len(scores) > 1 else 0.0,
+        "ante_reached_min": min(antes) if antes else 0,
+        "ante_reached_median": statistics.median(antes) if antes else 0,
+        "ante_reached_max": max(antes) if antes else 0,
+        "ante_reached_stdev": statistics.stdev(antes) if len(antes) > 1 else 0.0,
+        "best_episode": (
+            {
+                "seed": best_episode.seed,
+                "ante_reached": best_episode.ante_reached,
+                "final_score": best_episode.final_score,
+            }
+            if best_episode is not None
+            else None
+        ),
         "discard_rate": discards / (discards + plays) if (discards + plays) else 0.0,
         "top_jokers_bought": all_jokers.most_common(10),
         "action_kind_histogram": dict(all_actions),
@@ -128,9 +157,23 @@ def print_report(logs: List[EpisodeLog], label: str = "agent") -> dict:
     lo, hi = summary["win_rate_95ci"]
     print(f"=== strategy report: {label} ({summary['episodes']} episodes) ===")
     print(f"win rate:        {summary['win_rate']:.1%}  (95% CI [{lo:.1%}, {hi:.1%}])")
-    print(f"avg ante reached: {summary['avg_ante_reached']:.2f}")
+    print(
+        f"avg ante reached: {summary['avg_ante_reached']:.2f}  "
+        f"(min {summary['ante_reached_min']} / median {summary['ante_reached_median']:g} / "
+        f"max {summary['ante_reached_max']}, stdev {summary['ante_reached_stdev']:.2f})"
+    )
     print(f"avg steps:       {summary['avg_steps']:.1f}")
-    print(f"avg final score: {summary['avg_final_score']:.1f}")
+    print(
+        f"avg final score: {summary['avg_final_score']:.1f}  "
+        f"(min {summary['final_score_min']:g} / median {summary['final_score_median']:g} / "
+        f"max {summary['final_score_max']:g}, stdev {summary['final_score_stdev']:.1f})"
+    )
+    if summary["best_episode"]:
+        b = summary["best_episode"]
+        print(
+            f"best episode:    seed={b['seed']}, ante_reached={b['ante_reached']}, "
+            f"final_score={b['final_score']}"
+        )
     print(f"discard rate:    {summary['discard_rate']:.1%}")
     print("top jokers bought:", summary["top_jokers_bought"])
     print("action kind mix:", summary["action_kind_histogram"])
