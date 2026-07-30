@@ -935,6 +935,27 @@ mod tests {
         assert_eq!(app.game.plays, base_plays + 1);
     }
 
+    // The sidebar reads `plays`/`discards` straight off the game, which
+    // outside a blind are the *previous* round's leftovers — so a voucher
+    // bought in the shop showed no change until the next blind started.
+    #[test]
+    fn test_sidebar_shows_next_round_hands_while_in_the_shop() {
+        let mut app = shop_app(Voucher::Grabber);
+        let base_plays = app.game.config.plays;
+        assert_eq!(crate::ui::sidebar::displayed_hands(&app.game), base_plays);
+
+        app.focus = FocusZone::ShopPacks;
+        app.cursor = app.game.shop.packs.len();
+        handle_key(&mut app, key(KeyCode::Enter));
+        assert!(app.game.vouchers.has(Voucher::Grabber));
+
+        assert_eq!(
+            crate::ui::sidebar::displayed_hands(&app.game),
+            base_plays + 1,
+            "shop sidebar must show the hands the next blind will deal"
+        );
+    }
+
     #[test]
     fn test_magic_trick_cards_are_buyable_from_the_cards_zone() {
         let mut app = shop_app(Voucher::MagicTrick);
