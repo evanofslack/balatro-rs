@@ -26,12 +26,14 @@ def aggregate(paths, out):
     avg_summary["episodes"] = summaries[0]["episodes"]
     avg_summary["win_rate_95ci"] = (0.0, 0.0)  # not meaningful once averaged
 
-    hist, jokers = Counter(), Counter()
+    hist, jokers, hand_types = Counter(), Counter(), Counter()
     for s in summaries:
         hist.update(s["action_kind_histogram"])
         jokers.update(dict(s["top_jokers_bought"]))
+        hand_types.update(s.get("hand_type_histogram", {}))
     avg_summary["action_kind_histogram"] = dict(hist)
     avg_summary["top_jokers_bought"] = jokers.most_common(10)
+    avg_summary["hand_type_histogram"] = dict(hand_types)
 
     meta = {
         **runs[0]["meta"],

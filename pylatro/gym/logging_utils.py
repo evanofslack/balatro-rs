@@ -24,6 +24,10 @@ class EpisodeLog:
     final_score: int
     action_counts: Counter = field(default_factory=Counter)
     jokers_bought: Counter = field(default_factory=Counter)
+    # Resolved rank (HandRank.id(), e.g. "Flush"/"TwoPair") of every hand
+    # actually played, in order — descriptive/logging only, mirrors
+    # action_counts' shape. See core's Game.played_hands.
+    hand_types: Counter = field(default_factory=Counter)
 
 
 def _action_kind(action) -> str:
@@ -42,6 +46,7 @@ def record_episode(env, seed: int) -> EpisodeLog:
         action_counts[kind] += 1
         if kind == "BuyJoker":
             jokers_bought[action._0.id()] += 1
+    hand_types = Counter(hr.id() for hr in state.played_hands)
     return EpisodeLog(
         seed=seed,
         won=env._game.is_win,
@@ -50,6 +55,7 @@ def record_episode(env, seed: int) -> EpisodeLog:
         final_score=state.score,
         action_counts=action_counts,
         jokers_bought=jokers_bought,
+        hand_types=hand_types,
     )
 
 
@@ -70,10 +76,12 @@ def summarize(logs: List[EpisodeLog]) -> dict:
 
     all_jokers: Counter = Counter()
     all_actions: Counter = Counter()
+    all_hand_types: Counter = Counter()
     discards = plays = 0
     for log in logs:
         all_jokers.update(log.jokers_bought)
         all_actions.update(log.action_counts)
+        all_hand_types.update(log.hand_types)
         discards += log.action_counts.get("DiscardHand", 0) + log.action_counts.get(
             "Discard", 0
         )
@@ -89,6 +97,7 @@ def summarize(logs: List[EpisodeLog]) -> dict:
         "discard_rate": discards / (discards + plays) if (discards + plays) else 0.0,
         "top_jokers_bought": all_jokers.most_common(10),
         "action_kind_histogram": dict(all_actions),
+        "hand_type_histogram": dict(all_hand_types),
     }
 
 
@@ -101,10 +110,11 @@ def save_results(path: str, logs: List[EpisodeLog], summary: dict, meta: dict) -
                 **{
                     k: v
                     for k, v in asdict(log).items()
-                    if k not in ("action_counts", "jokers_bought")
+                    if k not in ("action_counts", "jokers_bought", "hand_types")
                 },
                 "action_counts": dict(log.action_counts),
                 "jokers_bought": dict(log.jokers_bought),
+                "hand_types": dict(log.hand_types),
             }
             for log in logs
         ],
@@ -124,4 +134,5 @@ def print_report(logs: List[EpisodeLog], label: str = "agent") -> dict:
     print(f"discard rate:    {summary['discard_rate']:.1%}")
     print("top jokers bought:", summary["top_jokers_bought"])
     print("action kind mix:", summary["action_kind_histogram"])
+    print("hand type mix:", summary["hand_type_histogram"])
     return summary

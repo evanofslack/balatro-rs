@@ -51,6 +51,7 @@ def compare(paths):
         print(f"{path}: {r['summary']['episodes']} episodes, top jokers bought:",
               r["summary"]["top_jokers_bought"])
         print(f"  action_kind_histogram: {r['summary']['action_kind_histogram']}")
+        print(f"  hand_type_histogram: {r['summary'].get('hand_type_histogram', {})}")
 
 
 if __name__ == "__main__":

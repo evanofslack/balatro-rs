@@ -68,12 +68,13 @@ Deliberate simplifications, documented as they were added:
 
 import math
 import random
+from dataclasses import dataclass
 from typing import Optional
 
 import pylatro
 from joker_pool import apply_to_config
 
-AGENT_VERSION = "7"  # 1 = original baseline (results/mcts_*.json, pre-versioning)
+AGENT_VERSION = "10"  # 1 = original baseline (results/mcts_*.json, pre-versioning)
 # 2 = exclude SkipBlind from search tree
 # 3 = margin-aware terminal loss value (heuristic_value)
 # 4 = rank PlayHand candidates by one-ply lookahead score
@@ -88,6 +89,60 @@ AGENT_VERSION = "7"  # 1 = original baseline (results/mcts_*.json, pre-versionin
 #     dominated-action-exclusion pattern as SkipBlind/MoveCard/SortHand, not
 #     a heuristic_value() reweight (tried first, empirically insufficient:
 #     see docs/mcts.md)
+# 8 = rank DiscardHand candidates at tree expansion by one-ply lookahead
+#     (_discard_hand_score(), same clone+apply+real-score technique
+#     _play_hand_score() already uses for PlayHand) instead of uniform
+#     sampling — expansion-site candidate admission only, same as v4/v6,
+#     not a heuristic_value() change. A discard's replacement cards turn
+#     out to be fully deterministic given the current state (count-only,
+#     from an already-shuffled deck — see _discard_hand_score()'s
+#     docstring), not a distribution to Monte-Carlo-sample over, so plain
+#     clone() suffices; an earlier version of this change used the new
+#     Game::fork() core primitive for MC redraw sampling before that was
+#     discovered to be solving a nonexistent problem here. fork() stays in
+#     core as a real, tested primitive for genuinely stochastic
+#     resampling elsewhere (e.g. shop reroll evaluation), just unused by
+#     this version. Scored candidates are pre-sampled to DISCARD_SCORE_POOL
+#     (unbiased random draw, not a shape filter) before ranking — the
+#     naive "score every legal mask" approach that works for PlayHand is a
+#     218x218 nested cost here (_discard_hand_score() itself rescans up to
+#     218 masks per candidate), measured at ~222s/episode uncapped, not
+#     viable to eval-measure at any real episode count. Deliberately not a
+#     hand-authored suit/rank/straight
+#     heuristic and not MadeHand.best_hand()/HandRank: jokers can make the
+#     classically-best hand not the highest-scoring one, so the discard's
+#     resulting hand is scored via real handle_action()-based scoring
+#     (_best_play_hand_score()). NOT the same "v8" as the abandoned
+#     e75b066 ("v8 not good") commit — that v8 was an unrelated,
+#     fully-retired heuristic-rescale/exploration-retune experiment, never
+#     reflected in this ladder. See docs/mcts.md.
+# 9 = revert v8's DiscardHand ranking. Measured no improvement over v7 (full
+#     5-seed x 100-episode sweep: win_rate 0.4%->0.2%, avg_ante_reached
+#     0.03->0.02, avg_final_score 288.4->289.7, discard_rate 39.4%->40.5%,
+#     all within noise) despite the ranking mechanism working correctly
+#     (confirmed via the hand-type histogram this session added: Flush/
+#     Straight/FullHouse started appearing, where they structurally
+#     couldn't before). Diagnosis: candidate *admission* into the tree
+#     isn't sufficient on its own — _rollout() stays uniform-random and
+#     heuristic_value() only rewards realized score, so a discard that sets
+#     up a strong hand looks identical to a bad one unless the improved
+#     hand actually gets played within the rollout horizon; the real
+#     bottleneck is downstream of admission, not fixable by better
+#     candidate ranking alone. Combined with the nested-rescan cost being
+#     too high to keep iterating on (~222s/episode uncapped, ~41-105s/
+#     episode even after the v8 DISCARD_SCORE_POOL cost cap), not worth
+#     keeping. Game::fork()/FastBackend::reseed() (core) and the hand-type/
+#     played_hands logging this attempt also added are kept — both
+#     independently useful and unrelated to the cost/benefit problem. Next
+#     direction: auto-tune heuristic_value()'s weights instead of hand-
+#     guessing them again (see docs/mcts.md, gym/tune.py).
+# 10 = adopted gym/tune.py's first tuning run as the new hardcoded defaults
+#      (HeuristicParams' terminal/non-terminal weights, MctsAgent's
+#      exploration constant) — real, validated improvement, not a hand
+#      guess: full held-out EVAL_SEEDS pass, win_rate 0.0%->10.0%,
+#      avg_ante_reached 0.01->0.34, avg_final_score 285.4->354.7,
+#      discard_rate 39.0%->50.8%. See docs/mcts.md and results/tune_best.json
+#      for the full comparison, the exact tuned values, and how to re-tune.
 
 # Stage::TarotHand's Stage.int() encoding (core/src/stage.rs) — the one
 # stage where SelectCard/DeselectCard aren't dominated by anything atomic.
@@ -210,10 +265,13 @@ def expansion_actions(game, rng):
     higher-scoring subsets via exhaustive one-ply lookahead instead of
     uniform sampling. Used only at tree-expansion call sites (root init,
     _select_and_expand) — see module comment above RANKED_PLAY_HAND_TOP_N.
-    DiscardHand is left on uniform random sampling, unchanged: discarding
-    never moves state.score (the redraw is random per clone), so ranking it
-    would need multiple stochastic samples per candidate — out of scope for
-    this pass, deferred."""
+    DiscardHand is left on uniform random sampling: a v8 attempt to rank it
+    by real one-ply lookahead (_discard_hand_score()/_best_play_hand_score())
+    was tried and reverted in v9 — the ranking mechanism worked (confirmed
+    via the hand-type histogram, Flush/Straight/FullHouse started appearing),
+    but a full 5-seed x 100-episode sweep showed no measurable improvement
+    over v7 despite that, and the nested exhaustive rescan cost was too high
+    to keep iterating on regardless. See docs/mcts.md."""
     excluded = _excluded_kinds(game)
     kept = []
     play_hands = []
@@ -252,16 +310,50 @@ def expansion_actions(game, rng):
     return kept + play_hands + discard_hands
 
 
-TERMINAL_WIN_VALUE = 50.0
-TERMINAL_LOSE_FLOOR = -10.0  # never scored a chip
-TERMINAL_LOSE_CEILING = -2.0  # ran out of plays one point short of clearing
+# v10: adopted from a 100-trial Optuna tuning run (best trial #40 of 100,
+# gym/tune.py, objective=avg_final_score, TUNING_SEEDS[:30]) — replaces the
+# original hand-guessed values below them in comments. Validated against a
+# full held-out EVAL_SEEDS pass (100 episodes): win_rate 0.0%->10.0%,
+# avg_ante_reached 0.01->0.34, avg_final_score 285.4->354.7, discard_rate
+# 39.0%->50.8%. See docs/mcts.md and results/tune_best.json (the saved
+# study output) for the full comparison and how to reproduce/re-tune.
+TERMINAL_WIN_VALUE = 137.09321642258507  # was 50.0
+TERMINAL_LOSE_FLOOR = -28.058568720074668  # was -10.0
+TERMINAL_LOSE_CEILING = -26.746741344688278  # was -2.0
+DEFAULT_EXPLORATION = 2.0246187402022633  # was math.sqrt(2) =~ 1.41421356
 
 
-def heuristic_value(game) -> float:
+@dataclass(frozen=True)
+class HeuristicParams:
+    """Injectable weights for heuristic_value(). Three consecutive
+    hand-guessed attempts at these weights (this file's original values, an
+    abandoned static discard heuristic, v8's real-scored discard ranking)
+    all failed to move win/ante-reached rate — see docs/mcts.md. Rather than
+    guess a fourth time, these are exposed for gym/tune.py (Optuna) to
+    search instead. `frozen=True` makes instances hashable/immutable and,
+    since every field is a plain float, trivially picklable — required for
+    passing distinct configurations through a ProcessPoolExecutor the way
+    tune.py's trials do. Defaults are constructed from the same module
+    constants heuristic_value() uses, so the no-override path stays
+    bit-identical to whatever this file's current adopted defaults are (now
+    the v10 tuned values above, not the original hand-guessed ones)."""
+
+    terminal_win_value: float = TERMINAL_WIN_VALUE
+    terminal_lose_floor: float = TERMINAL_LOSE_FLOOR
+    terminal_lose_ceiling: float = TERMINAL_LOSE_CEILING
+    money_weight: float = 0.0044455600572427196  # was 0.01
+    joker_weight: float = 0.12321152103741428  # was 0.3
+    round_weight: float = 0.2076322995162519  # was 0.5
+
+
+DEFAULT_HEURISTIC_PARAMS = HeuristicParams()
+
+
+def heuristic_value(game, params: HeuristicParams = DEFAULT_HEURISTIC_PARAMS) -> float:
     """Bounded state-value estimate used as the rollout's leaf evaluation."""
     if game.is_over:
         if game.is_win:
-            return TERMINAL_WIN_VALUE
+            return params.terminal_win_value
         # Margin-aware loss: a near-miss (plays exhausted with score close to
         # required_score) is far less bad than never having scored at all. A
         # flat value here discards real signal between the two, and is a
@@ -276,11 +368,17 @@ def heuristic_value(game) -> float:
         required = max(state.required_score, 1)
         margin = min(state.score / required, 1.0)
         return (
-            TERMINAL_LOSE_FLOOR + (TERMINAL_LOSE_CEILING - TERMINAL_LOSE_FLOOR) * margin
+            params.terminal_lose_floor
+            + (params.terminal_lose_ceiling - params.terminal_lose_floor) * margin
         )
     state = game.state
     progress = state.score_log10 - math.log10(state.required_score + 1)
-    return progress + 0.01 * state.money + 0.3 * len(state.jokers) + 0.5 * state.round
+    return (
+        progress
+        + params.money_weight * state.money
+        + params.joker_weight * len(state.jokers)
+        + params.round_weight * state.round
+    )
 
 
 class Node:
@@ -309,8 +407,10 @@ class MctsAgent:
     def __init__(
         self,
         n_simulations: int = 100,
-        exploration: float = math.sqrt(2),
+        exploration: float = DEFAULT_EXPLORATION,
         agent_seed: Optional[int] = None,
+        heuristic_params: Optional[HeuristicParams] = None,
+        rollout_horizon: int = ROLLOUT_HORIZON,
     ):
         self.n_simulations = n_simulations
         self.exploration = exploration
@@ -320,6 +420,10 @@ class MctsAgent:
         # original v5 commit) so this file stays compatible with the current
         # eval.py, which always passes agent_seed=.
         self._rng = random.Random(agent_seed)
+        # Two new optional kwargs (gym/tune.py's injection points) — default
+        # to today's hardcoded behavior exactly when omitted.
+        self.heuristic_params = heuristic_params or DEFAULT_HEURISTIC_PARAMS
+        self.rollout_horizon = rollout_horizon
 
     def search(self, game) -> "pylatro.Action":
         root = Node(game.clone())
@@ -358,7 +462,7 @@ class MctsAgent:
         return node
 
     def _rollout(self, game) -> float:
-        for _ in range(ROLLOUT_HORIZON):
+        for _ in range(self.rollout_horizon):
             if game.is_over:
                 break
             actions = search_actions(game, self._rng)
@@ -369,7 +473,7 @@ class MctsAgent:
                 game.handle_action(action)
             except Exception:
                 break
-        return heuristic_value(game)
+        return heuristic_value(game, self.heuristic_params)
 
     def _backpropagate(self, node: Node, value: float) -> None:
         while node is not None:
