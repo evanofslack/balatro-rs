@@ -3,6 +3,7 @@ use crate::effect::{Effects, RuleFlag};
 use crate::game::Game;
 use crate::hand::{MadeHand, SelectHand};
 use crate::rank::HandRank;
+use rand::Rng;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use strum::IntoEnumIterator;
@@ -17,6 +18,37 @@ pub(crate) fn mint_joker_id() -> usize {
 
 pub(crate) fn ensure_joker_id_counter_past(max_seen: usize) {
     JOKER_ID_COUNTER.fetch_max(max_seen + 1, Ordering::SeqCst);
+}
+
+/// Assigns a fresh rotating selector to joker if it's a selector-type joker.
+pub(crate) fn roll_discard_selector<R: Rng + ?Sized>(rng: &mut R, j: &mut Jokers) {
+    const SUITS: [Suit; 4] = [Suit::Spade, Suit::Club, Suit::Heart, Suit::Diamond];
+    const VALUES: [Value; 13] = [
+        Value::Two,
+        Value::Three,
+        Value::Four,
+        Value::Five,
+        Value::Six,
+        Value::Seven,
+        Value::Eight,
+        Value::Nine,
+        Value::Ten,
+        Value::Jack,
+        Value::Queen,
+        Value::King,
+        Value::Ace,
+    ];
+    match j {
+        Jokers::Castle(_) => {
+            let suit = SUITS[rng.gen_range(0..SUITS.len())];
+            j.state_mut().selector = Some(SelectorValue::Suit(suit));
+        }
+        Jokers::MailInRebate(_) => {
+            let value = VALUES[rng.gen_range(0..VALUES.len())];
+            j.state_mut().selector = Some(SelectorValue::Value(value));
+        }
+        _ => {}
+    }
 }
 
 /// `balatro_types::Jokers` already supplies all static joker data
@@ -675,6 +707,86 @@ impl JokerEffects for Jokers {
                 }
                 vec![Effects::TriggerCountHeld(Arc::new(Mutex::new(extra)))]
             }
+            Self::TradingCard(_) => {
+                // "First discard of round" == self.discards already
+                // decremented to config.discards - 1 by the time this fires
+                // (discard_selected decrements before invoking OnDiscard).
+                fn apply(g: &mut Game, hand: MadeHand) {
+                    if hand.all.len() == 1
+                        && g.discards == g.config.discards.saturating_sub(1)
+                    {
+                        g.destroy_card(hand.all[0].id);
+                        g.money += 3;
+                    }
+                }
+                vec![Effects::OnDiscard(Arc::new(Mutex::new(apply)))]
+            }
+            Self::GreenJoker(_) => {
+                // config.plays/config.discards - remaining == used this
+                // round, both already reset to config values in clear_blind.
+                fn apply(g: &mut Game, _hand: MadeHand) {
+                    let hands_played = g.config.plays - g.plays;
+                    let discards_used = g.config.discards - g.discards;
+                    let delta = hands_played as i64 - discards_used as i64;
+                    g.mult = (g.mult as i64 + delta).max(0) as usize;
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::HitTheRoad(_) => {
+                fn apply(g: &mut Game, _hand: MadeHand) {
+                    let jacks = g
+                        .discarded_this_round
+                        .iter()
+                        .filter(|c| c.value == Value::Jack)
+                        .count();
+                    g.mult += (g.mult as f64 * 0.5 * jacks as f64) as usize;
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::Yorick(_) => {
+                fn apply(g: &mut Game, _hand: MadeHand) {
+                    let levels = g.total_cards_discarded / 23;
+                    g.mult += (g.mult as f64 * levels as f64) as usize;
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::Castle(castle) => {
+                // Selector is picked in Game::clear_blind (round-scoped, "changes
+                // every round"), *after* effects() is typically last rebuilt
+                // (buy/sell/pack-add), must be looked up live.
+                let id = castle.instance_id;
+                let apply = move |g: &mut Game, _hand: MadeHand| {
+                    let Some(SelectorValue::Suit(suit)) =
+                        g.joker_state_mut(id).and_then(|s| s.selector)
+                    else {
+                        return;
+                    };
+                    let count = g
+                        .discarded_this_round
+                        .iter()
+                        .filter(|c| c.matches_suit(suit))
+                        .count();
+                    g.chips += count * 3;
+                };
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
+            Self::MailInRebate(mail) => {
+                // Immediate payout on the triggering discard itself, not an
+                // accumulated round total - unlike Castle/HitTheRoad, matches
+                // real card text ("Earn $5 for each discarded [rank]"). Selector
+                // looked up live for the same reason as Castle above.
+                let id = mail.instance_id;
+                let apply = move |g: &mut Game, hand: MadeHand| {
+                    let Some(SelectorValue::Value(value)) =
+                        g.joker_state_mut(id).and_then(|s| s.selector)
+                    else {
+                        return;
+                    };
+                    let count = hand.all.iter().filter(|c| c.value == value).count();
+                    g.money += count * 5;
+                };
+                vec![Effects::OnDiscard(Arc::new(Mutex::new(apply)))]
+            }
             _ => vec![],
         }
     }
@@ -747,6 +859,12 @@ impl JokerEffects for Jokers {
                 | Self::Hack(_)
                 | Self::SockAndBuskin(_)
                 | Self::HangingChad(_)
+                | Self::TradingCard(_)
+                | Self::GreenJoker(_)
+                | Self::HitTheRoad(_)
+                | Self::Yorick(_)
+                | Self::Castle(_)
+                | Self::MailInRebate(_)
         )
     }
 }
@@ -780,9 +898,9 @@ mod tests {
     // `effects()` behavior implemented. Shop/pack generation
     // must never offer joker that silently does nothing.
     #[test]
-    fn test_exactly_65_jokers_implemented() {
+    fn test_exactly_71_jokers_implemented() {
         let count = Jokers::iter().filter(|j| j.is_implemented()).count();
-        assert_eq!(count, 65);
+        assert_eq!(count, 71);
     }
 
     #[test]
@@ -3323,5 +3441,288 @@ mod tests {
         // no two pair this hand, bonus persists: mult = level(1) + counter(4) = 5
         // chips = 5 + 11 = 16; score = 16 * 5 = 80
         assert_eq!(g.calc_score(ace_hand), 80);
+    }
+
+    #[test]
+    fn test_trading_card_destroys_first_single_discard_only() {
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut j = Jokers::TradingCard(TradingCard::default());
+        j.set_instance_id(1);
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        let c1 = Card::new(Value::Two, Suit::Heart);
+        g.available.extend(vec![c1]);
+        g.select_card(c1).unwrap();
+        let money_before = g.money;
+        g.discard_selected().unwrap();
+        // first discard of the round, exactly 1 card: destroyed + $3
+        assert_eq!(g.money, money_before + 3);
+        assert!(!g.discarded.iter().any(|c| c.id == c1.id));
+
+        let c2 = Card::new(Value::Three, Suit::Club);
+        g.available.extend(vec![c2]);
+        g.select_card(c2).unwrap();
+        let money_before = g.money;
+        g.discard_selected().unwrap();
+        // second discard of the round, even though it's also 1 card: no-op
+        assert_eq!(g.money, money_before);
+        assert!(g.discarded.iter().any(|c| c.id == c2.id));
+    }
+
+    #[test]
+    fn test_green_joker_mult_tracks_hands_played_minus_discards() {
+        let ace_hand = SelectHand::new(vec![Card::new(Value::Ace, Suit::Heart)])
+            .best_hand()
+            .unwrap();
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut j = Jokers::GreenJoker(GreenJoker::default());
+        j.set_instance_id(1);
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // chips = level(5) + card(11) = 16
+        // no hands played, no discards: mult = level(1) + 0 = 1; score = 16
+        assert_eq!(g.calc_score(ace_hand.clone()), 16);
+
+        g.plays -= 1; // 1 hand played
+                      // mult = 1 + (1 - 0) = 2; score = 16 * 2 = 32
+        assert_eq!(g.calc_score(ace_hand.clone()), 32);
+
+        g.discards -= 1; // 1 discard used
+                         // mult = 1 + (1 - 1) = 1; score = 16
+        assert_eq!(g.calc_score(ace_hand.clone()), 16);
+
+        g.discards -= 1; // 2 discards used
+                         // mult = 1 + (1 - 2) = 0 (floored, not negative); score = 0
+        assert_eq!(g.calc_score(ace_hand), 0);
+    }
+
+    #[test]
+    fn test_hit_the_road_mult_from_jacks_discarded_this_round() {
+        let ace_hand = SelectHand::new(vec![Card::new(Value::Ace, Suit::Heart)])
+            .best_hand()
+            .unwrap();
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut j = Jokers::HitTheRoad(HitTheRoad::default());
+        j.set_instance_id(1);
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        // play a hand containing a Jack first - it lands in `g.discarded`
+        // (the deck-recycling pile) but must NOT count toward HitTheRoad's
+        // bonus, which is scoped to `discarded_this_round` (Discard-action
+        // cards only). If the joker's filter ever regressed to reading
+        // `g.discarded` instead, this Jack would wrongly inflate the count
+        // and the very next assertion would fail.
+        let played_jack = Card::new(Value::Jack, Suit::Diamond);
+        g.available.extend(vec![played_jack]);
+        g.select_card(played_jack).unwrap();
+        g.play_selected().unwrap();
+
+        let jack1 = Card::new(Value::Jack, Suit::Club);
+        g.available.extend(vec![jack1]);
+        g.select_card(jack1).unwrap();
+        g.discard_selected().unwrap();
+        // 1 jack discarded (the played jack above doesn't count):
+        // bonus = mult(1) * 0.5 * 1 = 0.5, truncates to 0
+        assert_eq!(g.calc_score(ace_hand.clone()), 16);
+
+        let jack2 = Card::new(Value::Jack, Suit::Spade);
+        g.available.extend(vec![jack2]);
+        g.select_card(jack2).unwrap();
+        g.discard_selected().unwrap();
+        // 2 jacks discarded across 2 separate discards this round: bonus = 1 * 0.5 * 2 = 1
+        // mult = 1 + 1 = 2; score = 16 * 2 = 32
+        assert_eq!(g.calc_score(ace_hand), 32);
+    }
+
+    #[test]
+    fn test_yorick_mult_scales_with_run_total_cards_discarded() {
+        let ace_hand = SelectHand::new(vec![Card::new(Value::Ace, Suit::Heart)])
+            .best_hand()
+            .unwrap();
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut j = Jokers::Yorick(Yorick::default());
+        j.set_instance_id(1);
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        g.total_cards_discarded = 22;
+        // 22 / 23 = 0 levels; score = 16
+        assert_eq!(g.calc_score(ace_hand.clone()), 16);
+
+        g.total_cards_discarded = 23;
+        // 1 level: mult = 1 + (1 * 1) = 2; score = 16 * 2 = 32
+        assert_eq!(g.calc_score(ace_hand.clone()), 32);
+
+        g.total_cards_discarded = 46;
+        // 2 levels: mult = 1 + (1 * 2) = 3; score = 16 * 3 = 48
+        assert_eq!(g.calc_score(ace_hand), 48);
+    }
+
+    #[test]
+    fn test_castle_chips_from_discarded_suit_this_round() {
+        let ace_hand = SelectHand::new(vec![Card::new(Value::Ace, Suit::Club)])
+            .best_hand()
+            .unwrap();
+
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut j = Jokers::Castle(Castle::default());
+        j.set_instance_id(1);
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        g.joker_state_mut(1).unwrap().selector = Some(SelectorValue::Suit(Suit::Heart));
+
+        // play a Heart first - it lands in `g.discarded` (deck-recycling
+        // pile) but must NOT count toward Castle's bonus, which is scoped
+        // to `discarded_this_round` (Discard-action cards only). If the
+        // joker's filter ever regressed to reading `g.discarded` instead,
+        // this Heart would wrongly inflate the count and the assertion
+        // below would fail.
+        let played_heart = Card::new(Value::Five, Suit::Heart);
+        g.available.extend(vec![played_heart]);
+        g.select_card(played_heart).unwrap();
+        g.play_selected().unwrap();
+
+        let h1 = Card::new(Value::Two, Suit::Heart);
+        let h2 = Card::new(Value::Three, Suit::Heart);
+        let c1 = Card::new(Value::Four, Suit::Club); // non-matching suit, doesn't count
+        g.available.extend(vec![h1, h2, c1]);
+        g.select_card(h1).unwrap();
+        g.select_card(h2).unwrap();
+        g.select_card(c1).unwrap();
+        g.discard_selected().unwrap();
+
+        // chips = level(5) + card(11) + 2 discarded hearts (not the played
+        // one) * 3 = 22; mult = level(1); score = 22
+        assert_eq!(g.calc_score(ace_hand), 22);
+    }
+
+    #[test]
+    fn test_mail_in_rebate_pays_per_matching_rank_discarded() {
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut j = Jokers::MailInRebate(MailInRebate::default());
+        j.set_instance_id(1);
+        g.shop.jokers.push(j.clone());
+        g.buy_joker(j).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        g.joker_state_mut(1).unwrap().selector = Some(SelectorValue::Value(Value::King));
+
+        let k1 = Card::new(Value::King, Suit::Heart);
+        let k2 = Card::new(Value::King, Suit::Spade);
+        let three = Card::new(Value::Three, Suit::Club);
+        g.available.extend(vec![k1, k2, three]);
+        g.select_card(k1).unwrap();
+        g.select_card(k2).unwrap();
+        g.select_card(three).unwrap();
+        let money_before = g.money;
+        g.discard_selected().unwrap();
+        // 2 kings discarded in this action: +$5 each
+        assert_eq!(g.money, money_before + 10);
+
+        let k3 = Card::new(Value::King, Suit::Diamond);
+        g.available.extend(vec![k3]);
+        g.select_card(k3).unwrap();
+        let money_before = g.money;
+        g.discard_selected().unwrap();
+        // immediate per-event payout, not accumulated from prior discards
+        assert_eq!(g.money, money_before + 5);
+    }
+
+    #[test]
+    fn test_discard_selectors_reroll_on_clear_blind() {
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Small),
+            ..Default::default()
+        };
+        g.money += 1000;
+        g.stage = Stage::Shop();
+        let mut castle = Jokers::Castle(Castle::default());
+        castle.set_instance_id(1);
+        g.shop.jokers.push(castle.clone());
+        g.buy_joker(castle).unwrap();
+        let mut mail = Jokers::MailInRebate(MailInRebate::default());
+        mail.set_instance_id(2);
+        g.shop.jokers.push(mail.clone());
+        g.buy_joker(mail).unwrap();
+        g.stage = Stage::Blind(Blind::Small);
+
+        assert_eq!(g.joker_state_mut(1).unwrap().selector, None);
+        assert_eq!(g.joker_state_mut(2).unwrap().selector, None);
+
+        g.clear_blind();
+
+        assert!(g.joker_state_mut(1).unwrap().selector.is_some());
+        assert!(g.joker_state_mut(2).unwrap().selector.is_some());
+    }
+
+    #[test]
+    fn test_roll_discard_selector_sets_castle_and_mail_in_rebate() {
+        // `roll_discard_selector` is called directly inside both real mint
+        // chokepoints (`JokerGenerator::gen_joker`, `rng::seed_joker_with_id`)
+        // - tested here directly rather than via `gen_joker`'s own random
+        // rarity/pool selection. An earlier version of this test sampled
+        // `gen_joker` in a loop hoping to draw both jokers within N tries,
+        // which ties the test's pass/fail to incidental RNG-sequence
+        // details - a future change to the joker roster or rarity weights
+        // could shift whether a fixed seed lands on both within a bounded
+        // number of draws, failing this test for no real regression.
+        use rand::SeedableRng;
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
+
+        let mut castle = Jokers::Castle(Castle::default());
+        roll_discard_selector(&mut rng, &mut castle);
+        assert!(
+            castle.state().selector.is_some(),
+            "Castle minted with no selector"
+        );
+
+        let mut mail = Jokers::MailInRebate(MailInRebate::default());
+        roll_discard_selector(&mut rng, &mut mail);
+        assert!(
+            mail.state().selector.is_some(),
+            "MailInRebate minted with no selector"
+        );
     }
 }

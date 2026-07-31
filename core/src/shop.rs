@@ -296,6 +296,7 @@ impl JokerGenerator {
         let mut joker = choices[i].clone();
         joker.set_edition(gen_edition(prob_mult, rng));
         joker.set_instance_id(crate::joker::mint_joker_id());
+        crate::joker::roll_discard_selector(rng, &mut joker);
         joker
     }
 }
@@ -618,6 +619,9 @@ mod tests {
             (300..800).contains(&uncommon),
             "expected ~25% Uncommon, got {uncommon}/{n}"
         );
-        assert!((10..250).contains(&rare), "expected ~5% Rare, got {rare}/{n}");
+        assert!(
+            (10..250).contains(&rare),
+            "expected ~5% Rare, got {rare}/{n}"
+        );
     }
 }

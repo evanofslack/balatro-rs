@@ -8,7 +8,7 @@ use crate::deck::Deck;
 use crate::effect::{EffectRegistry, Effects, RuleFlag};
 use crate::error::GameError;
 use crate::hand::{MadeHand, SelectHand};
-use crate::joker::{joker_display, JokerEffects, JokerState, Jokers};
+use crate::joker::{joker_display, roll_discard_selector, JokerEffects, JokerState, Jokers};
 use crate::pack::{OpenPackState, Pack, PackCategory, PackContent};
 use crate::planet::Planetarium;
 use crate::rank::HandRank;
@@ -86,6 +86,12 @@ pub struct Game {
     pub(crate) consecutive_hands_without_face_card: usize,
     #[cfg_attr(feature = "serde", serde(default))]
     pub(crate) consecutive_hands_not_most_played_type: usize,
+    // cards removed via the Discard action only (not played cards)
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) discarded_this_round: Vec<Card>,
+    // run total of cards discarded (Discard action only), never reset.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) total_cards_discarded: usize,
 
     pub last_consumable_used: Option<Consumable>,
     #[cfg_attr(feature = "serde", serde(default))]
@@ -167,6 +173,8 @@ impl Game {
             hand_ranks_played_this_round: HashSet::new(),
             consecutive_hands_without_face_card: 0,
             consecutive_hands_not_most_played_type: 0,
+            discarded_this_round: Vec::new(),
+            total_cards_discarded: 0,
             last_consumable_used: None,
             last_score: 0,
             reroll_cost: default_reroll_cost(),
@@ -224,10 +232,21 @@ impl Game {
         self.plays = self.config.plays;
         self.discards = self.config.discards;
         self.hand_ranks_played_this_round.clear();
+        self.discarded_this_round.clear();
         self.deck.append(&mut self.discarded);
         self.deck.extend(self.available.cards());
         self.available.empty();
         self.deck.shuffle(&mut self.rng);
+        self.roll_discard_selectors();
+    }
+
+    // Castle/MailInRebate lock onto a fresh random suit/rank each round
+    // ("changes every round") - unconditional, overwrites whatever was
+    // already there.
+    fn roll_discard_selectors(&mut self) {
+        for j in self.jokers.iter_mut() {
+            roll_discard_selector(&mut self.rng, j);
+        }
     }
 
     // draw from deck to available
@@ -303,7 +322,9 @@ impl Game {
         }
         self.discards -= 1;
         let discarded = self.available.selected();
-        self.discarded.extend(discarded.clone());
+        self.discarded.extend(discarded.iter().copied());
+        self.discarded_this_round.extend(discarded.iter().copied());
+        self.total_cards_discarded += discarded.len();
         let removed = self.available.remove_selected();
         self.draw(removed);
 
@@ -1533,6 +1554,37 @@ mod tests {
         assert_eq!(g.available.cards().len(), g.config.available);
         // deck is now smaller since we drew from it
         assert_eq!(g.deck.len(), 52 - g.config.available - 5);
+    }
+
+    #[test]
+    fn test_discarded_this_round_tracking() {
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Blind(Blind::Small);
+        g.blind = Some(Blind::Small);
+        g.deal();
+
+        let played_card = g.available.cards()[0];
+        g.select_card(played_card).expect("can select");
+        g.play_selected().expect("can play");
+
+        let discarded_card = g.available.cards()[0];
+        g.select_card(discarded_card).expect("can select");
+        g.discard_selected().expect("can discard");
+
+        // only the discarded card is tracked, not the played one
+        assert_eq!(g.discarded_this_round.len(), 1);
+        assert_eq!(g.discarded_this_round[0].id, discarded_card.id);
+        assert_eq!(g.total_cards_discarded, 1);
+
+        // `discarded` (the deck-recycling pile) still has both - untouched
+        assert!(g.discarded.iter().any(|c| c.id == played_card.id));
+        assert!(g.discarded.iter().any(|c| c.id == discarded_card.id));
+
+        g.clear_blind();
+        // per-round tracking resets, run total does not
+        assert!(g.discarded_this_round.is_empty());
+        assert_eq!(g.total_cards_discarded, 1);
     }
 
     #[test]

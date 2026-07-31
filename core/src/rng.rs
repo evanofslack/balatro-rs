@@ -125,12 +125,16 @@ impl RngBackend for FastBackend {
 #[derive(Debug, Clone)]
 pub(crate) struct RealBackend {
     instance: Instance,
+    // `Instance` only replays real Balatro's actual seed algorithm,
+    // need a separate dedicated fast rng for some other things atm.
+    extra_rng: ChaCha8Rng,
 }
 
 impl RealBackend {
     pub(crate) fn new(seed: &str) -> Self {
         RealBackend {
             instance: Instance::new(seed),
+            extra_rng: ChaCha8Rng::seed_from_u64(crate::seed_from_str(seed).wrapping_add(1)),
         }
     }
 
@@ -163,7 +167,7 @@ impl RealBackend {
                 .instance
                 .next_buffoon_pack(count, ante)
                 .into_iter()
-                .map(seed_joker_with_id)
+                .map(|j| seed_joker_with_id(j, &mut self.extra_rng))
                 .map(PackContent::Joker)
                 .collect(),
             PackCategory::Standard => self
@@ -186,17 +190,15 @@ fn seed_card_to_core_card(c: balatro_types::Card) -> Card {
     card
 }
 
-/// Joker generation doesn't mints a real instance id (it has
-/// no notion of instance identity), assign one here.
-/// (same translation `seed_card_to_core_card` does for cards)
-fn seed_joker_with_id(mut j: Jokers) -> Jokers {
+/// Joker generation needs some engine only init at create time
+fn seed_joker_with_id(mut j: Jokers, rng: &mut impl Rng) -> Jokers {
     j.set_instance_id(crate::joker::mint_joker_id());
+    crate::joker::roll_discard_selector(rng, &mut j);
     j
 }
 
 /// `Consumable` may carry Soul/Black Hole (a Spectral) even from a
-/// nominally Tarot/Planet draw; `PackContent` has a matching variant for
-/// each case, so this is lossless.
+/// nominally Tarot/Planet draw.
 fn consumable_to_pack_content(c: Consumable) -> PackContent {
     match c {
         Consumable::Tarot(t) => PackContent::Tarot(t),
@@ -218,7 +220,9 @@ impl RngBackend for RealBackend {
         _exclude_planets: &[Planets],
     ) -> GeneratedItem {
         match self.instance.next_shop_item(ante) {
-            balatro_seed::ShopItem::Joker(j) => GeneratedItem::Joker(seed_joker_with_id(j)),
+            balatro_seed::ShopItem::Joker(j) => {
+                GeneratedItem::Joker(seed_joker_with_id(j, &mut self.extra_rng))
+            }
             balatro_seed::ShopItem::Consumable(c) => GeneratedItem::Consumable(c),
             balatro_seed::ShopItem::PlayingCard => {
                 // Unreachable: needs Magic Trick active, and core has no
@@ -394,6 +398,33 @@ mod tests {
             seen_categories.len(),
             5,
             "expected all 5 pack categories across 300 draws, saw {seen_categories:?}"
+        );
+    }
+
+    // `seed_joker_with_id` is `RealBackend`'s equivalent mint chokepoint to
+    // `JokerGenerator::gen_joker` (Fast mode) - Castle/MailInRebate must
+    // come out with a selector already set via `RealBackend`'s own
+    // `extra_rng`, not left `None`. Calls it directly with constructed
+    // jokers rather than sampling real-seed shop/pack generation and hoping
+    // to land on these two specific jokers among real Balatro's full
+    // 150-joker pool, which isn't reliably hit in any bounded sample.
+    #[test]
+    fn real_backend_seed_joker_with_id_rolls_discard_selector() {
+        use crate::joker::{Castle, MailInRebate};
+
+        let mut backend = RealBackend::new("TESTSEED");
+        let castle = seed_joker_with_id(Jokers::Castle(Castle::default()), &mut backend.extra_rng);
+        assert!(
+            castle.state().selector.is_some(),
+            "Castle minted with no selector"
+        );
+        let mail = seed_joker_with_id(
+            Jokers::MailInRebate(MailInRebate::default()),
+            &mut backend.extra_rng,
+        );
+        assert!(
+            mail.state().selector.is_some(),
+            "MailInRebate minted with no selector"
         );
     }
 }
