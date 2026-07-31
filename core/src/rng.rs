@@ -126,7 +126,7 @@ impl RngBackend for FastBackend {
 pub(crate) struct RealBackend {
     instance: Instance,
     // `Instance` only replays real Balatro's actual seed algorithm,
-    // need seperate dedicated fast rng for some other things atm.
+    // need a separate dedicated fast rng for some other things atm.
     extra_rng: ChaCha8Rng,
 }
 
