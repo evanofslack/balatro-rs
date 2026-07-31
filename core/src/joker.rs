@@ -3,6 +3,7 @@ use crate::effect::{Effects, RuleFlag};
 use crate::game::Game;
 use crate::hand::{MadeHand, SelectHand};
 use crate::rank::HandRank;
+use rand::Rng;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use strum::IntoEnumIterator;
@@ -17,6 +18,37 @@ pub(crate) fn mint_joker_id() -> usize {
 
 pub(crate) fn ensure_joker_id_counter_past(max_seen: usize) {
     JOKER_ID_COUNTER.fetch_max(max_seen + 1, Ordering::SeqCst);
+}
+
+/// Assigns a fresh rotating selector to joker if it's a selector-type joker.
+pub(crate) fn roll_discard_selector<R: Rng + ?Sized>(rng: &mut R, j: &mut Jokers) {
+    const SUITS: [Suit; 4] = [Suit::Spade, Suit::Club, Suit::Heart, Suit::Diamond];
+    const VALUES: [Value; 13] = [
+        Value::Two,
+        Value::Three,
+        Value::Four,
+        Value::Five,
+        Value::Six,
+        Value::Seven,
+        Value::Eight,
+        Value::Nine,
+        Value::Ten,
+        Value::Jack,
+        Value::Queen,
+        Value::King,
+        Value::Ace,
+    ];
+    match j {
+        Jokers::Castle(_) => {
+            let suit = SUITS[rng.gen_range(0..SUITS.len())];
+            j.state_mut().selector = Some(SelectorValue::Suit(suit));
+        }
+        Jokers::MailInRebate(_) => {
+            let value = VALUES[rng.gen_range(0..VALUES.len())];
+            j.state_mut().selector = Some(SelectorValue::Value(value));
+        }
+        _ => {}
+    }
 }
 
 /// `balatro_types::Jokers` already supplies all static joker data
@@ -3664,39 +3696,42 @@ mod tests {
     }
 
     #[test]
-    fn test_discard_selectors_set_when_shop_stocked_and_held_stable() {
-        let mut g = Game {
-            stage: Stage::Blind(Blind::Small),
-            ..Default::default()
-        };
-
-        // simulate a freshly-minted Castle/MailInRebate sitting in the
-        // shop, unrolled - same as any real mint chokepoint (shop refresh,
-        // pack pick, Judgement) produces before the top-up sweep runs.
-        let mut castle = Jokers::Castle(Castle::default());
-        castle.set_instance_id(1);
-        let mut mail = Jokers::MailInRebate(MailInRebate::default());
-        mail.set_instance_id(2);
-        g.shop.jokers = vec![castle, mail];
-        assert_eq!(g.shop.jokers[0].state().selector, None);
-        assert_eq!(g.shop.jokers[1].state().selector, None);
-
-        // this is what every real mint site (cashout/reroll's shop
-        // refresh, pack pick, Judgement) now calls - selectors must be
-        // active the moment the joker is available for purchase, not None
-        // until the first clear_blind.
-        g.roll_missing_discard_selectors();
-        let castle_selector = g.shop.jokers[0].state().selector;
-        let mail_selector = g.shop.jokers[1].state().selector;
-        assert!(castle_selector.is_some());
-        assert!(mail_selector.is_some());
-
-        // calling the sweep again (as a later mint elsewhere in the same
-        // shop visit would trigger) must not disturb an already-rolled
-        // selector - it holds until clear_blind explicitly rerolls it, not
-        // on every touch.
-        g.roll_missing_discard_selectors();
-        assert_eq!(g.shop.jokers[0].state().selector, castle_selector);
-        assert_eq!(g.shop.jokers[1].state().selector, mail_selector);
+    fn test_gen_joker_rolls_discard_selector_immediately() {
+        // `JokerGenerator::gen_joker` is the real mint chokepoint every
+        // Fast-mode joker (shop refresh, packs, Judgement) goes through -
+        // Castle/MailInRebate must come out with a selector already set,
+        // not `None` until some later event gets around to it.
+        use rand::SeedableRng;
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
+        let gen = crate::shop::JokerGenerator::new();
+        let mut found_castle = false;
+        let mut found_mail = false;
+        for _ in 0..500 {
+            let j = gen.gen_joker(1, &[], &mut rng);
+            match &j {
+                Jokers::Castle(_) => {
+                    found_castle = true;
+                    assert!(
+                        j.state().selector.is_some(),
+                        "Castle minted with no selector"
+                    );
+                }
+                Jokers::MailInRebate(_) => {
+                    found_mail = true;
+                    assert!(
+                        j.state().selector.is_some(),
+                        "MailInRebate minted with no selector"
+                    );
+                }
+                _ => {}
+            }
+            if found_castle && found_mail {
+                break;
+            }
+        }
+        assert!(
+            found_castle && found_mail,
+            "500 draws never sampled both Castle and MailInRebate - widen the loop"
+        );
     }
 }

@@ -1,14 +1,14 @@
 use crate::action::{Action, MoveDirection};
 use crate::ante::Ante;
 use crate::available::Available;
-use crate::card::{Card, Edition, Enhancement, Seal, Suit, Value};
+use crate::card::{Card, Edition, Enhancement, Seal};
 use crate::config::{Config, RngMode};
 use crate::consumable::Consumable;
 use crate::deck::Deck;
 use crate::effect::{EffectRegistry, Effects, RuleFlag};
 use crate::error::GameError;
 use crate::hand::{MadeHand, SelectHand};
-use crate::joker::{joker_display, JokerEffects, JokerState, Jokers, SelectorValue};
+use crate::joker::{joker_display, roll_discard_selector, JokerEffects, JokerState, Jokers};
 use crate::pack::{OpenPackState, Pack, PackCategory, PackContent};
 use crate::planet::Planetarium;
 use crate::rank::HandRank;
@@ -37,38 +37,6 @@ fn default_backend() -> Backend {
 
 fn default_reroll_cost() -> usize {
     5
-}
-
-// Assigns a fresh rotating selector to joker if it's a selector-type joker
-// (Castle/MailInRebate); no-op for everything else.
-fn roll_discard_selector(rng: &mut ChaCha8Rng, j: &mut Jokers) {
-    const SUITS: [Suit; 4] = [Suit::Spade, Suit::Club, Suit::Heart, Suit::Diamond];
-    const VALUES: [Value; 13] = [
-        Value::Two,
-        Value::Three,
-        Value::Four,
-        Value::Five,
-        Value::Six,
-        Value::Seven,
-        Value::Eight,
-        Value::Nine,
-        Value::Ten,
-        Value::Jack,
-        Value::Queen,
-        Value::King,
-        Value::Ace,
-    ];
-    match j {
-        Jokers::Castle(_) => {
-            let suit = SUITS[rng.gen_range(0..SUITS.len())];
-            j.state_mut().selector = Some(SelectorValue::Suit(suit));
-        }
-        Jokers::MailInRebate(_) => {
-            let value = VALUES[rng.gen_range(0..VALUES.len())];
-            j.state_mut().selector = Some(SelectorValue::Value(value));
-        }
-        _ => {}
-    }
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -278,20 +246,6 @@ impl Game {
     fn roll_discard_selectors(&mut self) {
         for j in self.jokers.iter_mut() {
             roll_discard_selector(&mut self.rng, j);
-        }
-    }
-
-    // Top-up pass: only rolls a selector for jokers that don't have one yet.
-    pub(crate) fn roll_missing_discard_selectors(&mut self) {
-        for j in self.jokers.iter_mut() {
-            if j.state().selector.is_none() {
-                roll_discard_selector(&mut self.rng, j);
-            }
-        }
-        for j in self.shop.jokers.iter_mut() {
-            if j.state().selector.is_none() {
-                roll_discard_selector(&mut self.rng, j);
-            }
         }
     }
 
@@ -776,7 +730,6 @@ impl Game {
             self.ante_current as i32,
             &mut self.backend,
         );
-        self.roll_missing_discard_selectors();
         Ok(())
     }
 
@@ -802,7 +755,6 @@ impl Game {
             self.ante_current as i32,
             &mut self.backend,
         );
-        self.roll_missing_discard_selectors();
         Ok(())
     }
 
@@ -1034,7 +986,6 @@ impl Game {
                     return Err(GameError::NoAvailableSlot);
                 }
                 self.jokers.push(j);
-                self.roll_missing_discard_selectors();
                 self.effect_registry
                     .register_jokers(self.jokers.clone(), &self.clone());
             }
