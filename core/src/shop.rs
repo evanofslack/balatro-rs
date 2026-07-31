@@ -289,6 +289,16 @@ impl JokerGenerator {
         rng: &mut impl Rng,
     ) -> Jokers {
         let rarity = self.gen_rarity(rng);
+        self.gen_joker_of_rarity(prob_mult, exclude, rarity, rng)
+    }
+
+    pub(crate) fn gen_joker_of_rarity(
+        &self,
+        prob_mult: u32,
+        exclude: &[Jokers],
+        rarity: Rarity,
+        rng: &mut impl Rng,
+    ) -> Jokers {
         let all = jokers_by_rarity(rarity);
         let choices: Vec<_> = all
             .iter()

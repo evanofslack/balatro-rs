@@ -125,14 +125,17 @@ impl Game {
                 (u, None)
             }
         };
+        // We always need a fast backend (for now)
+        // TODO: until real can do everything
+        let fast = FastBackend::new(ChaCha8Rng::seed_from_u64(seed));
         let backend = match config.rng_mode {
-            RngMode::Fast => Backend::Fast(FastBackend::new(ChaCha8Rng::seed_from_u64(seed))),
+            RngMode::Fast => Backend::Fast(fast),
             RngMode::Real => {
                 // Real mode needs a Balatro-format seed *string*; fall back
                 // to the numeric seed's decimal representation if only
                 // `config.seed` (no `seed_str`) was given.
                 let seed_string = seed_str.clone().unwrap_or_else(|| seed.to_string());
-                Backend::Real(RealBackend::new(&seed_string))
+                Backend::Real(RealBackend::new(&seed_string, fast))
             }
         };
         let mut game = Self {
