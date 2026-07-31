@@ -43,7 +43,7 @@ cargo build -p balatro-rs --no-default-features --features serde
 
 ## What `core`'s game engine does and doesn't implement
 
-Implemented: poker hand scoring, playing/discarding/reordering cards, blind progression (small/big/boss), ante progression (1-8), money/interest, buying/selling jokers, tarots, planets, card enhancements/editions in effect. 54/150 jokers have real scoring behavior — see `jokers.md` for per-joker status and the implementation roadmap for the rest.
+Implemented: poker hand scoring, playing/discarding/reordering cards, blind progression (small/big/boss), ante progression (1-8), money/interest, buying/selling jokers, tarots, planets, card enhancements/editions in effect. 71/150 jokers have real scoring behavior.
 
 Not implemented: spectrals, skip blind/tags, boss blind modifiers, seals in effect (struct exists, unused), alternative decks/stakes (selecting one doesn't currently change starting deck composition or add restrictions), the remaining 96 jokers.
 
