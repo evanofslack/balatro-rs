@@ -3696,42 +3696,31 @@ mod tests {
     }
 
     #[test]
-    fn test_gen_joker_rolls_discard_selector_immediately() {
-        // `JokerGenerator::gen_joker` is the real mint chokepoint every
-        // Fast-mode joker (shop refresh, packs, Judgement) goes through -
-        // Castle/MailInRebate must come out with a selector already set,
-        // not `None` until some later event gets around to it.
+    fn test_roll_discard_selector_sets_castle_and_mail_in_rebate() {
+        // `roll_discard_selector` is called directly inside both real mint
+        // chokepoints (`JokerGenerator::gen_joker`, `rng::seed_joker_with_id`)
+        // - tested here directly rather than via `gen_joker`'s own random
+        // rarity/pool selection. An earlier version of this test sampled
+        // `gen_joker` in a loop hoping to draw both jokers within N tries,
+        // which ties the test's pass/fail to incidental RNG-sequence
+        // details - a future change to the joker roster or rarity weights
+        // could shift whether a fixed seed lands on both within a bounded
+        // number of draws, failing this test for no real regression.
         use rand::SeedableRng;
         let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(7);
-        let gen = crate::shop::JokerGenerator::new();
-        let mut found_castle = false;
-        let mut found_mail = false;
-        for _ in 0..500 {
-            let j = gen.gen_joker(1, &[], &mut rng);
-            match &j {
-                Jokers::Castle(_) => {
-                    found_castle = true;
-                    assert!(
-                        j.state().selector.is_some(),
-                        "Castle minted with no selector"
-                    );
-                }
-                Jokers::MailInRebate(_) => {
-                    found_mail = true;
-                    assert!(
-                        j.state().selector.is_some(),
-                        "MailInRebate minted with no selector"
-                    );
-                }
-                _ => {}
-            }
-            if found_castle && found_mail {
-                break;
-            }
-        }
+
+        let mut castle = Jokers::Castle(Castle::default());
+        roll_discard_selector(&mut rng, &mut castle);
         assert!(
-            found_castle && found_mail,
-            "500 draws never sampled both Castle and MailInRebate - widen the loop"
+            castle.state().selector.is_some(),
+            "Castle minted with no selector"
+        );
+
+        let mut mail = Jokers::MailInRebate(MailInRebate::default());
+        roll_discard_selector(&mut rng, &mut mail);
+        assert!(
+            mail.state().selector.is_some(),
+            "MailInRebate minted with no selector"
         );
     }
 }
