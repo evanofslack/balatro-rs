@@ -1,6 +1,7 @@
 use crate::card::{Enhancement, Suit};
 use crate::error::GameError;
 use crate::game::Game;
+use crate::rng::RngBackend;
 use rand::Rng;
 use strum::IntoEnumIterator;
 
@@ -126,19 +127,17 @@ impl TarotEffect for Tarot {
             }
             Self::HighPriestess => {
                 let slots = game.config.consumable_slots;
-                let gen = crate::shop::ConsumableGenerator::new();
                 for _ in 0..2 {
                     if game.consumables.len() >= slots {
                         break;
                     }
                     let planetarium = game.planetarium.clone();
-                    let planet = gen.gen_planet_consumable(&planetarium, &[], &mut game.rng);
+                    let planet = game.backend.roll_random_planet(&planetarium, &[]);
                     game.consumables.push(planet);
                 }
             }
             Self::Emperor => {
                 let slots = game.config.consumable_slots;
-                let gen = crate::shop::ConsumableGenerator::new();
                 let mut excl: Vec<Tarot> = game
                     .consumables
                     .iter()
@@ -154,7 +153,7 @@ impl TarotEffect for Tarot {
                     if game.consumables.len() >= slots {
                         break;
                     }
-                    let tarot = gen.gen_tarot_consumable(&excl, &mut game.rng);
+                    let tarot = game.backend.roll_random_tarot(&excl);
                     if let crate::consumable::Consumable::Tarot(t) = &tarot {
                         excl.push(*t);
                     }
@@ -165,11 +164,8 @@ impl TarotEffect for Tarot {
                 if game.jokers.len() < game.config.joker_slots {
                     let prob_mult = game.prob_mult;
                     let exclude = game.jokers.clone();
-                    let joker = crate::shop::JokerGenerator::new().gen_joker(
-                        prob_mult,
-                        &exclude,
-                        &mut game.rng,
-                    );
+                    let ante = game.ante_current as i32;
+                    let joker = game.backend.gen_joker(ante, prob_mult, &exclude);
                     game.jokers.push(joker);
                 }
             }
