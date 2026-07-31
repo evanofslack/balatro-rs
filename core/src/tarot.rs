@@ -171,6 +171,7 @@ impl TarotEffect for Tarot {
                         &mut game.rng,
                     );
                     game.jokers.push(joker);
+                    game.roll_missing_discard_selectors();
                 }
             }
             Self::Fool => {
