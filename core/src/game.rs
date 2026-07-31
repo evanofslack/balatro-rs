@@ -322,8 +322,8 @@ impl Game {
         }
         self.discards -= 1;
         let discarded = self.available.selected();
-        self.discarded.extend(discarded.clone());
-        self.discarded_this_round.extend(discarded.clone());
+        self.discarded.extend(discarded.iter().copied());
+        self.discarded_this_round.extend(discarded.iter().copied());
         self.total_cards_discarded += discarded.len();
         let removed = self.available.remove_selected();
         self.draw(removed);
