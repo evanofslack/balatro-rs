@@ -1,5 +1,6 @@
 mod app;
 mod input;
+mod metrics;
 mod ui;
 
 use anyhow::Result;
@@ -71,7 +72,10 @@ fn main() -> Result<()> {
 
 fn run<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut AppState) -> Result<()> {
     loop {
+        let frame_start = std::time::Instant::now();
         terminal.draw(|f| ui::render(f, app))?;
+        let render_ns = app::elapsed_ns(frame_start);
+        app.metrics.render.record(render_ns);
 
         if event::poll(Duration::from_millis(16))? {
             match event::read()? {

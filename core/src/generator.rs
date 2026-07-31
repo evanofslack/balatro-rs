@@ -775,7 +775,7 @@ impl Game {
 
     // Get an action space, masked for legal actions only
     pub fn gen_action_space(&self) -> ActionSpace {
-        let mut space = ActionSpace::from(self.config.clone());
+        let mut space = ActionSpace::from(&self.config);
         self.unmask_action_space_select_cards(&mut space);
         self.unmask_action_space_play_and_discard(&mut space);
         self.unmask_action_space_move_cards(&mut space);

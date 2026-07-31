@@ -1,9 +1,24 @@
+use crate::metrics::{action_kind, LastAction, LastHand, Metrics};
 use balatro_rs::{
-    action::SortBy, card::Card, consumable::Consumable, game::Game, joker::Jokers, pack::Pack,
-    tag::Tag, voucher::Voucher,
+    action::{Action, SortBy},
+    card::Card,
+    consumable::Consumable,
+    error::GameError,
+    game::Game,
+    hand::SelectHand,
+    joker::Jokers,
+    pack::Pack,
+    tag::Tag,
+    voucher::Voucher,
 };
 use ratatui::layout::Rect;
 use std::collections::HashMap;
+use std::time::Instant;
+
+/// Saturating so a pathological clock can't panic the UI.
+pub(crate) fn elapsed_ns(t: Instant) -> u64 {
+    t.elapsed().as_nanos().min(u64::MAX as u128) as u64
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum WidgetId {
@@ -78,6 +93,7 @@ pub enum Overlay {
     Save,
     Consumable(usize),
     Joker(usize),
+    Metrics,
 }
 
 pub struct AppState {
@@ -92,6 +108,7 @@ pub struct AppState {
     pub should_quit: bool,
     pub widget_rects: HashMap<WidgetId, Rect>,
     pub sort_mode: SortBy,
+    pub metrics: Metrics,
 }
 
 impl AppState {
@@ -108,7 +125,77 @@ impl AppState {
             should_quit: false,
             widget_rects: HashMap::new(),
             sort_mode: SortBy::Rank,
+            metrics: Metrics::default(),
         }
+    }
+
+    /// The single path every input handler takes to mutate the game, so
+    /// timings and per-step stats are captured for the metrics overlay
+    /// without each call site having to remember. Behaves exactly like
+    /// `game.handle_action` otherwise.
+    pub fn act(&mut self, action: Action) -> Result<(), GameError> {
+        // Branching factor and mask density as the agent would have seen
+        // them, i.e. before the action is applied.
+        let t = Instant::now();
+        let legal_actions = self.game.gen_actions().count();
+        self.metrics.gen_actions.record(elapsed_ns(t));
+
+        let t = Instant::now();
+        let space = self.game.gen_action_space().to_vec();
+        self.metrics.gen_action_space.record(elapsed_ns(t));
+        let unmasked = space.iter().filter(|v| **v == 1).count();
+
+        if matches!(action, Action::Play()) {
+            self.capture_score_trace();
+        }
+
+        let kind = action_kind(&action);
+        let label = action.to_string();
+        let stage = format!("{:?}", self.game.stage);
+        let score_before = self.game.score as i64;
+        let money_before = self.game.money as i64;
+
+        let t = Instant::now();
+        let result = self.game.handle_action(action);
+        let ns = elapsed_ns(t);
+
+        self.metrics.record_action(kind, ns, result.is_ok());
+        self.metrics.last_action = Some(LastAction {
+            label,
+            kind,
+            ns,
+            ok: result.is_ok(),
+            error: result.as_ref().err().map(|e| e.to_string()),
+            legal_actions,
+            unmasked,
+            mask_size: space.len(),
+            score_delta: self.game.score as i64 - score_before,
+            money_delta: self.game.money as i64 - money_before,
+            stage,
+        });
+        result
+    }
+
+    /// Scores the current selection on a throwaway clone to capture a
+    /// `ScoreTrace` — `play_selected` uses the untraced path, and we don't
+    /// want the overlay changing what the real game does.
+    fn capture_score_trace(&mut self) {
+        let selected = SelectHand::new(self.game.available.selected());
+        let Ok(made) = selected.best_hand() else {
+            return;
+        };
+        let rank = format!("{:?}", made.rank);
+        let mut probe = self.game.clone();
+        let t = Instant::now();
+        let (score, trace) = probe.calc_score_traced(made);
+        let score_ns = elapsed_ns(t);
+        self.metrics.score.record(score_ns);
+        self.metrics.last_hand = Some(LastHand {
+            rank,
+            score,
+            score_ns,
+            trace,
+        });
     }
 
     pub fn close_overlay(&mut self) {
