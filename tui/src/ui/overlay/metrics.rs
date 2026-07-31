@@ -40,6 +40,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
         .split(inner);
 
     let mut lines: Vec<Line> = Vec::new();
+    push_build_warning(&mut lines);
     push_last_step(&mut lines, app);
     lines.push(Line::from(""));
     push_timings(&mut lines, app);
@@ -65,6 +66,26 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
         Paragraph::new(Span::styled(footer, Style::default().fg(Color::DarkGray))),
         chunks[1],
     );
+}
+
+/// An unoptimized build inflates every number here by roughly an order of
+/// magnitude — worth saying out loud, since the panel otherwise looks like
+/// the engine is slow.
+fn push_build_warning(lines: &mut Vec<Line>) {
+    if cfg!(debug_assertions) {
+        lines.push(Line::from(Span::styled(
+            " ⚠ debug build — timings are ~10x a release build's",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )));
+        lines.push(Line::from(Span::styled(
+            "   run `just tui-release` for representative numbers",
+            Style::default().fg(Color::DarkGray),
+        )));
+        lines.push(Line::from(""));
+    }
 }
 
 fn heading(text: &str) -> Line<'static> {

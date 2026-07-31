@@ -554,31 +554,37 @@ impl ActionSpace {
     }
 
     pub fn to_vec(&self) -> Vec<usize> {
-        [
-            self.select_card.clone(),
-            self.move_card_left.clone(),
-            self.move_card_right.clone(),
-            self.play.clone(),
-            self.discard.clone(),
-            self.cash_out.clone(),
-            self.buy_joker.clone(),
-            self.next_round.clone(),
-            self.select_blind.clone(),
-            self.skip_blind.clone(),
-            self.buy_consumable.clone(),
-            self.buy_voucher.clone(),
-            self.buy_playing_card.clone(),
-            self.use_consumable.clone(),
-            self.apply_tarot.clone(),
-            self.sell_joker.clone(),
-            self.sell_consumable.clone(),
-            self.buy_pack.clone(),
-            self.pick_pack_card.clone(),
-            self.skip_pack.clone(),
-            self.sort_hand.clone(),
-            self.reroll.clone(),
-        ]
-        .concat()
+        // Every RL step calls this, so it fills one preallocated buffer
+        // rather than cloning each field and concatenating — that was 21
+        // allocations per call.
+        let mut out = Vec::with_capacity(self.size());
+        for slice in [
+            &self.select_card,
+            &self.move_card_left,
+            &self.move_card_right,
+            &self.play,
+            &self.discard,
+            &self.cash_out,
+            &self.buy_joker,
+            &self.next_round,
+            &self.select_blind,
+            &self.skip_blind,
+            &self.buy_consumable,
+            &self.buy_voucher,
+            &self.buy_playing_card,
+            &self.use_consumable,
+            &self.apply_tarot,
+            &self.sell_joker,
+            &self.sell_consumable,
+            &self.buy_pack,
+            &self.pick_pack_card,
+            &self.skip_pack,
+            &self.sort_hand,
+            &self.reroll,
+        ] {
+            out.extend_from_slice(slice);
+        }
+        out
     }
 
     // True is all elements are masked
@@ -590,6 +596,15 @@ impl ActionSpace {
 
 impl From<Config> for ActionSpace {
     fn from(c: Config) -> Self {
+        Self::from(&c)
+    }
+}
+
+/// Borrowing variant — `gen_action_space` runs once per step and only
+/// reads `Config`'s numeric widths, so cloning it (and its `seed_str`
+/// `String`) each time was wasted allocation.
+impl From<&Config> for ActionSpace {
+    fn from(c: &Config) -> Self {
         ActionSpace {
             select_card: vec![0; c.available_max],
             move_card_left: vec![0; c.available_max - 1], // every card but leftmost can move left

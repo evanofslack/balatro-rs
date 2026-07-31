@@ -56,20 +56,14 @@ impl SelectHand {
     // For example, Ks, Ah, Jh, Jc, Jd -> {A: [Ah], K: [Ks], J: [Jh, Jc: Jd]}
     fn values_freq(&self) -> IndexMap<Value, Vec<Card>> {
         let mut counts: IndexMap<Value, Vec<Card>> = IndexMap::new();
-        for card in self.0.clone() {
-            if let Some(cards) = counts.get(&card.value) {
-                let mut copy = cards.clone();
-                copy.push(card);
-                counts.insert(card.value, copy);
-            } else {
-                counts.insert(card.value, vec![card]);
-            }
+        for card in &self.0 {
+            counts.entry(card.value).or_default().push(*card);
         }
-        // Return sorted by value
+        // Sorted by value, descending. Sorted in place rather than
+        // re-collected — `best_hand` calls this once per rank check, so it
+        // is the hottest allocation site in the engine.
+        counts.sort_by(|a, _, b, _| Ord::cmp(b, a));
         counts
-            .into_iter()
-            .sorted_by(|a, b| Ord::cmp(&b.0, &a.0))
-            .collect()
     }
 
     // Get map of each suit with corresponding cards.
@@ -77,20 +71,12 @@ impl SelectHand {
     #[allow(dead_code)]
     pub(crate) fn suits_freq(&self) -> IndexMap<Suit, Vec<Card>> {
         let mut counts: IndexMap<Suit, Vec<Card>> = IndexMap::new();
-        for card in self.0.clone() {
-            if let Some(cards) = counts.get(&card.suit) {
-                let mut copy = cards.clone();
-                copy.push(card);
-                counts.insert(card.suit, copy);
-            } else {
-                counts.insert(card.suit, vec![card]);
-            }
+        for card in &self.0 {
+            counts.entry(card.suit).or_default().push(*card);
         }
-        // Return sorted by suit
+        // Sorted by suit, descending. See `values_freq` on the in-place sort.
+        counts.sort_by(|a, _, b, _| Ord::cmp(b, a));
         counts
-            .into_iter()
-            .sorted_by(|a, b| Ord::cmp(&b.0, &a.0))
-            .collect()
     }
 
     // Original relative order, values_freq()'s groups are order-preserving
@@ -102,6 +88,99 @@ impl SelectHand {
             .filter(|c| values.contains(&c.value))
             .cloned()
             .collect()
+    }
+
+    // A played hand is at most 5 cards, so per-value and per-suit tallies
+    // fit in fixed buffers. The `is_*` methods build an
+    // `IndexMap<_, Vec<Card>>` instead — fine for one-off calls, but
+    // `best_hand` runs on every scored hand, and the allocations dominated
+    // it. These three helpers are the allocation-free equivalents;
+    // `test_best_hand_matches_the_original_is_chain_exhaustively` holds
+    // them to the `is_*` methods' exact output.
+    const MAX_PLAYED: usize = 5;
+
+    /// Distinct values with their counts, highest value first — the same
+    /// order `values_freq` yields. Only valid for a playable hand.
+    fn value_counts(&self) -> ([(Value, u8); Self::MAX_PLAYED], usize) {
+        debug_assert!(self.len() <= Self::MAX_PLAYED);
+        let mut counts = [(Value::Two, 0u8); Self::MAX_PLAYED];
+        let mut len = 0;
+        for card in &self.0 {
+            match counts[..len].iter_mut().find(|(v, _)| *v == card.value) {
+                Some(slot) => slot.1 += 1,
+                None => {
+                    counts[len] = (card.value, 1);
+                    len += 1;
+                }
+            }
+        }
+        counts[..len].sort_unstable_by(|a, b| Ord::cmp(&b.0, &a.0));
+        (counts, len)
+    }
+
+    /// Card values sorted ascending, as `values()` returns them.
+    fn sorted_values(&self) -> ([Value; Self::MAX_PLAYED], usize) {
+        debug_assert!(self.len() <= Self::MAX_PLAYED);
+        let mut values = [Value::Two; Self::MAX_PLAYED];
+        let len = self.0.len().min(Self::MAX_PLAYED);
+        for (slot, card) in values[..len].iter_mut().zip(&self.0) {
+            *slot = card.value;
+        }
+        values[..len].sort_unstable();
+        (values, len)
+    }
+
+    /// The flush cards, matching `is_flush`'s composition exactly: the
+    /// first suit (in first-appearance order) holding enough non-wild
+    /// cards, followed by every wild.
+    fn flush_cards(&self) -> Option<Vec<Card>> {
+        if self.len() < 5 {
+            return None;
+        }
+        let is_wild = |c: &Card| c.enhancement == Some(Enhancement::Wild);
+        let wild_count = self.0.iter().filter(|c| is_wild(c)).count();
+        let needed = 5usize.saturating_sub(wild_count);
+        if needed == 0 {
+            return Some(self.0.clone());
+        }
+
+        let mut suits = [(Suit::Spade, 0u8); Self::MAX_PLAYED];
+        let mut len = 0;
+        for card in self.0.iter().filter(|c| !is_wild(c)) {
+            match suits[..len].iter_mut().find(|(s, _)| *s == card.suit) {
+                Some(slot) => slot.1 += 1,
+                None => {
+                    suits[len] = (card.suit, 1);
+                    len += 1;
+                }
+            }
+        }
+        let (suit, _) = *suits[..len]
+            .iter()
+            .find(|(_, count)| *count as usize >= needed)?;
+
+        let mut cards: Vec<Card> = self
+            .0
+            .iter()
+            .filter(|c| c.suit == suit && !is_wild(c))
+            .copied()
+            .collect();
+        cards.extend(self.0.iter().filter(|c| is_wild(c)).copied());
+        Some(cards)
+    }
+
+    /// Whether the hand runs consecutively, including the low-ace wheel.
+    /// Mirrors `is_straight`, which is only ever a straight at exactly 5.
+    fn has_straight(values: &[Value]) -> bool {
+        if values.len() != 5 {
+            return false;
+        }
+        let consecutive = |vs: &[Value]| vs.windows(2).all(|v| (v[1] as u16 - v[0] as u16) == 1);
+        if consecutive(values) {
+            return true;
+        }
+        // A, 2, 3, 4, 5 sorts as (2, 3, 4, 5, A) with the ace high.
+        values[4] == Value::Ace && values[0] == Value::Two && consecutive(&values[..4])
     }
 
     /// Can play any number of cards, it is our responsibility
@@ -132,37 +211,120 @@ impl SelectHand {
             return Err(PlayHandError::TooManyCards);
         }
 
-        // We start trying to evaluate best hands first, so we
-        // can return best hand right when we find it.
-        let (hand, rank) = if let Some(hand) = self.is_flush_five() {
-            (hand, HandRank::FlushFive)
-        } else if let Some(hand) = self.is_flush_house() {
-            (hand, HandRank::FlushHouse)
-        } else if let Some(hand) = self.is_five_of_kind() {
-            (hand, HandRank::FiveOfAKind)
-        } else if let Some(hand) = self.is_royal_flush() {
-            (hand, HandRank::RoyalFlush)
-        } else if let Some(hand) = self.is_straight_flush() {
-            (hand, HandRank::StraightFlush)
-        } else if let Some(hand) = self.is_four_of_kind() {
-            (hand, HandRank::FourOfAKind)
-        } else if let Some(hand) = self.is_fullhouse() {
-            (hand, HandRank::FullHouse)
-        } else if let Some(hand) = self.is_flush() {
-            (hand, HandRank::Flush)
-        } else if let Some(hand) = self.is_straight() {
-            (hand, HandRank::Straight)
-        } else if let Some(hand) = self.is_three_of_kind() {
-            (hand, HandRank::ThreeOfAKind)
-        } else if let Some(hand) = self.is_two_pair() {
-            (hand, HandRank::TwoPair)
-        } else if let Some(hand) = self.is_pair() {
-            (hand, HandRank::OnePair)
-        } else if let Some(hand) = self.is_highcard() {
-            (hand, HandRank::HighCard)
+        // Each ingredient is derived exactly once and shared across the
+        // rank checks below. The equivalent `is_*` chain re-derived them
+        // per check — `is_flush_five` calls `is_flush`, so does
+        // `is_flush_house`, `is_straight_flush` and (through it)
+        // `is_royal_flush` — which cost ~12 `values_freq` rebuilds and 5
+        // flush scans for a single hand. The `is_*` methods are kept as-is
+        // for direct callers and tests; this is the hot path.
+        let len = self.len();
+        let (counts, n_values) = self.value_counts();
+        let counts = &counts[..n_values];
+        // Sorted by value descending, so the first group meeting a count is
+        // also the highest-valued one — the same card the `is_*` methods'
+        // `.find()` lands on.
+        let n_of_kind = |n: u8| {
+            counts
+                .iter()
+                .find(|(_, count)| *count >= n)
+                .map(|(value, _)| *value)
+        };
+        let n_of_kind_other = |n: u8, exclude: Value| {
+            counts
+                .iter()
+                .find(|(value, count)| *value != exclude && *count >= n)
+                .map(|(value, _)| *value)
+        };
+
+        let flush = self.flush_cards();
+        let (values, n_cards) = self.sorted_values();
+        let values = &values[..n_cards];
+        let straight = Self::has_straight(values);
+
+        let five = (len >= 5).then(|| n_of_kind(5)).flatten();
+        let four = (len >= 4).then(|| n_of_kind(4)).flatten();
+        let three = (len >= 3).then(|| n_of_kind(3)).flatten();
+        let pair = (len >= 2).then(|| n_of_kind(2)).flatten();
+
+        // A full house needs a *different* value for its pair than its
+        // triple; two pair likewise. Anchored separately because the
+        // triple and the highest pair need not be the same value.
+        let fullhouse = if len >= 5 {
+            three.and_then(|t| n_of_kind_other(2, t).map(|p| (t, p)))
+        } else {
+            None
+        };
+        let two_pair = if len >= 4 {
+            pair.and_then(|first| n_of_kind_other(2, first).map(|second| (first, second)))
+        } else {
+            None
+        };
+
+        let straight_flush = flush.is_some() && straight;
+        let royal = straight_flush
+            && values
+                == [
+                    Value::Ten,
+                    Value::Jack,
+                    Value::Queen,
+                    Value::King,
+                    Value::Ace,
+                ];
+
+        // Highest tier wins regardless of level or scoring, so the order
+        // here is load-bearing — it mirrors the ranking comment above.
+        let (hand, rank) = if flush.is_some() && five.is_some() {
+            (self.clone(), HandRank::FlushFive)
+        } else if flush.is_some() && fullhouse.is_some() {
+            (self.clone(), HandRank::FlushHouse)
+        } else if let Some(value) = five {
+            (
+                SelectHand::new(self.cards_of_values(&[value])),
+                HandRank::FiveOfAKind,
+            )
+        } else if royal {
+            (self.clone(), HandRank::RoyalFlush)
+        } else if straight_flush {
+            (self.clone(), HandRank::StraightFlush)
+        } else if let Some(value) = four {
+            (
+                SelectHand::new(self.cards_of_values(&[value])),
+                HandRank::FourOfAKind,
+            )
+        } else if let Some((three_val, two_val)) = fullhouse {
+            (
+                SelectHand::new(self.cards_of_values(&[three_val, two_val])),
+                HandRank::FullHouse,
+            )
+        } else if let Some(flush) = flush {
+            (SelectHand::new(flush), HandRank::Flush)
+        } else if straight {
+            (self.clone(), HandRank::Straight)
+        } else if let Some(value) = three {
+            (
+                SelectHand::new(self.cards_of_values(&[value])),
+                HandRank::ThreeOfAKind,
+            )
+        } else if let Some((first, second)) = two_pair {
+            (
+                SelectHand::new(self.cards_of_values(&[first, second])),
+                HandRank::TwoPair,
+            )
+        } else if let Some(value) = pair {
+            (
+                SelectHand::new(self.cards_of_values(&[value])),
+                HandRank::OnePair,
+            )
+        } else if let Some((value, _)) = counts.first() {
+            (
+                SelectHand::new(self.cards_of_values(&[*value])),
+                HandRank::HighCard,
+            )
         } else {
             return Err(PlayHandError::UnknownHand);
         };
+
         Ok(MadeHand {
             hand,
             rank,
@@ -170,6 +332,11 @@ impl SelectHand {
         })
     }
 
+    // Only `best_hand` and the joker predicates evaluate hands in
+    // anger, and `best_hand` no longer routes through this method.
+    // Kept because the differential test uses these as the oracle the
+    // optimized `best_hand` is checked against.
+    #[allow(dead_code)]
     pub(crate) fn is_highcard(&self) -> Option<SelectHand> {
         if self.len() < 1 {
             return None;
@@ -285,6 +452,11 @@ impl SelectHand {
         None
     }
 
+    // Only `best_hand` and the joker predicates evaluate hands in
+    // anger, and `best_hand` no longer routes through this method.
+    // Kept because the differential test uses these as the oracle the
+    // optimized `best_hand` is checked against.
+    #[allow(dead_code)]
     pub(crate) fn is_fullhouse(&self) -> Option<SelectHand> {
         if self.len() < 5 {
             return None;
@@ -314,6 +486,11 @@ impl SelectHand {
         Some(SelectHand::new(self.cards_of_values(&[value])))
     }
 
+    // Only `best_hand` and the joker predicates evaluate hands in
+    // anger, and `best_hand` no longer routes through this method.
+    // Kept because the differential test uses these as the oracle the
+    // optimized `best_hand` is checked against.
+    #[allow(dead_code)]
     pub(crate) fn is_straight_flush(&self) -> Option<SelectHand> {
         if self.is_flush().is_some() && self.is_straight().is_some() {
             return Some(self.clone());
@@ -321,6 +498,11 @@ impl SelectHand {
         None
     }
 
+    // Only `best_hand` and the joker predicates evaluate hands in
+    // anger, and `best_hand` no longer routes through this method.
+    // Kept because the differential test uses these as the oracle the
+    // optimized `best_hand` is checked against.
+    #[allow(dead_code)]
     pub(crate) fn is_royal_flush(&self) -> Option<SelectHand> {
         if self.is_straight_flush().is_some()
             && self.values().into_iter().eq(vec![
@@ -336,6 +518,11 @@ impl SelectHand {
         None
     }
 
+    // Only `best_hand` and the joker predicates evaluate hands in
+    // anger, and `best_hand` no longer routes through this method.
+    // Kept because the differential test uses these as the oracle the
+    // optimized `best_hand` is checked against.
+    #[allow(dead_code)]
     pub(crate) fn is_five_of_kind(&self) -> Option<SelectHand> {
         if self.len() < 5 {
             return None;
@@ -347,6 +534,11 @@ impl SelectHand {
         Some(SelectHand::new(self.cards_of_values(&[value])))
     }
 
+    // Only `best_hand` and the joker predicates evaluate hands in
+    // anger, and `best_hand` no longer routes through this method.
+    // Kept because the differential test uses these as the oracle the
+    // optimized `best_hand` is checked against.
+    #[allow(dead_code)]
     pub(crate) fn is_flush_house(&self) -> Option<SelectHand> {
         if self.is_flush().is_some() && self.is_fullhouse().is_some() {
             return Some(self.clone());
@@ -354,6 +546,11 @@ impl SelectHand {
         None
     }
 
+    // Only `best_hand` and the joker predicates evaluate hands in
+    // anger, and `best_hand` no longer routes through this method.
+    // Kept because the differential test uses these as the oracle the
+    // optimized `best_hand` is checked against.
+    #[allow(dead_code)]
     pub(crate) fn is_flush_five(&self) -> Option<SelectHand> {
         if self.is_flush().is_some() && self.is_five_of_kind().is_some() {
             return Some(self.clone());
@@ -382,6 +579,208 @@ impl fmt::Display for SelectHand {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use itertools::Itertools;
+
+    /// The original `best_hand` implementation, expressed as the `is_*`
+    /// chain it used to be. `best_hand` was rewritten to derive each
+    /// ingredient once instead of re-deriving it per check; this is the
+    /// oracle that rewrite is held to.
+    fn reference_best_hand(h: &SelectHand) -> Result<MadeHand, PlayHandError> {
+        if h.0.is_empty() {
+            return Err(PlayHandError::NoCards);
+        }
+        if h.len() > 5 {
+            return Err(PlayHandError::TooManyCards);
+        }
+        let (hand, rank) = if let Some(hand) = h.is_flush_five() {
+            (hand, HandRank::FlushFive)
+        } else if let Some(hand) = h.is_flush_house() {
+            (hand, HandRank::FlushHouse)
+        } else if let Some(hand) = h.is_five_of_kind() {
+            (hand, HandRank::FiveOfAKind)
+        } else if let Some(hand) = h.is_royal_flush() {
+            (hand, HandRank::RoyalFlush)
+        } else if let Some(hand) = h.is_straight_flush() {
+            (hand, HandRank::StraightFlush)
+        } else if let Some(hand) = h.is_four_of_kind() {
+            (hand, HandRank::FourOfAKind)
+        } else if let Some(hand) = h.is_fullhouse() {
+            (hand, HandRank::FullHouse)
+        } else if let Some(hand) = h.is_flush() {
+            (hand, HandRank::Flush)
+        } else if let Some(hand) = h.is_straight() {
+            (hand, HandRank::Straight)
+        } else if let Some(hand) = h.is_three_of_kind() {
+            (hand, HandRank::ThreeOfAKind)
+        } else if let Some(hand) = h.is_two_pair() {
+            (hand, HandRank::TwoPair)
+        } else if let Some(hand) = h.is_pair() {
+            (hand, HandRank::OnePair)
+        } else if let Some(hand) = h.is_highcard() {
+            (hand, HandRank::HighCard)
+        } else {
+            return Err(PlayHandError::UnknownHand);
+        };
+        Ok(MadeHand {
+            hand,
+            rank,
+            all: h.cards(),
+        })
+    }
+
+    /// Small enough to enumerate exhaustively, wide enough to reach every
+    /// rank: straights (including the low-ace case), royal values,
+    /// repeated values for pairs through five-of-a-kind, a heart-heavy
+    /// skew so same-suit full houses and five-of-a-kinds are reachable,
+    /// and a Wild for the wildcard-flush path.
+    fn probe_pool() -> Vec<Card> {
+        let mut cards = Vec::new();
+        // Full heart run: flushes, straight flushes, the royal.
+        for value in [
+            Value::Two,
+            Value::Three,
+            Value::Four,
+            Value::Five,
+            Value::Ten,
+            Value::Jack,
+            Value::Queen,
+            Value::King,
+            Value::Ace,
+        ] {
+            cards.push(Card::new(value, Suit::Heart));
+        }
+        // Off-suit partners: mixed straights and pairs.
+        for value in [
+            Value::Two,
+            Value::Three,
+            Value::Four,
+            Value::Five,
+            Value::Ace,
+        ] {
+            cards.push(Card::new(value, Suit::Spade));
+        }
+        // Extra hearts so KKK QQ (flush house) and KKKK+wild (flush five)
+        // are both reachable.
+        for _ in 0..3 {
+            cards.push(Card::new(Value::King, Suit::Heart));
+        }
+        cards.push(Card::new(Value::Queen, Suit::Heart));
+        // Off-suit kings for plain four/five-of-a-kind.
+        cards.push(Card::new(Value::King, Suit::Spade));
+        cards.push(Card::new(Value::King, Suit::Club));
+        let mut wild = Card::new(Value::King, Suit::Diamond);
+        wild.enhancement = Some(Enhancement::Wild);
+        cards.push(wild);
+        cards
+    }
+
+    #[test]
+    fn test_best_hand_matches_the_original_is_chain_exhaustively() {
+        let pool = probe_pool();
+        let mut checked = 0usize;
+        let mut ranks_seen = std::collections::HashSet::new();
+
+        for size in 1..=5 {
+            for combo in pool.iter().copied().combinations(size) {
+                let hand = SelectHand::new(combo);
+                let got = hand.best_hand();
+                let want = reference_best_hand(&hand);
+                match (&got, &want) {
+                    (Ok(a), Ok(b)) => {
+                        assert_eq!(a.rank, b.rank, "rank mismatch for {hand}");
+                        assert_eq!(
+                            a.hand.cards(),
+                            b.hand.cards(),
+                            "scoring cards mismatch for {hand} ({:?})",
+                            a.rank
+                        );
+                        assert_eq!(a.all, b.all, "played cards mismatch for {hand}");
+                        ranks_seen.insert(a.rank);
+                    }
+                    (Err(_), Err(_)) => {}
+                    _ => panic!("disagreement on {hand}: {got:?} vs {want:?}"),
+                }
+                checked += 1;
+            }
+        }
+
+        assert!(checked > 5_000, "only checked {checked} hands");
+        // A pool that never reaches the high tiers would make the above
+        // vacuous, so assert the interesting ranks were actually exercised.
+        for rank in [
+            HandRank::HighCard,
+            HandRank::OnePair,
+            HandRank::TwoPair,
+            HandRank::ThreeOfAKind,
+            HandRank::Straight,
+            HandRank::Flush,
+            HandRank::FullHouse,
+            HandRank::FourOfAKind,
+            HandRank::StraightFlush,
+            HandRank::RoyalFlush,
+            HandRank::FiveOfAKind,
+            HandRank::FlushHouse,
+            HandRank::FlushFive,
+        ] {
+            assert!(ranks_seen.contains(&rank), "{rank:?} never produced");
+        }
+    }
+
+    /// The exhaustive pool above is hand-picked to reach every rank; this
+    /// covers the rest of the space — every suit, every value, and the
+    /// enhancements that change hand detection — by sampling real decks.
+    #[test]
+    fn test_best_hand_matches_the_original_on_random_full_decks() {
+        use rand::seq::SliceRandom;
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(0xB357_11A9D);
+
+        let mut deck: Vec<Card> = Vec::new();
+        for value in [
+            Value::Two,
+            Value::Three,
+            Value::Four,
+            Value::Five,
+            Value::Six,
+            Value::Seven,
+            Value::Eight,
+            Value::Nine,
+            Value::Ten,
+            Value::Jack,
+            Value::Queen,
+            Value::King,
+            Value::Ace,
+        ] {
+            for suit in [Suit::Spade, Suit::Heart, Suit::Club, Suit::Diamond] {
+                deck.push(Card::new(value, suit));
+            }
+        }
+
+        for _ in 0..50_000 {
+            let size = rng.gen_range(1..=5);
+            let mut cards: Vec<Card> = deck.choose_multiple(&mut rng, size).copied().collect();
+            // Wild and Stone both alter detection, so mix them in.
+            for card in cards.iter_mut() {
+                match rng.gen_range(0..10) {
+                    0 => card.enhancement = Some(Enhancement::Wild),
+                    1 => card.enhancement = Some(Enhancement::Stone),
+                    _ => {}
+                }
+            }
+
+            let hand = SelectHand::new(cards);
+            match (hand.best_hand(), reference_best_hand(&hand)) {
+                (Ok(a), Ok(b)) => {
+                    assert_eq!(a.rank, b.rank, "rank mismatch for {hand}");
+                    assert_eq!(a.hand.cards(), b.hand.cards(), "cards mismatch for {hand}");
+                    assert_eq!(a.all, b.all, "played cards mismatch for {hand}");
+                }
+                (Err(_), Err(_)) => {}
+                (got, want) => panic!("disagreement on {hand}: {got:?} vs {want:?}"),
+            }
+        }
+    }
 
     #[test]
     fn test_values() {

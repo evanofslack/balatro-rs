@@ -2285,7 +2285,13 @@ mod tests {
 
     #[test]
     fn test_seal_blue_does_not_fire_before_blind_cleared() {
-        let mut g = Game::default();
+        // Fixed seed: on a random deck roughly 1 run in 300 deals five
+        // cards that clear the 300-chip target on their own, which quietly
+        // inverts what this test is checking.
+        let mut g = Game::new(Config {
+            seed: Some(0x5EA1B10E),
+            ..Config::default()
+        });
         g.start();
         g.stage = Stage::Blind(Blind::Small);
         g.blind = Some(Blind::Small);
@@ -2299,6 +2305,10 @@ mod tests {
         // score not bumped past required_score() - blind stays open
         g.play_selected().expect("can play selected");
 
+        assert!(
+            matches!(g.stage, Stage::Blind(_)),
+            "precondition: this hand must not clear the blind"
+        );
         assert_eq!(g.consumables.len(), 0);
     }
 
