@@ -11,6 +11,31 @@ use ratatui::{
 
 pub const SIDEBAR_W: u16 = 24;
 
+/// During a blind — and the cash out right after it, which pays per unused
+/// hand — `game.plays` counts down, so it's what the player has left.
+/// Everywhere else it's the *previous* round's leftover, so show what the
+/// next blind will deal instead; otherwise a Grabber bought in the shop
+/// reads as having done nothing until the round starts.
+fn counts_down(game: &balatro_rs::game::Game) -> bool {
+    matches!(game.stage, Stage::Blind(_) | Stage::PostBlind())
+}
+
+pub fn displayed_hands(game: &balatro_rs::game::Game) -> usize {
+    if counts_down(game) {
+        game.plays
+    } else {
+        game.plays_per_round()
+    }
+}
+
+pub fn displayed_discards(game: &balatro_rs::game::Game) -> usize {
+    if counts_down(game) {
+        game.discards
+    } else {
+        game.discards_per_round()
+    }
+}
+
 fn label(s: &str) -> Span<'static> {
     Span::styled(s.to_string(), Style::default().fg(Color::DarkGray))
 }
@@ -170,13 +195,14 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     lines.push(Line::from(""));
 
     // Stats
+    let (hands, discards) = (displayed_hands(game), displayed_discards(game));
     lines.push(Line::from(vec![
         label("Hands    "),
-        value(game.plays.to_string(), Color::Blue),
+        value(hands.to_string(), Color::Blue),
     ]));
     lines.push(Line::from(vec![
         label("Discards "),
-        value(game.discards.to_string(), Color::Red),
+        value(discards.to_string(), Color::Red),
     ]));
     lines.push(Line::from(vec![
         label("Money    "),
@@ -201,8 +227,39 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
         value(game.round.to_string(), Color::White),
     ]));
 
+    // Engine cost of the last step, always visible; `m` opens the full
+    // breakdown. Cheap to keep on screen and it's the number you watch
+    // most while judging whether a change made stepping slower.
+    if let Some(last) = &app.metrics.last_action {
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("⏱ ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                truncate(last.kind, 11),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                crate::metrics::fmt_ns(last.ns),
+                Style::default().fg(Color::Magenta),
+            ),
+        ]));
+        lines.push(Line::from(Span::styled(
+            format!("  {} legal · m", last.legal_actions),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+
     let para = Paragraph::new(Text::from(lines));
     f.render_widget(para, inner);
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..max.saturating_sub(1)])
+    }
 }
 
 fn ante_num(ante: balatro_rs::ante::Ante) -> usize {

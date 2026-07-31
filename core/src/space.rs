@@ -27,18 +27,20 @@ const PACK_CONTENTS_MAX: usize = 5;
 // 78: select blind
 // 79: skip blind
 // 80-81: buy consumable
-// 82-83: use consumable
-// 84: apply tarot
-// 85-89: sell joker
-// 90-91: sell consumable
-// 92-93: buy pack
-// 94-98: pick pack card
-// 99: skip pack
-// 100: sort hand (rank)
-// 101: sort hand (suit)
-// 102: reroll
+// 82: buy voucher
+// 83-86: buy playing card
+// 87-88: use consumable
+// 89: apply tarot
+// 90-94: sell joker
+// 95-96: sell consumable
+// 97-98: buy pack
+// 99-103: pick pack card
+// 104: skip pack
+// 105: sort hand (rank)
+// 106: sort hand (suit)
+// 107: reroll
 //
-// We end up with a vector of length 103 where each index
+// We end up with a vector of length 108 where each index
 // represents a potential action.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
@@ -55,6 +57,8 @@ pub struct ActionSpace {
     pub select_blind: Vec<usize>,
     pub skip_blind: Vec<usize>,
     pub buy_consumable: Vec<usize>,
+    pub buy_voucher: Vec<usize>,
+    pub buy_playing_card: Vec<usize>,
     pub use_consumable: Vec<usize>,
     pub apply_tarot: Vec<usize>,
     pub sell_joker: Vec<usize>,
@@ -79,6 +83,8 @@ impl ActionSpace {
             + self.select_blind.len()
             + self.skip_blind.len()
             + self.buy_consumable.len()
+            + self.buy_voucher.len()
+            + self.buy_playing_card.len()
             + self.use_consumable.len()
             + self.apply_tarot.len()
             + self.sell_joker.len()
@@ -178,8 +184,24 @@ impl ActionSpace {
         self.buy_consumable_min() + self.buy_consumable.len() - 1
     }
 
-    fn use_consumable_min(&self) -> usize {
+    fn buy_voucher_min(&self) -> usize {
         self.buy_consumable_max() + 1
+    }
+
+    fn buy_voucher_max(&self) -> usize {
+        self.buy_voucher_min() + self.buy_voucher.len().saturating_sub(1)
+    }
+
+    fn buy_playing_card_min(&self) -> usize {
+        self.buy_voucher_min() + self.buy_voucher.len()
+    }
+
+    fn buy_playing_card_max(&self) -> usize {
+        self.buy_playing_card_min() + self.buy_playing_card.len().saturating_sub(1)
+    }
+
+    fn use_consumable_min(&self) -> usize {
+        self.buy_playing_card_min() + self.buy_playing_card.len()
     }
 
     fn use_consumable_max(&self) -> usize {
@@ -316,6 +338,18 @@ impl ActionSpace {
         Ok(())
     }
 
+    pub(crate) fn unmask_buy_voucher(&mut self) {
+        self.buy_voucher[0] = 1;
+    }
+
+    pub(crate) fn unmask_buy_playing_card(&mut self, i: usize) -> Result<(), ActionSpaceError> {
+        if i >= self.buy_playing_card.len() {
+            return Err(ActionSpaceError::InvalidIndex);
+        }
+        self.buy_playing_card[i] = 1;
+        Ok(())
+    }
+
     pub(crate) fn unmask_use_consumable(&mut self, i: usize) -> Result<(), ActionSpaceError> {
         if i >= self.use_consumable.len() {
             return Err(ActionSpaceError::InvalidIndex);
@@ -439,6 +473,23 @@ impl ActionSpace {
                     .map(Action::BuyConsumable)
                     .ok_or(ActionSpaceError::InvalidActionConversion)
             }
+            n if !self.buy_voucher.is_empty()
+                && (self.buy_voucher_min()..=self.buy_voucher_max()).contains(&n) =>
+            {
+                game.shop
+                    .voucher
+                    .map(Action::BuyVoucher)
+                    .ok_or(ActionSpaceError::InvalidActionConversion)
+            }
+            n if !self.buy_playing_card.is_empty()
+                && (self.buy_playing_card_min()..=self.buy_playing_card_max()).contains(&n) =>
+            {
+                let n_offset = n - self.buy_playing_card_min();
+                game.shop
+                    .card_from_index(n_offset)
+                    .map(Action::BuyPlayingCard)
+                    .ok_or(ActionSpaceError::InvalidActionConversion)
+            }
             n if (self.use_consumable_min()..=self.use_consumable_max()).contains(&n) => {
                 let n_offset = n - self.use_consumable_min();
                 game.consumables
@@ -503,29 +554,37 @@ impl ActionSpace {
     }
 
     pub fn to_vec(&self) -> Vec<usize> {
-        [
-            self.select_card.clone(),
-            self.move_card_left.clone(),
-            self.move_card_right.clone(),
-            self.play.clone(),
-            self.discard.clone(),
-            self.cash_out.clone(),
-            self.buy_joker.clone(),
-            self.next_round.clone(),
-            self.select_blind.clone(),
-            self.skip_blind.clone(),
-            self.buy_consumable.clone(),
-            self.use_consumable.clone(),
-            self.apply_tarot.clone(),
-            self.sell_joker.clone(),
-            self.sell_consumable.clone(),
-            self.buy_pack.clone(),
-            self.pick_pack_card.clone(),
-            self.skip_pack.clone(),
-            self.sort_hand.clone(),
-            self.reroll.clone(),
-        ]
-        .concat()
+        // Every RL step calls this, so it fills one preallocated buffer
+        // rather than cloning each field and concatenating — that was 21
+        // allocations per call.
+        let mut out = Vec::with_capacity(self.size());
+        for slice in [
+            &self.select_card,
+            &self.move_card_left,
+            &self.move_card_right,
+            &self.play,
+            &self.discard,
+            &self.cash_out,
+            &self.buy_joker,
+            &self.next_round,
+            &self.select_blind,
+            &self.skip_blind,
+            &self.buy_consumable,
+            &self.buy_voucher,
+            &self.buy_playing_card,
+            &self.use_consumable,
+            &self.apply_tarot,
+            &self.sell_joker,
+            &self.sell_consumable,
+            &self.buy_pack,
+            &self.pick_pack_card,
+            &self.skip_pack,
+            &self.sort_hand,
+            &self.reroll,
+        ] {
+            out.extend_from_slice(slice);
+        }
+        out
     }
 
     // True is all elements are masked
@@ -537,6 +596,15 @@ impl ActionSpace {
 
 impl From<Config> for ActionSpace {
     fn from(c: Config) -> Self {
+        Self::from(&c)
+    }
+}
+
+/// Borrowing variant — `gen_action_space` runs once per step and only
+/// reads `Config`'s numeric widths, so cloning it (and its `seed_str`
+/// `String`) each time was wasted allocation.
+impl From<&Config> for ActionSpace {
+    fn from(c: &Config) -> Self {
         ActionSpace {
             select_card: vec![0; c.available_max],
             move_card_left: vec![0; c.available_max - 1], // every card but leftmost can move left
@@ -549,6 +617,10 @@ impl From<Config> for ActionSpace {
             select_blind: vec![0; 1],
             skip_blind: vec![0; 1],
             buy_consumable: vec![0; c.consumable_slots],
+            // One voucher on offer per ante, at most.
+            buy_voucher: vec![0; 1],
+            // Magic Trick can turn every shop card slot into a playing card.
+            buy_playing_card: vec![0; c.store_consumable_slots_max],
             use_consumable: vec![0; c.consumable_slots],
             apply_tarot: vec![0; 1],
             sell_joker: vec![0; c.joker_slots],
@@ -577,6 +649,8 @@ impl From<ActionSpace> for Vec<usize> {
             a.select_blind,
             a.skip_blind,
             a.buy_consumable,
+            a.buy_voucher,
+            a.buy_playing_card,
             a.use_consumable,
             a.apply_tarot,
             a.sell_joker,
@@ -632,11 +706,12 @@ mod tests {
         let a = ActionSpace::from(c.clone());
         // 24 select + 23 move_left + 23 move_right + 1 play + 1 discard
         // + 1 cashout + 4 buy_joker + 1 next_round + 1 select_blind + 1 skip_blind
-        // + 2 buy_consumable + 2 use_consumable + 1 apply_tarot
+        // + 2 buy_consumable + 1 buy_voucher + 4 buy_playing_card
+        // + 2 use_consumable + 1 apply_tarot
         // + 5 sell_joker + 2 sell_consumable
-        // + 2 buy_pack + 5 pick_pack_card + 1 skip_pack + 2 sort_hand + 1 reroll = 103
-        assert_eq!(a.size(), 103);
-        assert_eq!(a.to_vec().len(), 103);
+        // + 2 buy_pack + 5 pick_pack_card + 1 skip_pack + 2 sort_hand + 1 reroll = 108
+        assert_eq!(a.size(), 108);
+        assert_eq!(a.to_vec().len(), 108);
     }
 
     #[test]

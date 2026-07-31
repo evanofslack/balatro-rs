@@ -48,6 +48,22 @@ impl Ante {
             Self::Eight => None,
         }
     }
+
+    /// One ante lower, `None` at `Zero`. The Hieroglyph/Petroglyph
+    /// vouchers ("-1 Ante") move a run backwards along this.
+    pub fn prev(&self) -> Option<Self> {
+        match self {
+            Self::Zero => None,
+            Self::One => Some(Self::Zero),
+            Self::Two => Some(Self::One),
+            Self::Three => Some(Self::Two),
+            Self::Four => Some(Self::Three),
+            Self::Five => Some(Self::Four),
+            Self::Six => Some(Self::Five),
+            Self::Seven => Some(Self::Six),
+            Self::Eight => Some(Self::Seven),
+        }
+    }
 }
 
 impl TryFrom<usize> for Ante {

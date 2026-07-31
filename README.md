@@ -63,6 +63,7 @@ variable-length iterator.
 - [x] ante progression (1-8) and blind progression (small/big/boss)
 - [x] buying/selling/using jokers, tarots, and planets
 - [x] card enhancements, editions, and seals in effect
+- [x] vouchers (see [`vouchers.md`](vouchers.md) for per-voucher status)
 - [x] skip blind / tags (partialy)
 - [x] optional real-seed-accurate shop/pack generation via `balatro-seed` (partially wired)
 
@@ -70,7 +71,6 @@ The following are missing and may or may not be added:
 
 - [ ] spectral card use-effects
 - [ ] boss blind modifiers
-- [ ] vouchers
 - [ ] alternative decks and stakes as wired starting config
 - [ ] remaining unimplemented jokers
 

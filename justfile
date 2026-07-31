@@ -32,6 +32,10 @@ edit *ARGS:
 tui:
     cargo run -p balatro-tui
 
+# Same game, optimized build — the only one whose engine timings (`m`) mean anything
+tui-release:
+    cargo run --release -p balatro-tui
+
 tui-load FILE:
     cargo run -p balatro-tui -- --load {{FILE}}
 
