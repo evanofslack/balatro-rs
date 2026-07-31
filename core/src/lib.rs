@@ -27,6 +27,7 @@ mod rng;
 pub mod score;
 pub mod shop;
 pub mod space;
+pub mod spectral;
 pub mod stage;
 pub mod tag;
 pub mod tarot;

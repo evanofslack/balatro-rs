@@ -224,14 +224,21 @@ pub(crate) fn gen_edition(prob_mult: u32, rng: &mut impl Rng) -> Edition {
     Edition::Base
 }
 
-pub(crate) fn gen_random_playing_card(prob_mult: u32, rng: &mut impl Rng) -> Card {
-    let values: Vec<Value> = Value::iter().collect();
+pub(crate) fn gen_random_playing_card(
+    prob_mult: u32,
+    rng: &mut impl Rng,
+    force_enhance: bool,
+    force_values: Option<&[Value]>,
+) -> Card {
+    let values: Vec<Value> = Value::iter()
+        .filter(|v| force_values.is_some_and(|fv| fv.contains(v)))
+        .collect();
     let suits: Vec<Suit> = Suit::iter().collect();
     let v = values[rng.gen_range(0..values.len())];
     let s = suits[rng.gen_range(0..suits.len())];
     let mut card = Card::new(v, s);
 
-    if rng.gen_ratio(1, 5) {
+    if rng.gen_ratio(1, 5) || force_enhance {
         const ENHANCEMENTS: [Enhancement; 8] = [
             Enhancement::Bonus,
             Enhancement::Mult,
@@ -245,6 +252,7 @@ pub(crate) fn gen_random_playing_card(prob_mult: u32, rng: &mut impl Rng) -> Car
         card.enhancement = Some(ENHANCEMENTS[rng.gen_range(0..ENHANCEMENTS.len())]);
     }
 
+    // TODO: cannot be negative
     card.edition = gen_edition(prob_mult, rng);
 
     if rng.gen_ratio(1, 10) {
@@ -459,7 +467,9 @@ impl PackGenerator {
                     .collect()
             }
             PackCategory::Standard => (0..count)
-                .map(|_| PackContent::PlayingCard(gen_random_playing_card(prob_mult, rng)))
+                .map(|_| {
+                    PackContent::PlayingCard(gen_random_playing_card(prob_mult, rng, false, None))
+                })
                 .collect(),
             PackCategory::Spectral => vec![],
         }

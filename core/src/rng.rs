@@ -4,10 +4,11 @@ use crate::deck::Deck;
 use crate::joker::Jokers;
 use crate::pack::{Pack, PackCategory, PackContent, PackSize};
 use crate::planet::{Planetarium, Planets};
-use crate::shop::{ConsumableGenerator, JokerGenerator, PackGenerator};
+use crate::shop::{gen_random_playing_card, ConsumableGenerator, JokerGenerator, PackGenerator};
 use crate::tag::Tag;
 use crate::tarot::Tarot;
 use balatro_seed::Instance;
+use balatro_types::{Edition, Suit, Value};
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
@@ -45,7 +46,7 @@ pub(crate) trait RngBackend {
     /// table stays accurate. No-op for `Fast` mode.
     fn on_joker_bought(&mut self, joker: &Jokers);
     fn on_joker_sold(&mut self, joker: &Jokers);
-    /// Jokers::Showman's real effect. No call site yet — see `jokers.md`.
+    /// Jokers::Showman's real effect. No call site yet.
     #[allow(dead_code)]
     fn set_showman(&mut self, owned: bool);
 
@@ -69,6 +70,16 @@ pub(crate) trait RngBackend {
     /// `gen_joker`/`gen_shop_item`/`gen_pack`, each already using the right
     /// stream per backend — this is only for rerolling an *existing* joker.
     fn roll_discard_selector(&mut self, j: &mut Jokers);
+    fn roll_random_edition(&mut self) -> Edition;
+    fn roll_random_suit(&mut self) -> Suit;
+    fn roll_random_value(&mut self) -> Value;
+    fn pick_random_card(&mut self, available: Vec<Card>) -> Card;
+    fn gen_random_card(
+        &mut self,
+        prob_mult: u32,
+        force_enhance: bool,
+        force_values: Option<&[Value]>,
+    ) -> Card;
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -169,6 +180,34 @@ impl RngBackend for FastBackend {
 
     fn roll_discard_selector(&mut self, j: &mut Jokers) {
         crate::joker::roll_discard_selector(&mut self.rng, j);
+    }
+
+    fn roll_random_edition(&mut self) -> Edition {
+        const EDITIONS: [Edition; 3] = [Edition::Foil, Edition::Holographic, Edition::Polychrome];
+        EDITIONS[self.rng.gen_range(0..EDITIONS.len())]
+    }
+
+    fn roll_random_suit(&mut self) -> Suit {
+        let suits: Vec<Suit> = Suit::iter().collect();
+        suits[self.rng.gen_range(0..suits.len())]
+    }
+
+    fn roll_random_value(&mut self) -> Value {
+        let values: Vec<Value> = Value::iter().collect();
+        values[self.rng.gen_range(0..values.len())]
+    }
+
+    fn pick_random_card(&mut self, available: Vec<Card>) -> Card {
+        available[self.rng.gen_range(0..available.len())]
+    }
+
+    fn gen_random_card(
+        &mut self,
+        prob_mult: u32,
+        force_enhance: bool,
+        force_values: Option<&[Value]>,
+    ) -> Card {
+        gen_random_playing_card(prob_mult, &mut self.rng, force_enhance, force_values)
     }
 }
 
@@ -359,6 +398,34 @@ impl RngBackend for RealBackend {
     fn roll_discard_selector(&mut self, j: &mut Jokers) {
         crate::joker::roll_discard_selector(&mut self.extra_rng, j);
     }
+
+    fn roll_random_edition(&mut self) -> Edition {
+        const EDITIONS: [Edition; 3] = [Edition::Foil, Edition::Holographic, Edition::Polychrome];
+        EDITIONS[self.extra_rng.gen_range(0..EDITIONS.len())]
+    }
+
+    fn roll_random_suit(&mut self) -> Suit {
+        let suits: Vec<Suit> = Suit::iter().collect();
+        suits[self.extra_rng.gen_range(0..suits.len())]
+    }
+
+    fn roll_random_value(&mut self) -> Value {
+        let values: Vec<Value> = Value::iter().collect();
+        values[self.extra_rng.gen_range(0..values.len())]
+    }
+
+    fn pick_random_card(&mut self, available: Vec<Card>) -> Card {
+        available[self.extra_rng.gen_range(0..available.len())]
+    }
+
+    fn gen_random_card(
+        &mut self,
+        prob_mult: u32,
+        force_enhance: bool,
+        force_values: Option<&[Value]>,
+    ) -> Card {
+        gen_random_playing_card(prob_mult, &mut self.extra_rng, force_enhance, force_values)
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -479,6 +546,45 @@ impl RngBackend for Backend {
         match self {
             Backend::Fast(b) => b.roll_discard_selector(j),
             Backend::Real(b) => b.roll_discard_selector(j),
+        }
+    }
+    fn roll_random_edition(&mut self) -> Edition {
+        match self {
+            Backend::Fast(b) => b.roll_random_edition(),
+            Backend::Real(b) => b.roll_random_edition(),
+        }
+    }
+
+    fn roll_random_suit(&mut self) -> Suit {
+        match self {
+            Backend::Fast(b) => b.roll_random_suit(),
+            Backend::Real(b) => b.roll_random_suit(),
+        }
+    }
+
+    fn roll_random_value(&mut self) -> Value {
+        match self {
+            Backend::Fast(b) => b.roll_random_value(),
+            Backend::Real(b) => b.roll_random_value(),
+        }
+    }
+
+    fn pick_random_card(&mut self, available: Vec<Card>) -> Card {
+        match self {
+            Backend::Fast(b) => b.pick_random_card(available),
+            Backend::Real(b) => b.pick_random_card(available),
+        }
+    }
+
+    fn gen_random_card(
+        &mut self,
+        prob_mult: u32,
+        force_enhance: bool,
+        force_values: Option<&[Value]>,
+    ) -> Card {
+        match self {
+            Backend::Fast(b) => b.gen_random_card(prob_mult, force_enhance, force_values),
+            Backend::Real(b) => b.gen_random_card(prob_mult, force_enhance, force_values),
         }
     }
 }
