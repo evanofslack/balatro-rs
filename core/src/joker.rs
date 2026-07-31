@@ -712,7 +712,9 @@ impl JokerEffects for Jokers {
                 // decremented to config.discards - 1 by the time this fires
                 // (discard_selected decrements before invoking OnDiscard).
                 fn apply(g: &mut Game, hand: MadeHand) {
-                    if hand.all.len() == 1 && g.discards == g.config.discards - 1 {
+                    if hand.all.len() == 1
+                        && g.discards == g.config.discards.saturating_sub(1)
+                    {
                         g.destroy_card(hand.all[0].id);
                         g.money += 3;
                     }
