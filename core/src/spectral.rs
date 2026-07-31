@@ -4,9 +4,10 @@ use crate::game::Game;
 use crate::rng::RngBackend;
 
 use crate::card::Card;
+use balatro_types::HandRank;
+use balatro_types::Rarity;
 pub use balatro_types::Spectral;
-use balatro_types::Value::{self, Nine};
-use balatro_types::{Ante::Five, HandRank};
+use balatro_types::Value::{self};
 use strum::IntoEnumIterator;
 
 /// Engine behavior for `Spectral`
@@ -157,8 +158,35 @@ impl SpectralEffect for Spectral {
                     game.planetarium.level_up(rank);
                 }
             }
-            Self::Wraith => todo!(),
-            Self::Soul => todo!(),
+            Self::Wraith => {
+                let ante = game.ante_current as i32;
+                for _ in 0..2 {
+                    if game.jokers.len() >= game.config.joker_slots {
+                        break;
+                    }
+                    let exclude = game.jokers.clone();
+                    let prob_mult = game.prob_mult;
+                    let joker =
+                        game.backend
+                            .gen_joker_of_rarity(ante, prob_mult, &exclude, Rarity::Rare);
+                    game.jokers.push(joker);
+                }
+                game.money = 0;
+            }
+            Self::Soul => {
+                if game.jokers.len() < game.config.joker_slots {
+                    let ante = game.ante_current as i32;
+                    let exclude = game.jokers.clone();
+                    let prob_mult = game.prob_mult;
+                    let joker = game.backend.gen_joker_of_rarity(
+                        ante,
+                        prob_mult,
+                        &exclude,
+                        Rarity::Legendary,
+                    );
+                    game.jokers.push(joker);
+                }
+            }
             Self::Ectoplasm => todo!(),
             Self::Ankh => todo!(),
             Self::Hex => todo!(),
