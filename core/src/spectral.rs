@@ -4,6 +4,7 @@ use crate::game::Game;
 use crate::rng::RngBackend;
 
 use crate::card::Card;
+use balatro_types::Edition;
 use balatro_types::HandRank;
 use balatro_types::Rarity;
 pub use balatro_types::Spectral;
@@ -187,9 +188,40 @@ impl SpectralEffect for Spectral {
                     game.jokers.push(joker);
                 }
             }
-            Self::Ectoplasm => todo!(),
-            Self::Ankh => todo!(),
-            Self::Hex => todo!(),
+            Self::Ectoplasm => {
+                if !game.jokers.is_empty() {
+                    let picked = game.backend.pick_random_joker(game.jokers.clone());
+                    if let Some(j) = game
+                        .jokers
+                        .iter_mut()
+                        .find(|j| j.instance_id() == picked.instance_id())
+                    {
+                        j.set_edition(Edition::Negative);
+                    }
+                    game.config.available = game.config.available.saturating_sub(1);
+                }
+            }
+            Self::Ankh => {
+                if !game.jokers.is_empty() {
+                    let original = game.backend.pick_random_joker(game.jokers.clone());
+                    let mut clone = game.backend.clone_joker(original.clone());
+                    // Strip negative
+                    if clone.edition() == Edition::Negative {
+                        clone.set_edition(Edition::Base);
+                    }
+                    game.jokers = vec![original, clone];
+                    game.config.available = game.config.available.saturating_sub(1);
+                }
+            }
+            Self::Hex => {
+                if !game.jokers.is_empty() {
+                    let original = game.backend.pick_random_joker(game.jokers.clone());
+                    let mut clone = game.backend.clone_joker(original.clone());
+                    clone.set_edition(Edition::Polychrome);
+                    game.jokers = vec![clone];
+                    game.config.available = game.config.available.saturating_sub(1);
+                }
+            }
         }
         Ok(())
     }

@@ -317,6 +317,13 @@ impl JokerGenerator {
         crate::joker::roll_discard_selector(rng, &mut joker);
         joker
     }
+
+    pub(crate) fn clone_joker(&self, j: Jokers, rng: &mut impl Rng) -> Jokers {
+        let mut joker = j.to_owned();
+        joker.set_instance_id(crate::joker::mint_joker_id());
+        crate::joker::roll_discard_selector(rng, &mut joker);
+        joker
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

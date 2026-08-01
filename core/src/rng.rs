@@ -61,6 +61,8 @@ pub(crate) trait RngBackend {
         exclude: &[Jokers],
         rarity: Rarity,
     ) -> Jokers;
+    fn pick_random_joker(&mut self, available: Vec<Jokers>) -> Jokers;
+    fn clone_joker(&mut self, j: Jokers) -> Jokers;
     fn shuffle_deck(&mut self, deck: &mut Deck);
     fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool;
     /// Returns `(small_blind_tag, big_blind_tag)` for a fresh ante.
@@ -169,6 +171,15 @@ impl RngBackend for FastBackend {
     ) -> Jokers {
         self.joker_gen
             .gen_joker_of_rarity(prob_mult, exclude, rarity, &mut self.rng)
+    }
+
+    fn pick_random_joker(&mut self, available: Vec<Jokers>) -> Jokers {
+        let idx = self.rng.gen_range(0..available.len());
+        available[idx].clone()
+    }
+
+    fn clone_joker(&mut self, j: Jokers) -> Jokers {
+        self.joker_gen.clone_joker(j, &mut self.rng)
     }
 
     fn shuffle_deck(&mut self, deck: &mut Deck) {
@@ -394,6 +405,14 @@ impl RngBackend for RealBackend {
             .gen_joker_of_rarity(ante, prob_mult, exclude, rarity)
     }
 
+    fn pick_random_joker(&mut self, available: Vec<Jokers>) -> Jokers {
+        self.fast.pick_random_joker(available)
+    }
+
+    fn clone_joker(&mut self, j: Jokers) -> Jokers {
+        self.fast.clone_joker(j)
+    }
+
     // No real Instance equivalent for deck draw order, yet
     fn shuffle_deck(&mut self, deck: &mut Deck) {
         self.fast.shuffle_deck(deck);
@@ -543,6 +562,20 @@ impl RngBackend for Backend {
         match self {
             Backend::Fast(b) => b.gen_joker_of_rarity(ante, prob_mult, exclude, rarity),
             Backend::Real(b) => b.gen_joker_of_rarity(ante, prob_mult, exclude, rarity),
+        }
+    }
+
+    fn pick_random_joker(&mut self, available: Vec<Jokers>) -> Jokers {
+        match self {
+            Backend::Fast(b) => b.pick_random_joker(available),
+            Backend::Real(b) => b.pick_random_joker(available),
+        }
+    }
+
+    fn clone_joker(&mut self, j: Jokers) -> Jokers {
+        match self {
+            Backend::Fast(b) => b.clone_joker(j),
+            Backend::Real(b) => b.clone_joker(j),
         }
     }
 
