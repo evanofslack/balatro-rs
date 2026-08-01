@@ -8,7 +8,7 @@ use crate::deck::Deck;
 use crate::effect::{EffectRegistry, Effects, RuleFlag};
 use crate::error::GameError;
 use crate::hand::{MadeHand, SelectHand};
-use crate::joker::{joker_display, roll_discard_selector, JokerEffects, JokerState, Jokers};
+use crate::joker::{joker_display, JokerEffects, JokerState, Jokers};
 use crate::pack::{OpenPackState, Pack, PackCategory, PackContent};
 use crate::planet::Planetarium;
 use crate::rank::HandRank;
@@ -24,11 +24,6 @@ use rand_chacha::ChaCha8Rng;
 use std::collections::HashSet;
 use std::fmt;
 use strum::IntoEnumIterator;
-
-#[cfg(feature = "serde")]
-fn default_rng() -> ChaCha8Rng {
-    ChaCha8Rng::from_entropy()
-}
 
 #[cfg(feature = "serde")]
 fn default_backend() -> Backend {
@@ -103,11 +98,9 @@ pub struct Game {
     pub seed: u64,
     #[cfg_attr(feature = "serde", serde(default))]
     pub seed_str: Option<String>,
-    #[cfg_attr(feature = "serde", serde(default = "default_rng"))]
-    pub(crate) rng: ChaCha8Rng,
-    // shop/pack generation backend (Fast/Real, per config.rng_mode) — does
-    // not affect deck shuffling, prob_roll, or tag draws, which stay on
-    // `rng` above regardless of RngMode.
+    // The one source of randomness for everything. shop/pack generation,
+    // deck shuffling, prob_roll, tag draws, seal-triggered consumables,
+    // discard-selector rolls, etc.
     #[cfg_attr(feature = "serde", serde(default = "default_backend"))]
     pub(crate) backend: Backend,
     // track stage so we can come back to it after temp tarot stage
@@ -121,15 +114,15 @@ pub struct Game {
 impl Game {
     pub fn new(config: Config) -> Self {
         let ante_start = Ante::try_from(config.ante_start).unwrap_or(Ante::One);
-        let (seed, seed_str, rng) = match (config.seed_str.clone(), config.seed) {
+        let (seed, seed_str) = match (config.seed_str.clone(), config.seed) {
             (Some(s), _) => {
                 let u = crate::seed_from_str(&s);
-                (u, Some(s), ChaCha8Rng::seed_from_u64(u))
+                (u, Some(s))
             }
-            (None, Some(u)) => (u, None, ChaCha8Rng::seed_from_u64(u)),
+            (None, Some(u)) => (u, None),
             (None, None) => {
                 let u: u64 = thread_rng().gen();
-                (u, None, ChaCha8Rng::seed_from_u64(u))
+                (u, None)
             }
         };
         let backend = match config.rng_mode {
@@ -137,8 +130,7 @@ impl Game {
             RngMode::Real => {
                 // Real mode needs a Balatro-format seed *string*; fall back
                 // to the numeric seed's decimal representation if only
-                // `config.seed` (no `seed_str`) was given — deterministic,
-                // but not a real Balatro seed shape in that fallback case.
+                // `config.seed` (no `seed_str`) was given.
                 let seed_string = seed_str.clone().unwrap_or_else(|| seed.to_string());
                 Backend::Real(RealBackend::new(&seed_string))
             }
@@ -182,7 +174,6 @@ impl Game {
             open_pack: None,
             seed,
             seed_str,
-            rng,
             backend,
             config,
         };
@@ -220,8 +211,7 @@ impl Game {
             if card.seal == Some(Seal::Blue)
                 && self.consumables.len() < self.config.consumable_slots
             {
-                let gen = crate::shop::ConsumableGenerator::new();
-                let planet = gen.gen_planet_consumable(&planetarium, &[], &mut self.rng);
+                let planet = self.backend.roll_random_planet(&planetarium, &[]);
                 self.consumables.push(planet);
             }
         }
@@ -236,7 +226,7 @@ impl Game {
         self.deck.append(&mut self.discarded);
         self.deck.extend(self.available.cards());
         self.available.empty();
-        self.deck.shuffle(&mut self.rng);
+        self.backend.shuffle_deck(&mut self.deck);
         self.roll_discard_selectors();
     }
 
@@ -245,7 +235,7 @@ impl Game {
     // already there.
     fn roll_discard_selectors(&mut self) {
         for j in self.jokers.iter_mut() {
-            roll_discard_selector(&mut self.rng, j);
+            self.backend.roll_discard_selector(j);
         }
     }
 
@@ -261,7 +251,7 @@ impl Game {
         // add available back to deck and empty
         self.deck.extend(self.available.cards());
         self.available.empty();
-        self.deck.shuffle(&mut self.rng);
+        self.backend.shuffle_deck(&mut self.deck);
         self.draw(self.config.available);
     }
 
@@ -341,8 +331,7 @@ impl Game {
                         _ => None,
                     })
                     .collect();
-                let gen = crate::shop::ConsumableGenerator::new();
-                let tarot = gen.gen_tarot_consumable(&excl, &mut self.rng);
+                let tarot = self.backend.roll_random_tarot(&excl);
                 self.consumables.push(tarot);
             }
         }
@@ -413,8 +402,8 @@ impl Game {
     }
 
     pub fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool {
-        self.rng
-            .gen_ratio((numerator * self.prob_mult).min(denominator), denominator)
+        self.backend
+            .prob_roll(numerator * self.prob_mult, denominator)
     }
 
     pub fn calc_score(&mut self, hand: MadeHand) -> usize {
@@ -902,7 +891,7 @@ impl Game {
             let cards = self.available.cards();
             self.available.empty();
             self.deck.extend(cards);
-            self.deck.shuffle(&mut self.rng);
+            self.backend.shuffle_deck(&mut self.deck);
         }
         self.stage = prev;
         // Returning to a pack open: decrement picks and possibly finish
@@ -1024,7 +1013,7 @@ impl Game {
             let cards = self.available.cards();
             self.available.empty();
             self.deck.extend(cards);
-            self.deck.shuffle(&mut self.rng);
+            self.backend.shuffle_deck(&mut self.deck);
         }
         self.open_pack = None;
         self.stage = Stage::Shop();
@@ -1077,9 +1066,9 @@ impl Game {
     }
 
     fn draw_ante_tags(&mut self) {
-        let tags: Vec<Tag> = Tag::iter().collect();
-        self.small_blind_tag = *tags.choose(&mut self.rng).unwrap();
-        self.big_blind_tag = *tags.choose(&mut self.rng).unwrap();
+        let (small, big) = self.backend.draw_ante_tags();
+        self.small_blind_tag = small;
+        self.big_blind_tag = big;
     }
 
     pub fn skip_tag(&self, blind: Blind) -> Option<Tag> {

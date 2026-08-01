@@ -1,20 +1,17 @@
-//! Two backends for shop/pack generation, switched by `Config::rng_mode`:
-//! `FastBackend` (`rand_chacha`-based) and `RealBackend` (byte-accurate
-//! port of the real Balatro seed algorithm, `balatro-seed`). Only
-//! shop-item and pack generation go through this — deck shuffling,
-//! `prob_roll`, and the skip-blind tag draw stay on `Game.rng` directly.
-
 use crate::card::Card;
 use crate::consumable::Consumable;
+use crate::deck::Deck;
 use crate::joker::Jokers;
 use crate::pack::{Pack, PackCategory, PackContent, PackSize};
 use crate::planet::{Planetarium, Planets};
 use crate::shop::{ConsumableGenerator, JokerGenerator, PackGenerator};
+use crate::tag::Tag;
 use crate::tarot::Tarot;
 use balatro_seed::Instance;
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
+use strum::IntoEnumIterator;
 
 /// What a single shop-item generation call produced. The joker/consumable
 /// split has to happen inside the backend, since `Real` mode's category
@@ -51,6 +48,27 @@ pub(crate) trait RngBackend {
     /// Jokers::Showman's real effect. No call site yet — see `jokers.md`.
     #[allow(dead_code)]
     fn set_showman(&mut self, owned: bool);
+
+    /// A single freshly generated joker, outside the shop/pack context —
+    /// currently only Judgement. Distinct from `gen_shop_item`'s joker arm
+    /// since a shop slot's category (joker vs. consumable) is its own roll.
+    fn gen_joker(&mut self, ante: i32, prob_mult: u32, exclude: &[Jokers]) -> Jokers;
+    fn shuffle_deck(&mut self, deck: &mut Deck);
+    fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool;
+    /// Returns `(small_blind_tag, big_blind_tag)` for a fresh ante.
+    fn draw_ante_tags(&mut self) -> (Tag, Tag);
+    /// A single random Tarot consumable, respecting `exclude` — used by
+    /// the purple-seal discard trigger and the Emperor/High Priestess
+    /// tarot effects.
+    fn roll_random_tarot(&mut self, exclude: &[Tarot]) -> Consumable;
+    /// A single random Planet consumable, respecting `exclude` — used by
+    /// the blue-seal round-end trigger and the High Priestess tarot effect.
+    fn roll_random_planet(&mut self, planetarium: &Planetarium, exclude: &[Planets]) -> Consumable;
+    /// Castle/MailInRebate's per-round reroll (`Game::clear_blind`). Mint-time
+    /// rolling for freshly generated jokers already happens inside
+    /// `gen_joker`/`gen_shop_item`/`gen_pack`, each already using the right
+    /// stream per backend — this is only for rerolling an *existing* joker.
+    fn roll_discard_selector(&mut self, j: &mut Jokers);
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -119,6 +137,39 @@ impl RngBackend for FastBackend {
     fn on_joker_bought(&mut self, _joker: &Jokers) {}
     fn on_joker_sold(&mut self, _joker: &Jokers) {}
     fn set_showman(&mut self, _owned: bool) {}
+
+    fn gen_joker(&mut self, _ante: i32, prob_mult: u32, exclude: &[Jokers]) -> Jokers {
+        self.joker_gen.gen_joker(prob_mult, exclude, &mut self.rng)
+    }
+
+    fn shuffle_deck(&mut self, deck: &mut Deck) {
+        deck.shuffle(&mut self.rng);
+    }
+
+    fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool {
+        self.rng.gen_ratio(numerator.min(denominator), denominator)
+    }
+
+    fn draw_ante_tags(&mut self) -> (Tag, Tag) {
+        let tags: Vec<Tag> = Tag::iter().collect();
+        let small = *tags.choose(&mut self.rng).unwrap();
+        let big = *tags.choose(&mut self.rng).unwrap();
+        (small, big)
+    }
+
+    fn roll_random_tarot(&mut self, exclude: &[Tarot]) -> Consumable {
+        self.consumable_gen
+            .gen_tarot_consumable(exclude, &mut self.rng)
+    }
+
+    fn roll_random_planet(&mut self, planetarium: &Planetarium, exclude: &[Planets]) -> Consumable {
+        self.consumable_gen
+            .gen_planet_consumable(planetarium, exclude, &mut self.rng)
+    }
+
+    fn roll_discard_selector(&mut self, j: &mut Jokers) {
+        crate::joker::roll_discard_selector(&mut self.rng, j);
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -264,6 +315,50 @@ impl RngBackend for RealBackend {
     fn set_showman(&mut self, owned: bool) {
         self.instance.params.showman = owned;
     }
+
+    // `Instance::next_joker(source, ante)` exists and isn't wired up yet,
+    // real accuracy here is a follow-up. Reuses the same Fast-style
+    // generator `FastBackend` uses, seeded off `extra_rng` instead.
+    fn gen_joker(&mut self, _ante: i32, prob_mult: u32, exclude: &[Jokers]) -> Jokers {
+        JokerGenerator::new().gen_joker(prob_mult, exclude, &mut self.extra_rng)
+    }
+
+    // No real Instance equivalent for deck draw order, yet
+    fn shuffle_deck(&mut self, deck: &mut Deck) {
+        deck.shuffle(&mut self.extra_rng);
+    }
+
+    // No real Instance equivalent for scoring-time probability procs
+    // (Lucky/Misprint/SpaceJoker/OopsAllSixes-class effects).
+    fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool {
+        self.extra_rng
+            .gen_ratio(numerator.min(denominator), denominator)
+    }
+
+    // `Instance::next_tag(ante)` exists and isn't wired up yet - real
+    // accuracy here is a follow-up.
+    fn draw_ante_tags(&mut self) -> (Tag, Tag) {
+        let tags: Vec<Tag> = Tag::iter().collect();
+        let small = *tags.choose(&mut self.extra_rng).unwrap();
+        let big = *tags.choose(&mut self.extra_rng).unwrap();
+        (small, big)
+    }
+
+    // `Instance::next_tarot(source, ante, soulable)` exists and isn't
+    // wired up yet - real accuracy here is a follow-up.
+    fn roll_random_tarot(&mut self, exclude: &[Tarot]) -> Consumable {
+        ConsumableGenerator::new().gen_tarot_consumable(exclude, &mut self.extra_rng)
+    }
+
+    // `Instance::next_planet(source, ante, soulable)` exists and isn't
+    // wired up yet - real accuracy here is a follow-up.
+    fn roll_random_planet(&mut self, planetarium: &Planetarium, exclude: &[Planets]) -> Consumable {
+        ConsumableGenerator::new().gen_planet_consumable(planetarium, exclude, &mut self.extra_rng)
+    }
+
+    fn roll_discard_selector(&mut self, j: &mut Jokers) {
+        crate::joker::roll_discard_selector(&mut self.extra_rng, j);
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -337,11 +432,133 @@ impl RngBackend for Backend {
             Backend::Real(b) => b.set_showman(owned),
         }
     }
+
+    fn gen_joker(&mut self, ante: i32, prob_mult: u32, exclude: &[Jokers]) -> Jokers {
+        match self {
+            Backend::Fast(b) => b.gen_joker(ante, prob_mult, exclude),
+            Backend::Real(b) => b.gen_joker(ante, prob_mult, exclude),
+        }
+    }
+
+    fn shuffle_deck(&mut self, deck: &mut Deck) {
+        match self {
+            Backend::Fast(b) => b.shuffle_deck(deck),
+            Backend::Real(b) => b.shuffle_deck(deck),
+        }
+    }
+
+    fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool {
+        match self {
+            Backend::Fast(b) => b.prob_roll(numerator, denominator),
+            Backend::Real(b) => b.prob_roll(numerator, denominator),
+        }
+    }
+
+    fn draw_ante_tags(&mut self) -> (Tag, Tag) {
+        match self {
+            Backend::Fast(b) => b.draw_ante_tags(),
+            Backend::Real(b) => b.draw_ante_tags(),
+        }
+    }
+
+    fn roll_random_tarot(&mut self, exclude: &[Tarot]) -> Consumable {
+        match self {
+            Backend::Fast(b) => b.roll_random_tarot(exclude),
+            Backend::Real(b) => b.roll_random_tarot(exclude),
+        }
+    }
+
+    fn roll_random_planet(&mut self, planetarium: &Planetarium, exclude: &[Planets]) -> Consumable {
+        match self {
+            Backend::Fast(b) => b.roll_random_planet(planetarium, exclude),
+            Backend::Real(b) => b.roll_random_planet(planetarium, exclude),
+        }
+    }
+
+    fn roll_discard_selector(&mut self, j: &mut Jokers) {
+        match self {
+            Backend::Fast(b) => b.roll_discard_selector(j),
+            Backend::Real(b) => b.roll_discard_selector(j),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::joker::JokerEffects;
+
+    #[test]
+    fn fast_backend_draw_ante_tags_draws_two_valid_tags() {
+        let mut backend = FastBackend::new(ChaCha8Rng::seed_from_u64(1));
+        let (small, big) = backend.draw_ante_tags();
+        assert!(Tag::iter().any(|t| t == small));
+        assert!(Tag::iter().any(|t| t == big));
+    }
+
+    #[test]
+    fn fast_backend_prob_roll_respects_ratio_edges() {
+        let mut backend = FastBackend::new(ChaCha8Rng::seed_from_u64(1));
+        // numerator 0 -> never; numerator == denominator -> always,
+        // regardless of what's drawn.
+        for _ in 0..20 {
+            assert!(!backend.prob_roll(0, 10));
+        }
+        for _ in 0..20 {
+            assert!(backend.prob_roll(10, 10));
+        }
+        // numerator > denominator gets clamped to denominator (always true),
+        // not a `gen_ratio` panic.
+        assert!(backend.prob_roll(50, 10));
+    }
+
+    #[test]
+    fn fast_backend_shuffle_deck_reorders_without_losing_cards() {
+        let mut backend = FastBackend::new(ChaCha8Rng::seed_from_u64(1));
+        let mut deck = crate::deck::Deck::default();
+        let before = deck.cards();
+        backend.shuffle_deck(&mut deck);
+        let after = deck.cards();
+
+        assert_eq!(before.len(), after.len());
+        assert_ne!(before, after, "shuffle with a fixed seed should reorder");
+        let mut sorted_before = before.clone();
+        let mut sorted_after = after.clone();
+        sorted_before.sort();
+        sorted_after.sort();
+        assert_eq!(
+            sorted_before, sorted_after,
+            "shuffle must permute, not lose or duplicate cards"
+        );
+    }
+
+    // `RealBackend`'s new methods all fall back to `extra_rng` (no real
+    // `Instance` equivalent wired up yet, see each method's doc comment) -
+    // this is a smoke test that the fallback wiring is complete and doesn't
+    // panic, not a claim of real-Balatro accuracy.
+    #[test]
+    fn real_backend_fallback_methods_all_work() {
+        let mut backend = RealBackend::new("TESTSEED");
+
+        let mut deck = crate::deck::Deck::default();
+        let before = deck.cards();
+        backend.shuffle_deck(&mut deck);
+        assert_ne!(before, deck.cards());
+
+        assert!(!backend.prob_roll(0, 10));
+        assert!(backend.prob_roll(10, 10));
+
+        let (small, big) = backend.draw_ante_tags();
+        assert!(Tag::iter().any(|t| t == small));
+        assert!(Tag::iter().any(|t| t == big));
+
+        let planetarium = Planetarium::new();
+        let _ = backend.roll_random_planet(&planetarium, &[]);
+        let _ = backend.roll_random_tarot(&[]);
+
+        let joker = backend.gen_joker(1, 1, &[]);
+        assert!(joker.is_implemented());
+    }
 
     #[test]
     fn real_backend_set_showman_propagates() {
