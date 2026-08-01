@@ -231,7 +231,7 @@ pub(crate) fn gen_random_playing_card(
     force_values: Option<&[Value]>,
 ) -> Card {
     let values: Vec<Value> = Value::iter()
-        .filter(|v| force_values.is_some_and(|fv| fv.contains(v)))
+        .filter(|v| force_values.is_none_or(|fv| fv.contains(v)))
         .collect();
     let suits: Vec<Suit> = Suit::iter().collect();
     let v = values[rng.gen_range(0..values.len())];
