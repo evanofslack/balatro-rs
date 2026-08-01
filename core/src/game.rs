@@ -406,7 +406,7 @@ impl Game {
 
     pub fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool {
         self.backend
-            .prob_roll(numerator * self.prob_mult, denominator)
+            .prob_roll(numerator.saturating_mul(self.prob_mult), denominator)
     }
 
     pub fn calc_score(&mut self, hand: MadeHand) -> usize {
