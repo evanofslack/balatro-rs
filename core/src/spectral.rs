@@ -21,7 +21,7 @@ impl SpectralEffect for Spectral {
         match self {
             Self::Talisman => {
                 let selected = game.available.selected();
-                if selected.len() > 1 {
+                if selected.is_empty() || selected.len() > 1 {
                     return Err(GameError::InvalidAction);
                 }
                 let card = selected[0];
@@ -29,7 +29,7 @@ impl SpectralEffect for Spectral {
             }
             Self::DejaVu => {
                 let selected = game.available.selected();
-                if selected.len() > 1 {
+                if selected.is_empty() || selected.len() > 1 {
                     return Err(GameError::InvalidAction);
                 }
                 let card = selected[0];
@@ -37,7 +37,7 @@ impl SpectralEffect for Spectral {
             }
             Self::Trance => {
                 let selected = game.available.selected();
-                if selected.len() > 1 {
+                if selected.is_empty() || selected.len() > 1 {
                     return Err(GameError::InvalidAction);
                 }
                 let card = selected[0];
@@ -45,7 +45,7 @@ impl SpectralEffect for Spectral {
             }
             Self::Medium => {
                 let selected = game.available.selected();
-                if selected.len() > 1 {
+                if selected.is_empty() || selected.len() > 1 {
                     return Err(GameError::InvalidAction);
                 }
                 let card = selected[0];
@@ -53,7 +53,7 @@ impl SpectralEffect for Spectral {
             }
             Self::Aura => {
                 let selected = game.available.selected();
-                if selected.len() > 1 {
+                if selected.is_empty() || selected.len() > 1 {
                     return Err(GameError::InvalidAction);
                 }
                 let card = selected[0];
@@ -62,19 +62,21 @@ impl SpectralEffect for Spectral {
             }
             Self::Cryptid => {
                 let selected = game.available.selected();
-                if selected.len() > 1 {
+                if selected.is_empty() || selected.len() > 1 {
                     return Err(GameError::InvalidAction);
                 }
                 let og = selected[0];
-                let copy = Card::new(og.value, og.suit);
-                game.mutate_card(copy.id, |c| {
-                    c.value = og.value;
-                    c.suit = og.suit;
+                let copy_one = Card::new(og.value, og.suit);
+                let copy_two = Card::new(og.value, og.suit);
+                let (id_one, id_two) = (copy_one.id, copy_two.id);
+                game.available.extend(vec![copy_one, copy_two]);
+                let copy_fields = |c: &mut Card| {
                     c.enhancement = og.enhancement;
                     c.edition = og.edition;
                     c.seal = og.seal;
-                });
-                game.available.extend([copy, copy].to_vec());
+                };
+                game.mutate_card(id_one, copy_fields);
+                game.mutate_card(id_two, copy_fields);
             }
             Self::Familiar => {
                 let card = game.backend.pick_random_card(game.available.cards());
@@ -153,18 +155,19 @@ impl SpectralEffect for Spectral {
                     let card = game.backend.pick_random_card(game.available.cards());
                     game.destroy_card(card.id);
                 }
+                game.money += 20;
             }
             Self::BlackHole => {
-                for rank in HandRank::iter() {
+                // `RoyalFlush` shares its level slot with `StraightFlush`
+                // (see `Planetarium::level_up`) - leveling both would
+                // double-level that one slot.
+                for rank in HandRank::iter().filter(|r| *r != HandRank::RoyalFlush) {
                     game.planetarium.level_up(rank);
                 }
             }
             Self::Wraith => {
-                let ante = game.ante_current as i32;
-                for _ in 0..2 {
-                    if game.jokers.len() >= game.config.joker_slots {
-                        break;
-                    }
+                if game.jokers.len() < game.config.joker_slots {
+                    let ante = game.ante_current as i32;
                     let exclude = game.jokers.clone();
                     let prob_mult = game.prob_mult;
                     let joker =
@@ -210,16 +213,13 @@ impl SpectralEffect for Spectral {
                         clone.set_edition(Edition::Base);
                     }
                     game.jokers = vec![original, clone];
-                    game.config.available = game.config.available.saturating_sub(1);
                 }
             }
             Self::Hex => {
                 if !game.jokers.is_empty() {
-                    let original = game.backend.pick_random_joker(game.jokers.clone());
-                    let mut clone = game.backend.clone_joker(original.clone());
-                    clone.set_edition(Edition::Polychrome);
-                    game.jokers = vec![clone];
-                    game.config.available = game.config.available.saturating_sub(1);
+                    let mut original = game.backend.pick_random_joker(game.jokers.clone());
+                    original.set_edition(Edition::Polychrome);
+                    game.jokers = vec![original];
                 }
             }
         }
