@@ -67,6 +67,12 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
                 .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
         )),
+        Stage::SpectralHand(s) => Line::from(Span::styled(
+            s.name(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
         Stage::PackOpen() => Line::from(Span::styled(
             "Pack Open",
             Style::default()
@@ -100,6 +106,15 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     // TarotHand description
     if let Stage::TarotHand(t) = &game.stage {
         let desc = t.description();
+        for word_line in wrap(desc, (inner.width as usize).saturating_sub(1)) {
+            lines.push(Line::from(Span::raw(word_line)));
+        }
+        lines.push(Line::from(""));
+    }
+
+    // SpectralHand description
+    if let Stage::SpectralHand(s) = &game.stage {
+        let desc = s.description();
         for word_line in wrap(desc, (inner.width as usize).saturating_sub(1)) {
             lines.push(Line::from(Span::raw(word_line)));
         }

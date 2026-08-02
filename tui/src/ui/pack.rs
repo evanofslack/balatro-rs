@@ -195,7 +195,7 @@ fn render_drawn_hand(f: &mut Frame, app: &mut AppState, area: Rect) {
     }
 
     let label = Paragraph::new(Span::styled(
-        "Hand (for tarot targeting):",
+        "Hand (for targeting):",
         Style::default().fg(Color::DarkGray),
     ));
     let label_area = Rect {
