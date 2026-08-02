@@ -1,3 +1,4 @@
+use crate::spectral::Spectral;
 use crate::tarot::Tarot;
 pub use balatro_types::Blind;
 #[cfg(feature = "python")]
@@ -65,6 +66,8 @@ pub enum Stage {
     End(End),
     // (Temp stage) Target a tarot, hand drawn for card selection, pending tarot applied on ApplyTarot
     TarotHand(Tarot),
+    // (Temp stage) Target a spectral, hand drawn for card selection, pending spectral applied on ApplySpectral
+    SpectralHand(Spectral),
     // (Temp stage) A booster pack has been purchased and is open; player chooses contents
     PackOpen(),
 }
@@ -97,7 +100,8 @@ impl Stage {
                 End::Lose => 7,
             },
             Self::TarotHand(_) => 8,
-            Self::PackOpen() => 9,
+            Self::SpectralHand(_) => 9,
+            Self::PackOpen() => 10,
         }
     }
 }

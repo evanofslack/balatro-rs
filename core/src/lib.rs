@@ -268,6 +268,70 @@ mod tests {
     }
 
     #[test]
+    fn test_gen_actions_use_consumable_spectral_in_shop() {
+        use crate::spectral::Spectral;
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.consumables = vec![Consumable::Spectral(Spectral::Sigil)];
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(actions.contains(&Action::UseConsumable(Consumable::Spectral(Spectral::Sigil))));
+    }
+
+    #[test]
+    fn test_spectral_hand_from_shop_draws_exactly_one_hand() {
+        use crate::spectral::Spectral;
+        let mut g = Game::default();
+        g.start();
+        // at Shop, available is empty (clear_blind returns cards to deck without re-dealing)
+        g.stage = Stage::Shop();
+        assert_eq!(g.available.cards().len(), 0);
+        g.consumables = vec![Consumable::Spectral(Spectral::Talisman)];
+        g.handle_action(Action::UseConsumable(Consumable::Spectral(
+            Spectral::Talisman,
+        )))
+        .unwrap();
+        assert!(matches!(g.stage, Stage::SpectralHand(Spectral::Talisman)));
+        assert_eq!(g.available.cards().len(), g.config.available);
+    }
+
+    #[test]
+    fn test_spectral_hand_select_and_apply_round_trip() {
+        use crate::card::Seal;
+        use crate::spectral::Spectral;
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.consumables = vec![Consumable::Spectral(Spectral::Talisman)];
+        g.handle_action(Action::UseConsumable(Consumable::Spectral(
+            Spectral::Talisman,
+        )))
+        .unwrap();
+        assert!(matches!(g.stage, Stage::SpectralHand(Spectral::Talisman)));
+
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(!actions.contains(&Action::ApplySpectral()));
+
+        let card = g.available.cards()[0];
+        g.handle_action(Action::SelectCard(card)).unwrap();
+
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(actions.contains(&Action::ApplySpectral()));
+
+        g.handle_action(Action::ApplySpectral()).unwrap();
+        assert_eq!(g.stage, Stage::Shop());
+        // Non-blind cleanup returns the temp hand to the deck (mirrors apply_tarot).
+        assert_eq!(g.available.cards().len(), 0);
+        let updated = g
+            .deck
+            .cards()
+            .into_iter()
+            .find(|c| c.id == card.id)
+            .unwrap();
+        assert_eq!(updated.seal, Some(Seal::Gold));
+    }
+
+    #[test]
     // Test executing a full game using the gen_action_space (vector) api
     fn test_game_action_space() {
         let mut g = Game::default();

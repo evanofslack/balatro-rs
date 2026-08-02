@@ -393,10 +393,12 @@ impl ConsumableGenerator {
 pub(crate) struct PackGenerator {}
 
 impl PackGenerator {
-    // Weighted random pack selection per spec.
-    // Standard/Arcana/Celestial: Normal=4, Jumbo=2, Mega=0.5 (scaled *10 -> 40,20,5)
-    // Buffoon: Normal=1.2, Jumbo=0.6, Mega=0.15 (scaled *10 -> 12,6,2)
-    // Spectral: excluded
+    // Weighted random pack selection per spec (real per-mille weights from
+    // balatro-seed/src/pools.rs's PACKS table, scaled *100 so every category,
+    // including Spectral's 0.07 Mega weight, is an exact integer):
+    // Standard/Arcana/Celestial: Normal=4.0, Jumbo=2.0, Mega=0.5 -> 400,200,50
+    // Buffoon: Normal=1.2, Jumbo=0.6, Mega=0.15 -> 120,60,15
+    // Spectral: Normal=0.6, Jumbo=0.3, Mega=0.07 -> 60,30,7
     pub(crate) fn gen_pack(
         &self,
         planetarium: &Planetarium,
@@ -407,18 +409,21 @@ impl PackGenerator {
     ) -> Pack {
         #[rustfmt::skip]
         let all_choices: &[(PackCategory, PackSize, u32)] = &[
-            (PackCategory::Standard,  PackSize::Normal, 40),
-            (PackCategory::Standard,  PackSize::Jumbo,  20),
-            (PackCategory::Standard,  PackSize::Mega,    5),
-            (PackCategory::Arcana,    PackSize::Normal, 40),
-            (PackCategory::Arcana,    PackSize::Jumbo,  20),
-            (PackCategory::Arcana,    PackSize::Mega,    5),
-            (PackCategory::Celestial, PackSize::Normal, 40),
-            (PackCategory::Celestial, PackSize::Jumbo,  20),
-            (PackCategory::Celestial, PackSize::Mega,    5),
-            (PackCategory::Buffoon,   PackSize::Normal, 12),
-            (PackCategory::Buffoon,   PackSize::Jumbo,   6),
-            (PackCategory::Buffoon,   PackSize::Mega,    2),
+            (PackCategory::Standard,  PackSize::Normal, 400),
+            (PackCategory::Standard,  PackSize::Jumbo,  200),
+            (PackCategory::Standard,  PackSize::Mega,    50),
+            (PackCategory::Arcana,    PackSize::Normal, 400),
+            (PackCategory::Arcana,    PackSize::Jumbo,  200),
+            (PackCategory::Arcana,    PackSize::Mega,    50),
+            (PackCategory::Celestial, PackSize::Normal, 400),
+            (PackCategory::Celestial, PackSize::Jumbo,  200),
+            (PackCategory::Celestial, PackSize::Mega,    50),
+            (PackCategory::Buffoon,   PackSize::Normal, 120),
+            (PackCategory::Buffoon,   PackSize::Jumbo,   60),
+            (PackCategory::Buffoon,   PackSize::Mega,    15),
+            (PackCategory::Spectral,  PackSize::Normal,  60),
+            (PackCategory::Spectral,  PackSize::Jumbo,   30),
+            (PackCategory::Spectral,  PackSize::Mega,     7),
         ];
 
         let choices: Vec<&(PackCategory, PackSize, u32)> = all_choices
@@ -431,12 +436,10 @@ impl PackGenerator {
         let idx = dist.sample(rng);
         let (category, size, _) = choices[idx];
 
-        let count = match (category, size) {
-            (PackCategory::Buffoon, PackSize::Normal) => 2,
-            (PackCategory::Buffoon, _) => 4,
-            (_, PackSize::Normal) => 3,
-            _ => 5,
-        };
+        // Shared with `RealBackend` (`rng.rs`) so Fast/Real modes can never disagree
+        // on pack content counts - Buffoon and Spectral share the smaller 2/4/4
+        // shape, everything else is 3/5/5.
+        let count = balatro_seed::pack_card_count(*category, *size) as usize;
 
         let contents = self.gen_contents(category, count, planetarium, prob_mult, held_jokers, rng);
 
@@ -488,7 +491,9 @@ impl PackGenerator {
                     PackContent::PlayingCard(gen_random_playing_card(prob_mult, rng, false, None))
                 })
                 .collect(),
-            PackCategory::Spectral => vec![],
+            PackCategory::Spectral => (0..count)
+                .map(|_| PackContent::Spectral(crate::spectral::random_spectral(rng)))
+                .collect(),
         }
     }
 }
@@ -608,14 +613,34 @@ mod tests {
         let gen = PackGenerator {};
         for _ in 0..50 {
             let pack = gen.gen_pack(&planetarium, 1, None, &[], &mut rand::thread_rng());
-            let expected_count = match (&pack.category, &pack.size) {
-                (PackCategory::Buffoon, PackSize::Normal) => 2,
-                (PackCategory::Buffoon, _) => 4,
-                (_, PackSize::Normal) => 3,
-                _ => 5,
-            };
+            let expected_count =
+                balatro_seed::pack_card_count(pack.category, pack.size) as usize;
             assert_eq!(pack.contents.len(), expected_count);
         }
+    }
+
+    #[test]
+    fn test_pack_gen_can_produce_valid_spectral_packs() {
+        let planetarium = Planetarium::new();
+        let gen = PackGenerator {};
+        let mut saw_spectral = false;
+        for _ in 0..200 {
+            let pack = gen.gen_pack(&planetarium, 1, None, &[], &mut rand::thread_rng());
+            if pack.category != PackCategory::Spectral {
+                continue;
+            }
+            saw_spectral = true;
+            let expected_count =
+                balatro_seed::pack_card_count(pack.category, pack.size) as usize;
+            assert_eq!(pack.contents.len(), expected_count);
+            for content in &pack.contents {
+                let PackContent::Spectral(s) = content else {
+                    panic!("Spectral pack produced non-Spectral content: {content:?}");
+                };
+                assert!(!s.is_rare(), "{s:?} should never appear in a normal draw");
+            }
+        }
+        assert!(saw_spectral, "expected at least one Spectral pack in 200 draws");
     }
 
     #[test]

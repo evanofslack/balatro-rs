@@ -9,6 +9,7 @@ use balatro_types::HandRank;
 use balatro_types::Rarity;
 pub use balatro_types::Spectral;
 use balatro_types::Value::{self};
+use rand::Rng;
 use strum::IntoEnumIterator;
 
 /// Engine behavior for `Spectral`
@@ -227,6 +228,15 @@ impl SpectralEffect for Spectral {
     }
 }
 
+/// A random spectral variant for pack generation, excluding `is_rare()` cards
+/// (Soul/BlackHole) - those only appear via their own independent, restricted
+/// odds in the real game, never as a normal uniform draw.
+pub fn random_spectral(rng: &mut impl Rng) -> Spectral {
+    let all: Vec<Spectral> = Spectral::iter().filter(|s| !s.is_rare()).collect();
+    let i = rng.gen_range(0..all.len());
+    all[i]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,6 +256,15 @@ mod tests {
         let mut j = jokers_by_rarity(rarity)[index].clone();
         j.set_instance_id(mint_joker_id());
         j
+    }
+
+    #[test]
+    fn test_random_spectral_excludes_rare() {
+        let mut rng = rand::thread_rng();
+        for _ in 0..500 {
+            let s = random_spectral(&mut rng);
+            assert!(!s.is_rare(), "{s:?} should never be drawn as a normal pick");
+        }
     }
 
     #[test]

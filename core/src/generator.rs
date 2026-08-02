@@ -186,7 +186,7 @@ impl Game {
     fn gen_actions_use_consumable(&self) -> Option<impl Iterator<Item = Action>> {
         if matches!(
             self.stage,
-            Stage::End(_) | Stage::TarotHand(_) | Stage::PackOpen()
+            Stage::End(_) | Stage::TarotHand(_) | Stage::SpectralHand(_) | Stage::PackOpen()
         ) {
             return None;
         }
@@ -212,8 +212,16 @@ impl Game {
                         true
                     }
                 }
-                // TODO: Spectral
-                Consumable::Spectral(_) => false,
+                // Same eligibility shape as Tarot above.
+                Consumable::Spectral(s) => {
+                    if !s.requires_targets() {
+                        true
+                    } else if self.stage.is_blind() {
+                        selected_count >= s.min_targets() && selected_count <= s.max_targets()
+                    } else {
+                        true
+                    }
+                }
             })
             .cloned()
             .map(Action::UseConsumable)
@@ -367,6 +375,71 @@ impl Game {
         Some(all.into_iter())
     }
 
+    // are we in the temp spectral hand stage?
+    // if so, we draw a temp hand and give options for applying the spectral.
+    fn gen_actions_spectral_hand(&self) -> Option<impl Iterator<Item = Action>> {
+        let Stage::SpectralHand(s) = self.stage else {
+            return None;
+        };
+        let selected_count = self.available.selected().len();
+
+        let select_cards: Vec<Action> = if selected_count < s.max_targets() {
+            self.available
+                .not_selected()
+                .into_iter()
+                .map(Action::SelectCard)
+                .collect()
+        } else {
+            vec![]
+        };
+
+        let deselect_cards: Vec<Action> = self
+            .available
+            .selected()
+            .into_iter()
+            .map(Action::DeselectCard)
+            .collect();
+
+        let move_left: Vec<Action> = self
+            .available
+            .cards()
+            .into_iter()
+            .skip(1)
+            .map(|c| Action::MoveCard(MoveDirection::Left, c))
+            .collect();
+
+        let move_right: Vec<Action> = {
+            let cards = self.available.cards();
+            let len = cards.len();
+            if len > 1 {
+                cards
+                    .into_iter()
+                    .take(len - 1)
+                    .map(|c| Action::MoveCard(MoveDirection::Right, c))
+                    .collect()
+            } else {
+                vec![]
+            }
+        };
+
+        let apply: Vec<Action> =
+            if selected_count >= s.min_targets() && selected_count <= s.max_targets() {
+                vec![Action::ApplySpectral()]
+            } else {
+                vec![]
+            };
+
+        let all: Vec<Action> = select_cards
+            .into_iter()
+            .chain(deselect_cards)
+            .chain(move_left)
+            .chain(move_right)
+            .chain(apply)
+            .collect();
+
+        Some(all.into_iter())
+    }
+
     // Get all legal actions that can be executed given current state
     pub fn gen_actions(&self) -> impl Iterator<Item = Action> {
         let select_cards = self.gen_actions_select_card();
@@ -383,6 +456,7 @@ impl Game {
         let buy_consumables = self.gen_actions_buy_consumable();
         let use_consumables = self.gen_actions_use_consumable();
         let tarot_hand = self.gen_actions_tarot_hand();
+        let spectral_hand = self.gen_actions_spectral_hand();
         let sell_jokers = self.gen_actions_sell_joker();
         let sell_consumables = self.gen_actions_sell_consumable();
         let buy_packs = self.gen_actions_buy_pack();
@@ -406,6 +480,7 @@ impl Game {
             .chain(buy_consumables.into_iter().flatten())
             .chain(use_consumables.into_iter().flatten())
             .chain(tarot_hand.into_iter().flatten())
+            .chain(spectral_hand.into_iter().flatten())
             .chain(sell_jokers.into_iter().flatten())
             .chain(sell_consumables.into_iter().flatten())
             .chain(buy_packs.into_iter().flatten())
@@ -551,7 +626,10 @@ impl Game {
     }
 
     fn unmask_action_space_use_consumable(&self, space: &mut ActionSpace) {
-        if matches!(self.stage, Stage::End(_) | Stage::TarotHand(_)) {
+        if matches!(
+            self.stage,
+            Stage::End(_) | Stage::TarotHand(_) | Stage::SpectralHand(_)
+        ) {
             return;
         }
         let selected_count = self.available.selected().len();
@@ -567,8 +645,16 @@ impl Game {
                         true
                     }
                 }
-                // TODO: Spectral
-                Consumable::Spectral(_) => false,
+                // Same eligibility shape as Tarot above.
+                Consumable::Spectral(s) => {
+                    if !s.requires_targets() {
+                        true
+                    } else if self.stage.is_blind() {
+                        selected_count >= s.min_targets() && selected_count <= s.max_targets()
+                    } else {
+                        true
+                    }
+                }
             };
             if valid {
                 space
@@ -715,6 +801,52 @@ impl Game {
         }
     }
 
+    fn unmask_action_space_spectral_hand(&self, space: &mut ActionSpace) {
+        let Stage::SpectralHand(s) = self.stage else {
+            return;
+        };
+        // select cards
+        let selected_count = self.available.selected().len();
+        if selected_count < s.max_targets() {
+            self.available
+                .cards_and_selected()
+                .iter()
+                .enumerate()
+                .filter(|(_, (_, a))| !*a)
+                .for_each(|(i, _)| {
+                    space
+                        .unmask_select_card(i)
+                        .expect("valid index for selecting");
+                });
+        }
+        // move cards
+        self.available
+            .cards()
+            .iter()
+            .skip(1)
+            .enumerate()
+            .for_each(|(i, _)| {
+                space
+                    .unmask_move_card_left(i)
+                    .expect("valid index for move left");
+            });
+        self.available
+            .cards()
+            .iter()
+            .rev()
+            .skip(1)
+            .rev()
+            .enumerate()
+            .for_each(|(i, _)| {
+                space
+                    .unmask_move_card_right(i)
+                    .expect("valid index for move right");
+            });
+        if selected_count >= s.min_targets() && selected_count <= s.max_targets() {
+            space.unmask_apply_spectral();
+        }
+    }
+
     // Get an action space, masked for legal actions only
     pub fn gen_action_space(&self) -> ActionSpace {
         let mut space = ActionSpace::from(self.config.clone());
@@ -729,6 +861,7 @@ impl Game {
         self.unmask_action_space_buy_consumable(&mut space);
         self.unmask_action_space_use_consumable(&mut space);
         self.unmask_action_space_tarot_hand(&mut space);
+        self.unmask_action_space_spectral_hand(&mut space);
         self.unmask_action_space_sell_joker(&mut space);
         self.unmask_action_space_sell_consumable(&mut space);
         self.unmask_action_space_buy_pack(&mut space);
