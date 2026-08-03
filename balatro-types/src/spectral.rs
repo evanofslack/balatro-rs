@@ -1,13 +1,14 @@
 #[cfg(feature = "python")]
 use pyo3::pyclass;
-use strum::EnumIter;
+use strum::{EnumIter, EnumString};
 
 /// Spectral cards. Every variant appears with equal odds in Spectral packs
 /// except `Soul` and `BlackHole`, which are additionally restricted (see
 /// `is_rare`).
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EnumIter)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EnumIter, EnumString)]
+#[strum(ascii_case_insensitive)]
 pub enum Spectral {
     Familiar,
     Grim,
@@ -214,5 +215,23 @@ mod tests {
             assert_eq!(s.max_targets(), 0, "{s:?} should need 0 targets");
             assert!(!s.requires_targets(), "{s:?} should not require targets");
         }
+    }
+
+    #[test]
+    fn test_spectral_from_str_round_trip() {
+        for s in Spectral::iter() {
+            assert_eq!(format!("{s:?}").parse::<Spectral>(), Ok(s));
+        }
+    }
+
+    #[test]
+    fn test_spectral_from_str_case_insensitive() {
+        assert_eq!("blackhole".parse::<Spectral>(), Ok(Spectral::BlackHole));
+        assert_eq!("BLACKHOLE".parse::<Spectral>(), Ok(Spectral::BlackHole));
+    }
+
+    #[test]
+    fn test_spectral_from_str_invalid() {
+        assert!("NotASpectral".parse::<Spectral>().is_err());
     }
 }
