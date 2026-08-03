@@ -7,6 +7,7 @@ use balatro_rs::deck::Deck;
 use balatro_rs::game::Game;
 use balatro_rs::joker::{Jokers, Stickers};
 use balatro_rs::planet::Planets;
+use balatro_rs::spectral::Spectral;
 use balatro_rs::tarot::Tarot;
 use clap::{Parser, Subcommand};
 use std::fs;
@@ -74,6 +75,9 @@ enum Command {
     },
     AddPlanet {
         name: Planets,
+    },
+    AddSpectral {
+        name: Spectral,
     },
     ClearConsumables,
     ClearDeck,
@@ -159,6 +163,7 @@ fn main() -> Result<()> {
         }
         Command::AddTarot { name } => game.consumables.push(Consumable::Tarot(name)),
         Command::AddPlanet { name } => game.consumables.push(Consumable::Planet(name)),
+        Command::AddSpectral { name } => game.consumables.push(Consumable::Spectral(name)),
         Command::ClearConsumables => game.consumables.clear(),
         Command::ClearDeck => {
             game.deck = Deck::new();
