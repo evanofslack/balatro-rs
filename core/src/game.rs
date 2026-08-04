@@ -834,12 +834,20 @@ impl Game {
     }
 
     pub(crate) fn use_consumable(&mut self, consumable: Consumable) -> Result<(), GameError> {
-        if matches!(self.stage, Stage::End(_)) {
-            return Err(GameError::InvalidStage);
+        if matches!(
+            self.stage,
+            Stage::End(_) | Stage::TarotHand(_) | Stage::SpectralHand(_) | Stage::PackOpen()
+        ) {
+            return Err(GameError::InvalidAction);
         }
-        // Validate selection before removal so the consumable is not lost on error
+        // Validate selection before removal so the consumable is not lost on error.
+        // Hand-touching Tarot/Spectral can only be used while a real hand exists
+        // (during Blind), a held consumable never draws a substitute hand from the deck.
         if let Consumable::Tarot(t) = &consumable {
-            if t.requires_targets() && self.stage.is_blind() {
+            if t.requires_hand() {
+                if !self.stage.is_blind() {
+                    return Err(GameError::InvalidAction);
+                }
                 let selected_count = self.available.selected().len();
                 if selected_count < t.min_targets() || selected_count > t.max_targets() {
                     return Err(GameError::InvalidAction);
@@ -847,7 +855,10 @@ impl Game {
             }
         }
         if let Consumable::Spectral(s) = &consumable {
-            if s.requires_targets() && self.stage.is_blind() {
+            if s.requires_hand() {
+                if !self.stage.is_blind() {
+                    return Err(GameError::InvalidAction);
+                }
                 let selected_count = self.available.selected().len();
                 if selected_count < s.min_targets() || selected_count > s.max_targets() {
                     return Err(GameError::InvalidAction);
@@ -866,28 +877,14 @@ impl Game {
                 self.last_consumable_used = Some(Consumable::Planet(planet));
             }
             Consumable::Tarot(t) => {
-                if t.requires_targets() && !self.stage.is_blind() {
-                    let prev = self.stage;
-                    self.tarot_prev_stage = Some(prev);
-                    self.stage = Stage::TarotHand(t);
-                    self.draw(self.config.available);
-                } else {
-                    t.apply(self)?;
-                    if t != Tarot::Fool {
-                        self.last_consumable_used = Some(Consumable::Tarot(t));
-                    }
+                t.apply(self)?;
+                if t != Tarot::Fool {
+                    self.last_consumable_used = Some(Consumable::Tarot(t));
                 }
             }
             Consumable::Spectral(s) => {
-                if s.requires_targets() && !self.stage.is_blind() {
-                    let prev = self.stage;
-                    self.spectral_prev_stage = Some(prev);
-                    self.stage = Stage::SpectralHand(s);
-                    self.draw(self.config.available);
-                } else {
-                    s.apply(self)?;
-                    self.last_consumable_used = Some(Consumable::Spectral(s));
-                }
+                s.apply(self)?;
+                self.last_consumable_used = Some(Consumable::Spectral(s));
             }
         }
         Ok(())
@@ -910,15 +907,8 @@ impl Game {
         if t != Tarot::Fool {
             self.last_consumable_used = Some(Consumable::Tarot(t));
         }
-        // Don't clear the hand when returning to PackOpen; finish_pack handles cleanup
-        if !prev.is_blind() && !prev.is_pack_open() {
-            let cards = self.available.cards();
-            self.available.empty();
-            self.deck.extend(cards);
-            self.backend.shuffle_deck(&mut self.deck);
-        }
         self.stage = prev;
-        // Returning to a pack open: decrement picks and possibly finish
+        // Only reachable via a pack pick now, finish_pack handles hand cleanup
         if prev.is_pack_open() {
             if let Some(ref mut state) = self.open_pack {
                 state.picks_remaining = state.picks_remaining.saturating_sub(1);
@@ -949,15 +939,8 @@ impl Game {
         }
         s.apply(self)?;
         self.last_consumable_used = Some(Consumable::Spectral(s));
-        // Don't clear the hand when returning to PackOpen; finish_pack handles cleanup
-        if !prev.is_blind() && !prev.is_pack_open() {
-            let cards = self.available.cards();
-            self.available.empty();
-            self.deck.extend(cards);
-            self.backend.shuffle_deck(&mut self.deck);
-        }
         self.stage = prev;
-        // Returning to a pack open: decrement picks and possibly finish
+        // Only reachable via a pack pick now; finish_pack handles hand cleanup
         if prev.is_pack_open() {
             if let Some(ref mut state) = self.open_pack {
                 state.picks_remaining = state.picks_remaining.saturating_sub(1);
@@ -1263,12 +1246,7 @@ impl Game {
                 Stage::Shop() => self.buy_consumable(consumable),
                 _ => Err(GameError::InvalidAction),
             },
-            Action::UseConsumable(consumable) => match self.stage {
-                Stage::End(_) | Stage::TarotHand(_) | Stage::SpectralHand(_) => {
-                    Err(GameError::InvalidAction)
-                }
-                _ => self.use_consumable(consumable),
-            },
+            Action::UseConsumable(consumable) => self.use_consumable(consumable),
             Action::NextRound() => match self.stage {
                 Stage::Shop() => self.next_round(),
                 _ => Err(GameError::InvalidAction),

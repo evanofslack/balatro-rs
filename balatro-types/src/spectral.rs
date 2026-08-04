@@ -169,6 +169,20 @@ impl Spectral {
     pub fn requires_targets(&self) -> bool {
         self.min_targets() > 0
     }
+
+    /// True if `apply()` reads or mutates the current hand at all
+    pub fn requires_hand(&self) -> bool {
+        self.requires_targets()
+            || matches!(
+                self,
+                Self::Familiar
+                    | Self::Grim
+                    | Self::Incantation
+                    | Self::Sigil
+                    | Self::Ouija
+                    | Self::Immolate
+            )
+    }
 }
 
 #[cfg(test)]
@@ -214,6 +228,30 @@ mod tests {
             assert_eq!(s.min_targets(), 0, "{s:?} should need 0 targets");
             assert_eq!(s.max_targets(), 0, "{s:?} should need 0 targets");
             assert!(!s.requires_targets(), "{s:?} should not require targets");
+        }
+    }
+
+    #[test]
+    fn test_requires_hand() {
+        let hand_touching = [
+            Spectral::Talisman,
+            Spectral::Aura,
+            Spectral::DejaVu,
+            Spectral::Trance,
+            Spectral::Medium,
+            Spectral::Cryptid,
+            Spectral::Familiar,
+            Spectral::Grim,
+            Spectral::Incantation,
+            Spectral::Sigil,
+            Spectral::Ouija,
+            Spectral::Immolate,
+        ];
+        for s in hand_touching {
+            assert!(s.requires_hand(), "{s:?} should require a hand");
+        }
+        for s in Spectral::iter().filter(|s| !hand_touching.contains(s)) {
+            assert!(!s.requires_hand(), "{s:?} should not require a hand");
         }
     }
 

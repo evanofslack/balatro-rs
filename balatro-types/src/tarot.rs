@@ -202,6 +202,11 @@ impl Tarot {
     pub fn requires_targets(&self) -> bool {
         self.min_targets() > 0
     }
+
+    /// True if `apply()` touches/mutates the hand
+    pub fn requires_hand(&self) -> bool {
+        self.requires_targets()
+    }
 }
 
 #[cfg(test)]
@@ -239,6 +244,19 @@ mod tests {
         assert_eq!(Tarot::Death.min_targets(), 2);
         assert_eq!(Tarot::Death.max_targets(), 2);
         assert!(Tarot::Death.requires_targets());
+    }
+
+    #[test]
+    fn test_requires_hand() {
+        for t in Tarot::iter() {
+            assert_eq!(
+                t.requires_hand(),
+                t.requires_targets(),
+                "{t:?} requires_hand should match requires_targets"
+            );
+        }
+        assert!(Tarot::Death.requires_hand());
+        assert!(!Tarot::Fool.requires_hand());
     }
 
     #[test]

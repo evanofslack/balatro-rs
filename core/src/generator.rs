@@ -199,28 +199,20 @@ impl Game {
             .iter()
             .filter(|c| match c {
                 Consumable::Planet(_) => true,
-                // eligible to play tarot if any
-                // 1.) tarot doesn't require selected cards
-                // 2.) in blind stage and card(s) are selected
-                // 3.) not in blind stage (will draw hand to apply tarot)
+                // Hand-touching tarots are only usable during Blind, with a valid
+                // target selection already made; non-hand-touching ones are always usable.
                 Consumable::Tarot(t) => {
-                    if !t.requires_targets() {
-                        true
-                    } else if self.stage.is_blind() {
-                        selected_count >= t.min_targets() && selected_count <= t.max_targets()
-                    } else {
-                        true
-                    }
+                    !t.requires_hand()
+                        || (self.stage.is_blind()
+                            && selected_count >= t.min_targets()
+                            && selected_count <= t.max_targets())
                 }
                 // Same eligibility shape as Tarot above.
                 Consumable::Spectral(s) => {
-                    if !s.requires_targets() {
-                        true
-                    } else if self.stage.is_blind() {
-                        selected_count >= s.min_targets() && selected_count <= s.max_targets()
-                    } else {
-                        true
-                    }
+                    !s.requires_hand()
+                        || (self.stage.is_blind()
+                            && selected_count >= s.min_targets()
+                            && selected_count <= s.max_targets())
                 }
             })
             .cloned()

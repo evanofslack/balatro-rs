@@ -683,13 +683,20 @@ mod tests {
 
     #[test]
     fn test_apply_spectral_index_round_trip() {
-        use crate::consumable::Consumable;
+        use crate::pack::{Pack, PackCategory, PackContent, PackSize};
         use crate::spectral::Spectral;
         let mut g = Game::default();
         g.start();
         g.stage = crate::stage::Stage::Shop();
-        g.consumables = vec![Consumable::Spectral(Spectral::Talisman)];
-        g.handle_action(Action::UseConsumable(Consumable::Spectral(
+        g.money = 100;
+        let pack = Pack {
+            category: PackCategory::Spectral,
+            size: PackSize::Normal,
+            contents: vec![PackContent::Spectral(Spectral::Talisman)],
+        };
+        g.shop.packs = vec![pack.clone()];
+        g.handle_action(Action::BuyPack(pack)).unwrap();
+        g.handle_action(Action::PickPackCard(PackContent::Spectral(
             Spectral::Talisman,
         )))
         .unwrap();
