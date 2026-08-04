@@ -265,6 +265,52 @@ mod tests {
         assert_eq!(g.available.cards().len(), 0);
     }
 
+    // Fool copies the last Tarot or Planet used, never a Spectral (matches its
+    // own description text and real Balatro). Using a Spectral in between must
+    // not overwrite last_consumable_used, and Fool must never duplicate it.
+    #[test]
+    fn test_fool_does_not_copy_spectral_used_via_consumable() {
+        use crate::spectral::Spectral;
+        use crate::tarot::Tarot;
+
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.config.consumable_slots = 3;
+
+        g.consumables = vec![Consumable::Planet(Planets::Mercury)];
+        g.handle_action(Action::UseConsumable(Consumable::Planet(Planets::Mercury)))
+            .unwrap();
+        assert_eq!(
+            g.last_consumable_used,
+            Some(Consumable::Planet(Planets::Mercury))
+        );
+
+        // Wraith is a 0-target Spectral that doesn't touch the hand, so it's
+        // legal from Shop.
+        g.consumables.push(Consumable::Spectral(Spectral::Wraith));
+        g.handle_action(Action::UseConsumable(Consumable::Spectral(
+            Spectral::Wraith,
+        )))
+        .unwrap();
+        // Using the Spectral must not overwrite what Fool remembers.
+        assert_eq!(
+            g.last_consumable_used,
+            Some(Consumable::Planet(Planets::Mercury))
+        );
+
+        g.consumables.push(Consumable::Tarot(Tarot::Fool));
+        g.handle_action(Action::UseConsumable(Consumable::Tarot(Tarot::Fool)))
+            .unwrap();
+        assert!(g.consumables.contains(&Consumable::Planet(Planets::Mercury)));
+        assert!(
+            !g.consumables
+                .iter()
+                .any(|c| matches!(c, Consumable::Spectral(_))),
+            "Fool must never duplicate a Spectral"
+        );
+    }
+
     // A 0-target Spectral that still destroys a random card from the hand
     // (see requires_hand()) must not be usable from Shop, where the hand is
     // empty — this is the crash this gate exists to prevent.

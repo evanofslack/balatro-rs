@@ -883,8 +883,8 @@ impl Game {
                 }
             }
             Consumable::Spectral(s) => {
+                // Fool only ever copies the last Tarot or Planet used, never a Spectral.
                 s.apply(self)?;
-                self.last_consumable_used = Some(Consumable::Spectral(s));
             }
         }
         Ok(())
@@ -937,8 +937,8 @@ impl Game {
             self.spectral_prev_stage = Some(prev);
             return Err(GameError::InvalidAction);
         }
+        // Fool only ever copies the last Tarot or Planet used, never a Spectral.
         s.apply(self)?;
-        self.last_consumable_used = Some(Consumable::Spectral(s));
         self.stage = prev;
         // Only reachable via a pack pick now; finish_pack handles hand cleanup
         if prev.is_pack_open() {
