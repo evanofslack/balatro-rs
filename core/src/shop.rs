@@ -208,8 +208,8 @@ impl Shop {
     }
 }
 
-pub(crate) fn gen_edition(prob_mult: u32, rng: &mut impl Rng) -> Edition {
-    if rng.gen_ratio(3u32.saturating_mul(prob_mult).min(1000), 1000) {
+pub(crate) fn gen_edition(prob_mult: u32, rng: &mut impl Rng, allow_negative: bool) -> Edition {
+    if allow_negative && rng.gen_ratio(3u32.saturating_mul(prob_mult).min(1000), 1000) {
         return Edition::Negative;
     }
     if rng.gen_ratio(3u32.saturating_mul(prob_mult).min(1000), 1000) {
@@ -252,8 +252,7 @@ pub(crate) fn gen_random_playing_card(
         card.enhancement = Some(ENHANCEMENTS[rng.gen_range(0..ENHANCEMENTS.len())]);
     }
 
-    // TODO: cannot be negative
-    card.edition = gen_edition(prob_mult, rng);
+    card.edition = gen_edition(prob_mult, rng, false);
 
     if rng.gen_ratio(1, 10) {
         const SEALS: [Seal; 4] = [Seal::Gold, Seal::Red, Seal::Blue, Seal::Purple];
@@ -312,7 +311,7 @@ impl JokerGenerator {
         let choices = if choices.is_empty() { all } else { choices };
         let i = rng.gen_range(0..choices.len());
         let mut joker = choices[i].clone();
-        joker.set_edition(gen_edition(prob_mult, rng));
+        joker.set_edition(gen_edition(prob_mult, rng, true));
         joker.set_instance_id(crate::joker::mint_joker_id());
         crate::joker::roll_discard_selector(rng, &mut joker);
         joker
@@ -675,5 +674,23 @@ mod tests {
             (10..250).contains(&rare),
             "expected ~5% Rare, got {rare}/{n}"
         );
+    }
+
+    #[test]
+    fn test_gen_edition_playing_cards_never_negative() {
+        use rand::SeedableRng;
+        let mut rng = ChaCha8Rng::seed_from_u64(42);
+        // prob_mult saturates every gen_ratio numerator at 1000/1000 (always true);
+        // with allow_negative=false this should fall through to Polychrome instead.
+        for _ in 0..500 {
+            assert_ne!(gen_edition(400, &mut rng, false), Edition::Negative);
+        }
+    }
+
+    #[test]
+    fn test_gen_edition_jokers_can_be_negative() {
+        use rand::SeedableRng;
+        let mut rng = ChaCha8Rng::seed_from_u64(42);
+        assert_eq!(gen_edition(400, &mut rng, true), Edition::Negative);
     }
 }
