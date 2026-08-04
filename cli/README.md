@@ -142,6 +142,7 @@ name to type.
 | `add-joker <name>`         | Add a joker (see flags below)                    |
 | `add-tarot <name>`         | Add a tarot consumable, e.g. `Fool`              |
 | `add-planet <name>`        | Add a planet consumable, e.g. `Mercury`          |
+| `add-spectral <name>`      | Add a spectral consumable, e.g. `Familiar`       |
 | `clear-consumables`        | Remove all held consumables                      |
 | `add-card <value> <suit>`  | Add a playing card to the deck (see flags below) |
 
@@ -192,5 +193,12 @@ Give yourself a tarot to test, then inspect the result:
 
 ```bash
 just edit --load game_1781391549.json add-tarot Fool
+just edit --load game_1781391549.json show
+```
+
+Give yourself a spectral to test:
+
+```bash
+just edit --load game_1781391549.json add-spectral Familiar
 just edit --load game_1781391549.json show
 ```

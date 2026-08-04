@@ -313,9 +313,9 @@ fn render_packs_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
 fn consumable_color(consumable: &balatro_rs::consumable::Consumable) -> Color {
     use balatro_rs::consumable::Consumable;
     match consumable {
-        Consumable::Tarot(_) => Color::Cyan,
+        Consumable::Tarot(_) => Color::Magenta,
         Consumable::Planet(_) => Color::Blue,
-        Consumable::Spectral(_) => Color::Magenta,
+        Consumable::Spectral(_) => Color::Cyan,
     }
 }
 

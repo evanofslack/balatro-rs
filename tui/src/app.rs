@@ -22,6 +22,7 @@ pub enum WidgetId {
     NextRoundButton,
     RerollButton,
     TarotButton(usize),
+    SpectralButton(usize),
     OverlayButton(usize),
     DeckTab(usize),
 }
@@ -43,6 +44,8 @@ pub enum FocusZone {
     CashOutButton,
     TarotCards,
     TarotButtons,
+    SpectralCards,
+    SpectralButtons,
 }
 
 #[derive(Debug, Clone)]
@@ -130,6 +133,7 @@ impl AppState {
             Stage::PostBlind() => FocusZone::CashOutButton,
             Stage::Shop() => FocusZone::ShopJokers,
             Stage::TarotHand(_) => FocusZone::TarotCards,
+            Stage::SpectralHand(_) => FocusZone::SpectralCards,
             Stage::PackOpen() => FocusZone::PackContents,
             Stage::End(_) => FocusZone::CashOutButton,
         }
@@ -247,6 +251,24 @@ impl AppState {
                 }
             }
             (Stage::TarotHand(_), FocusZone::ConsumableStrip) => FocusZone::TarotCards,
+            (Stage::SpectralHand(_), FocusZone::SpectralCards) => FocusZone::SpectralButtons,
+            (Stage::SpectralHand(_), FocusZone::SpectralButtons) => {
+                if has_jokers {
+                    FocusZone::JokerStrip
+                } else if has_consumables {
+                    FocusZone::ConsumableStrip
+                } else {
+                    FocusZone::SpectralCards
+                }
+            }
+            (Stage::SpectralHand(_), FocusZone::JokerStrip) => {
+                if has_consumables {
+                    FocusZone::ConsumableStrip
+                } else {
+                    FocusZone::SpectralCards
+                }
+            }
+            (Stage::SpectralHand(_), FocusZone::ConsumableStrip) => FocusZone::SpectralCards,
             _ => self.focus.clone(),
         };
         if !preserve_cursor {
@@ -337,6 +359,24 @@ impl AppState {
                     FocusZone::JokerStrip
                 } else {
                     FocusZone::TarotButtons
+                }
+            }
+            (Stage::SpectralHand(_), FocusZone::SpectralCards) => {
+                if has_consumables {
+                    FocusZone::ConsumableStrip
+                } else if has_jokers {
+                    FocusZone::JokerStrip
+                } else {
+                    FocusZone::SpectralButtons
+                }
+            }
+            (Stage::SpectralHand(_), FocusZone::SpectralButtons) => FocusZone::SpectralCards,
+            (Stage::SpectralHand(_), FocusZone::JokerStrip) => FocusZone::SpectralButtons,
+            (Stage::SpectralHand(_), FocusZone::ConsumableStrip) => {
+                if has_jokers {
+                    FocusZone::JokerStrip
+                } else {
+                    FocusZone::SpectralButtons
                 }
             }
             _ => self.focus.clone(),

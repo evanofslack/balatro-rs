@@ -196,6 +196,7 @@ fn handle_key_stage(app: &mut AppState, key: KeyEvent) {
         Stage::PostBlind() => handle_key_postblind(app, key),
         Stage::Shop() => handle_key_shop(app, key),
         Stage::TarotHand(_) => handle_key_tarot(app, key),
+        Stage::SpectralHand(_) => handle_key_spectral(app, key),
         Stage::PackOpen() => handle_key_pack(app, key),
         Stage::End(_) => {
             if matches!(key.code, KeyCode::Enter | KeyCode::Char('q')) {
@@ -556,6 +557,25 @@ fn handle_key_tarot_buttons(app: &mut AppState, key: KeyEvent) {
     }
 }
 
+fn handle_key_spectral(app: &mut AppState, key: KeyEvent) {
+    match &app.focus {
+        FocusZone::SpectralCards => handle_key_tarot_cards(app, key),
+        FocusZone::SpectralButtons => handle_key_spectral_buttons(app, key),
+        FocusZone::JokerStrip => handle_key_joker_strip(app, key),
+        FocusZone::ConsumableStrip => handle_key_consumable_strip(app, key),
+        _ => {
+            app.focus = FocusZone::SpectralCards;
+            app.cursor = 0;
+        }
+    }
+}
+
+fn handle_key_spectral_buttons(app: &mut AppState, key: KeyEvent) {
+    if key.code == KeyCode::Enter {
+        let _ = app.game.handle_action(Action::ApplySpectral());
+    }
+}
+
 fn toggle_card(app: &mut AppState) {
     let cards = app.game.available.cards();
     let selected_ids: std::collections::HashSet<usize> =
@@ -663,10 +683,10 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
 
     match id {
         Card(idx) => {
-            app.focus = if matches!(app.game.stage, Stage::TarotHand(_)) {
-                FocusZone::TarotCards
-            } else {
-                FocusZone::Cards
+            app.focus = match app.game.stage {
+                Stage::TarotHand(_) => FocusZone::TarotCards,
+                Stage::SpectralHand(_) => FocusZone::SpectralCards,
+                _ => FocusZone::Cards,
             };
             app.cursor = idx;
             toggle_card(app);
@@ -774,6 +794,10 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             let _ = app.game.handle_action(Action::ApplyTarot());
         }
         TarotButton(_) => {}
+        SpectralButton(0) => {
+            let _ = app.game.handle_action(Action::ApplySpectral());
+        }
+        SpectralButton(_) => {}
         OverlayButton(0) => match app.overlay.clone() {
             Some(crate::app::Overlay::Consumable(idx)) => {
                 if let Some(c) = app.game.consumables.get(idx).cloned() {

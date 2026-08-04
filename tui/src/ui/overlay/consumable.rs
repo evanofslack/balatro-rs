@@ -21,8 +21,8 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
         return;
     };
 
-    // Check if this tarot needs card targets and we're in blind stage
-    let selection_info = tarot_selection_info(app, &c);
+    // Check if this consumable needs card targets and we're in blind stage
+    let selection_info = consumable_selection_info(app, &c);
 
     let mut lines = vec![
         Line::from(""),
@@ -121,14 +121,16 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
     );
 }
 
-fn tarot_selection_info(app: &AppState, c: &Consumable) -> Option<(usize, usize, bool)> {
-    if let Consumable::Tarot(t) = c {
-        if t.requires_targets() && matches!(app.game.stage, Stage::Blind(_)) {
-            let needed = t.min_targets();
-            let selected = app.game.available.selected().len();
-            let valid = selected >= needed && selected <= t.max_targets();
-            return Some((needed, selected, valid));
-        }
+fn consumable_selection_info(app: &AppState, c: &Consumable) -> Option<(usize, usize, bool)> {
+    let (needed, max) = match c {
+        Consumable::Tarot(t) if t.requires_targets() => (t.min_targets(), t.max_targets()),
+        Consumable::Spectral(s) if s.requires_targets() => (s.min_targets(), s.max_targets()),
+        _ => return None,
+    };
+    if !matches!(app.game.stage, Stage::Blind(_)) {
+        return None;
     }
-    None
+    let selected = app.game.available.selected().len();
+    let valid = selected >= needed && selected <= max;
+    Some((needed, selected, valid))
 }

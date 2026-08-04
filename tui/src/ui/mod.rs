@@ -9,6 +9,7 @@ pub mod preblind;
 pub mod shop;
 pub mod sidebar;
 pub mod size_check;
+pub mod spectral;
 pub mod tarot;
 
 use crate::app::AppState;
@@ -36,6 +37,7 @@ pub fn render(f: &mut Frame, app: &mut AppState) {
         Stage::PostBlind() => postblind::render(f, app, area),
         Stage::Shop() => shop::render(f, app, area),
         Stage::TarotHand(_) => tarot::render(f, app, area),
+        Stage::SpectralHand(_) => spectral::render(f, app, area),
         Stage::PackOpen() => pack::render(f, app, area),
         Stage::End(_) => end::render(f, app, area),
     }

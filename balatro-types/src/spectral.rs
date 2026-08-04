@@ -1,13 +1,14 @@
 #[cfg(feature = "python")]
 use pyo3::pyclass;
-use strum::EnumIter;
+use strum::{EnumIter, EnumString};
 
 /// Spectral cards. Every variant appears with equal odds in Spectral packs
 /// except `Soul` and `BlackHole`, which are additionally restricted (see
 /// `is_rare`).
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
-#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EnumIter)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash, EnumIter, EnumString)]
+#[strum(ascii_case_insensitive)]
 pub enum Spectral {
     Familiar,
     Grim,
@@ -145,6 +146,43 @@ impl Spectral {
     pub fn is_rare(&self) -> bool {
         matches!(self, Self::Soul | Self::BlackHole)
     }
+
+    /// Number of cards the player must select before this spectral can be
+    /// applied. Every targeted spectral needs exactly 1 (unlike `Tarot`,
+    /// which ranges 0-3).
+    pub fn min_targets(&self) -> usize {
+        match self {
+            Self::Talisman
+            | Self::Aura
+            | Self::DejaVu
+            | Self::Trance
+            | Self::Medium
+            | Self::Cryptid => 1,
+            _ => 0,
+        }
+    }
+
+    pub fn max_targets(&self) -> usize {
+        self.min_targets()
+    }
+
+    pub fn requires_targets(&self) -> bool {
+        self.min_targets() > 0
+    }
+
+    /// True if `apply()` reads or mutates the current hand at all
+    pub fn requires_hand(&self) -> bool {
+        self.requires_targets()
+            || matches!(
+                self,
+                Self::Familiar
+                    | Self::Grim
+                    | Self::Incantation
+                    | Self::Sigil
+                    | Self::Ouija
+                    | Self::Immolate
+            )
+    }
 }
 
 #[cfg(test)]
@@ -169,5 +207,69 @@ mod tests {
         assert!(Spectral::Soul.is_rare());
         assert!(Spectral::BlackHole.is_rare());
         assert!(!Spectral::Familiar.is_rare());
+    }
+
+    #[test]
+    fn test_target_counts() {
+        let targeted = [
+            Spectral::Talisman,
+            Spectral::Aura,
+            Spectral::DejaVu,
+            Spectral::Trance,
+            Spectral::Medium,
+            Spectral::Cryptid,
+        ];
+        for s in targeted {
+            assert_eq!(s.min_targets(), 1, "{s:?} should need 1 target");
+            assert_eq!(s.max_targets(), 1, "{s:?} should need 1 target");
+            assert!(s.requires_targets(), "{s:?} should require targets");
+        }
+        for s in Spectral::iter().filter(|s| !targeted.contains(s)) {
+            assert_eq!(s.min_targets(), 0, "{s:?} should need 0 targets");
+            assert_eq!(s.max_targets(), 0, "{s:?} should need 0 targets");
+            assert!(!s.requires_targets(), "{s:?} should not require targets");
+        }
+    }
+
+    #[test]
+    fn test_requires_hand() {
+        let hand_touching = [
+            Spectral::Talisman,
+            Spectral::Aura,
+            Spectral::DejaVu,
+            Spectral::Trance,
+            Spectral::Medium,
+            Spectral::Cryptid,
+            Spectral::Familiar,
+            Spectral::Grim,
+            Spectral::Incantation,
+            Spectral::Sigil,
+            Spectral::Ouija,
+            Spectral::Immolate,
+        ];
+        for s in hand_touching {
+            assert!(s.requires_hand(), "{s:?} should require a hand");
+        }
+        for s in Spectral::iter().filter(|s| !hand_touching.contains(s)) {
+            assert!(!s.requires_hand(), "{s:?} should not require a hand");
+        }
+    }
+
+    #[test]
+    fn test_spectral_from_str_round_trip() {
+        for s in Spectral::iter() {
+            assert_eq!(format!("{s:?}").parse::<Spectral>(), Ok(s));
+        }
+    }
+
+    #[test]
+    fn test_spectral_from_str_case_insensitive() {
+        assert_eq!("blackhole".parse::<Spectral>(), Ok(Spectral::BlackHole));
+        assert_eq!("BLACKHOLE".parse::<Spectral>(), Ok(Spectral::BlackHole));
+    }
+
+    #[test]
+    fn test_spectral_from_str_invalid() {
+        assert!("NotASpectral".parse::<Spectral>().is_err());
     }
 }

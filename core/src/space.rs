@@ -37,8 +37,9 @@ const PACK_CONTENTS_MAX: usize = 5;
 // 100: sort hand (rank)
 // 101: sort hand (suit)
 // 102: reroll
+// 103: apply spectral
 //
-// We end up with a vector of length 103 where each index
+// We end up with a vector of length 104 where each index
 // represents a potential action.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "python", pyclass(eq))]
@@ -64,6 +65,7 @@ pub struct ActionSpace {
     pub skip_pack: Vec<usize>,
     pub sort_hand: Vec<usize>,
     pub reroll: Vec<usize>,
+    pub apply_spectral: Vec<usize>,
 }
 
 impl ActionSpace {
@@ -88,6 +90,7 @@ impl ActionSpace {
             + self.skip_pack.len()
             + self.sort_hand.len()
             + self.reroll.len()
+            + self.apply_spectral.len()
     }
 
     fn select_card_min(&self) -> usize {
@@ -250,6 +253,14 @@ impl ActionSpace {
         self.reroll_min()
     }
 
+    fn apply_spectral_min(&self) -> usize {
+        self.reroll_min() + self.reroll.len()
+    }
+
+    fn apply_spectral_max(&self) -> usize {
+        self.apply_spectral_min()
+    }
+
     // Not all actions are always legal, by default all actions
     // are masked out, but provide methods to unmask valid.
     pub(crate) fn unmask_select_card(&mut self, i: usize) -> Result<(), ActionSpaceError> {
@@ -376,6 +387,10 @@ impl ActionSpace {
         self.reroll[0] = 1;
     }
 
+    pub(crate) fn unmask_apply_spectral(&mut self) {
+        self.apply_spectral[0] = 1;
+    }
+
     pub fn to_action(&self, index: usize, game: &Game) -> Result<Action, ActionSpaceError> {
         let vec = self.to_vec();
         if let Some(v) = vec.get(index) {
@@ -498,6 +513,11 @@ impl ActionSpace {
             {
                 Ok(Action::Reroll())
             }
+            n if !self.apply_spectral.is_empty()
+                && (self.apply_spectral_min()..=self.apply_spectral_max()).contains(&n) =>
+            {
+                Ok(Action::ApplySpectral())
+            }
             _ => Err(ActionSpaceError::InvalidActionConversion),
         }
     }
@@ -524,6 +544,7 @@ impl ActionSpace {
             self.skip_pack.clone(),
             self.sort_hand.clone(),
             self.reroll.clone(),
+            self.apply_spectral.clone(),
         ]
         .concat()
     }
@@ -558,6 +579,7 @@ impl From<Config> for ActionSpace {
             skip_pack: vec![0; 1],
             sort_hand: vec![0; 2],
             reroll: vec![0; 1],
+            apply_spectral: vec![0; 1],
         }
     }
 }
@@ -586,6 +608,7 @@ impl From<ActionSpace> for Vec<usize> {
             a.skip_pack,
             a.sort_hand,
             a.reroll,
+            a.apply_spectral,
         ]
         .concat()
     }
@@ -634,9 +657,10 @@ mod tests {
         // + 1 cashout + 4 buy_joker + 1 next_round + 1 select_blind + 1 skip_blind
         // + 2 buy_consumable + 2 use_consumable + 1 apply_tarot
         // + 5 sell_joker + 2 sell_consumable
-        // + 2 buy_pack + 5 pick_pack_card + 1 skip_pack + 2 sort_hand + 1 reroll = 103
-        assert_eq!(a.size(), 103);
-        assert_eq!(a.to_vec().len(), 103);
+        // + 2 buy_pack + 5 pick_pack_card + 1 skip_pack + 2 sort_hand + 1 reroll
+        // + 1 apply_spectral = 104
+        assert_eq!(a.size(), 104);
+        assert_eq!(a.to_vec().len(), 104);
     }
 
     #[test]
@@ -651,6 +675,39 @@ mod tests {
         assert_eq!(a.to_vec().len(), a.size());
         // to_action on the apply_tarot index must still resolve and not panic
         assert!(a.to_action(a.apply_tarot_min(), &Game::default()).is_err()); // masked, not a panic
+        // Same for the apply_spectral index, appended at the end of the vector.
+        assert!(a
+            .to_action(a.apply_spectral_min(), &Game::default())
+            .is_err()); // masked, not a panic
+    }
+
+    #[test]
+    fn test_apply_spectral_index_round_trip() {
+        use crate::pack::{Pack, PackCategory, PackContent, PackSize};
+        use crate::spectral::Spectral;
+        let mut g = Game::default();
+        g.start();
+        g.stage = crate::stage::Stage::Shop();
+        g.money = 100;
+        let pack = Pack {
+            category: PackCategory::Spectral,
+            size: PackSize::Normal,
+            contents: vec![PackContent::Spectral(Spectral::Talisman)],
+        };
+        g.shop.packs = vec![pack.clone()];
+        g.handle_action(Action::BuyPack(pack)).unwrap();
+        g.handle_action(Action::PickPackCard(PackContent::Spectral(
+            Spectral::Talisman,
+        )))
+        .unwrap();
+        let card = g.available.cards()[0];
+        g.handle_action(Action::SelectCard(card)).unwrap();
+
+        let space = g.gen_action_space();
+        let idx = space.apply_spectral_min();
+        assert_eq!(space.to_vec()[idx], 1);
+        let action = space.to_action(idx, &g).expect("to action");
+        assert_eq!(action, Action::ApplySpectral());
     }
 
     #[test]

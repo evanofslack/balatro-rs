@@ -208,8 +208,8 @@ impl Shop {
     }
 }
 
-pub(crate) fn gen_edition(prob_mult: u32, rng: &mut impl Rng) -> Edition {
-    if rng.gen_ratio(3u32.saturating_mul(prob_mult).min(1000), 1000) {
+pub(crate) fn gen_edition(prob_mult: u32, rng: &mut impl Rng, allow_negative: bool) -> Edition {
+    if allow_negative && rng.gen_ratio(3u32.saturating_mul(prob_mult).min(1000), 1000) {
         return Edition::Negative;
     }
     if rng.gen_ratio(3u32.saturating_mul(prob_mult).min(1000), 1000) {
@@ -224,14 +224,21 @@ pub(crate) fn gen_edition(prob_mult: u32, rng: &mut impl Rng) -> Edition {
     Edition::Base
 }
 
-pub(crate) fn gen_random_playing_card(prob_mult: u32, rng: &mut impl Rng) -> Card {
-    let values: Vec<Value> = Value::iter().collect();
+pub(crate) fn gen_random_playing_card(
+    prob_mult: u32,
+    rng: &mut impl Rng,
+    force_enhance: bool,
+    force_values: Option<&[Value]>,
+) -> Card {
+    let values: Vec<Value> = Value::iter()
+        .filter(|v| force_values.is_none_or(|fv| fv.contains(v)))
+        .collect();
     let suits: Vec<Suit> = Suit::iter().collect();
     let v = values[rng.gen_range(0..values.len())];
     let s = suits[rng.gen_range(0..suits.len())];
     let mut card = Card::new(v, s);
 
-    if rng.gen_ratio(1, 5) {
+    if rng.gen_ratio(1, 5) || force_enhance {
         const ENHANCEMENTS: [Enhancement; 8] = [
             Enhancement::Bonus,
             Enhancement::Mult,
@@ -245,7 +252,7 @@ pub(crate) fn gen_random_playing_card(prob_mult: u32, rng: &mut impl Rng) -> Car
         card.enhancement = Some(ENHANCEMENTS[rng.gen_range(0..ENHANCEMENTS.len())]);
     }
 
-    card.edition = gen_edition(prob_mult, rng);
+    card.edition = gen_edition(prob_mult, rng, false);
 
     if rng.gen_ratio(1, 10) {
         const SEALS: [Seal; 4] = [Seal::Gold, Seal::Red, Seal::Blue, Seal::Purple];
@@ -281,6 +288,16 @@ impl JokerGenerator {
         rng: &mut impl Rng,
     ) -> Jokers {
         let rarity = self.gen_rarity(rng);
+        self.gen_joker_of_rarity(prob_mult, exclude, rarity, rng)
+    }
+
+    pub(crate) fn gen_joker_of_rarity(
+        &self,
+        prob_mult: u32,
+        exclude: &[Jokers],
+        rarity: Rarity,
+        rng: &mut impl Rng,
+    ) -> Jokers {
         let all = jokers_by_rarity(rarity);
         let choices: Vec<_> = all
             .iter()
@@ -294,7 +311,14 @@ impl JokerGenerator {
         let choices = if choices.is_empty() { all } else { choices };
         let i = rng.gen_range(0..choices.len());
         let mut joker = choices[i].clone();
-        joker.set_edition(gen_edition(prob_mult, rng));
+        joker.set_edition(gen_edition(prob_mult, rng, true));
+        joker.set_instance_id(crate::joker::mint_joker_id());
+        crate::joker::roll_discard_selector(rng, &mut joker);
+        joker
+    }
+
+    pub(crate) fn clone_joker(&self, j: Jokers, rng: &mut impl Rng) -> Jokers {
+        let mut joker = j.to_owned();
         joker.set_instance_id(crate::joker::mint_joker_id());
         crate::joker::roll_discard_selector(rng, &mut joker);
         joker
@@ -368,10 +392,12 @@ impl ConsumableGenerator {
 pub(crate) struct PackGenerator {}
 
 impl PackGenerator {
-    // Weighted random pack selection per spec.
-    // Standard/Arcana/Celestial: Normal=4, Jumbo=2, Mega=0.5 (scaled *10 -> 40,20,5)
-    // Buffoon: Normal=1.2, Jumbo=0.6, Mega=0.15 (scaled *10 -> 12,6,2)
-    // Spectral: excluded
+    // Weighted random pack selection per spec (real per-mille weights from
+    // balatro-seed/src/pools.rs's PACKS table, scaled *100 so every category,
+    // including Spectral's 0.07 Mega weight, is an exact integer):
+    // Standard/Arcana/Celestial: Normal=4.0, Jumbo=2.0, Mega=0.5 -> 400,200,50
+    // Buffoon: Normal=1.2, Jumbo=0.6, Mega=0.15 -> 120,60,15
+    // Spectral: Normal=0.6, Jumbo=0.3, Mega=0.07 -> 60,30,7
     pub(crate) fn gen_pack(
         &self,
         planetarium: &Planetarium,
@@ -382,18 +408,21 @@ impl PackGenerator {
     ) -> Pack {
         #[rustfmt::skip]
         let all_choices: &[(PackCategory, PackSize, u32)] = &[
-            (PackCategory::Standard,  PackSize::Normal, 40),
-            (PackCategory::Standard,  PackSize::Jumbo,  20),
-            (PackCategory::Standard,  PackSize::Mega,    5),
-            (PackCategory::Arcana,    PackSize::Normal, 40),
-            (PackCategory::Arcana,    PackSize::Jumbo,  20),
-            (PackCategory::Arcana,    PackSize::Mega,    5),
-            (PackCategory::Celestial, PackSize::Normal, 40),
-            (PackCategory::Celestial, PackSize::Jumbo,  20),
-            (PackCategory::Celestial, PackSize::Mega,    5),
-            (PackCategory::Buffoon,   PackSize::Normal, 12),
-            (PackCategory::Buffoon,   PackSize::Jumbo,   6),
-            (PackCategory::Buffoon,   PackSize::Mega,    2),
+            (PackCategory::Standard,  PackSize::Normal, 400),
+            (PackCategory::Standard,  PackSize::Jumbo,  200),
+            (PackCategory::Standard,  PackSize::Mega,    50),
+            (PackCategory::Arcana,    PackSize::Normal, 400),
+            (PackCategory::Arcana,    PackSize::Jumbo,  200),
+            (PackCategory::Arcana,    PackSize::Mega,    50),
+            (PackCategory::Celestial, PackSize::Normal, 400),
+            (PackCategory::Celestial, PackSize::Jumbo,  200),
+            (PackCategory::Celestial, PackSize::Mega,    50),
+            (PackCategory::Buffoon,   PackSize::Normal, 120),
+            (PackCategory::Buffoon,   PackSize::Jumbo,   60),
+            (PackCategory::Buffoon,   PackSize::Mega,    15),
+            (PackCategory::Spectral,  PackSize::Normal,  60),
+            (PackCategory::Spectral,  PackSize::Jumbo,   30),
+            (PackCategory::Spectral,  PackSize::Mega,     7),
         ];
 
         let choices: Vec<&(PackCategory, PackSize, u32)> = all_choices
@@ -406,12 +435,10 @@ impl PackGenerator {
         let idx = dist.sample(rng);
         let (category, size, _) = choices[idx];
 
-        let count = match (category, size) {
-            (PackCategory::Buffoon, PackSize::Normal) => 2,
-            (PackCategory::Buffoon, _) => 4,
-            (_, PackSize::Normal) => 3,
-            _ => 5,
-        };
+        // Shared with `RealBackend` (`rng.rs`) so Fast/Real modes can never disagree
+        // on pack content counts - Buffoon and Spectral share the smaller 2/4/4
+        // shape, everything else is 3/5/5.
+        let count = balatro_seed::pack_card_count(*category, *size) as usize;
 
         let contents = self.gen_contents(category, count, planetarium, prob_mult, held_jokers, rng);
 
@@ -459,9 +486,13 @@ impl PackGenerator {
                     .collect()
             }
             PackCategory::Standard => (0..count)
-                .map(|_| PackContent::PlayingCard(gen_random_playing_card(prob_mult, rng)))
+                .map(|_| {
+                    PackContent::PlayingCard(gen_random_playing_card(prob_mult, rng, false, None))
+                })
                 .collect(),
-            PackCategory::Spectral => vec![],
+            PackCategory::Spectral => (0..count)
+                .map(|_| PackContent::Spectral(crate::spectral::random_spectral(rng)))
+                .collect(),
         }
     }
 }
@@ -581,14 +612,34 @@ mod tests {
         let gen = PackGenerator {};
         for _ in 0..50 {
             let pack = gen.gen_pack(&planetarium, 1, None, &[], &mut rand::thread_rng());
-            let expected_count = match (&pack.category, &pack.size) {
-                (PackCategory::Buffoon, PackSize::Normal) => 2,
-                (PackCategory::Buffoon, _) => 4,
-                (_, PackSize::Normal) => 3,
-                _ => 5,
-            };
+            let expected_count =
+                balatro_seed::pack_card_count(pack.category, pack.size) as usize;
             assert_eq!(pack.contents.len(), expected_count);
         }
+    }
+
+    #[test]
+    fn test_pack_gen_can_produce_valid_spectral_packs() {
+        let planetarium = Planetarium::new();
+        let gen = PackGenerator {};
+        let mut saw_spectral = false;
+        for _ in 0..200 {
+            let pack = gen.gen_pack(&planetarium, 1, None, &[], &mut rand::thread_rng());
+            if pack.category != PackCategory::Spectral {
+                continue;
+            }
+            saw_spectral = true;
+            let expected_count =
+                balatro_seed::pack_card_count(pack.category, pack.size) as usize;
+            assert_eq!(pack.contents.len(), expected_count);
+            for content in &pack.contents {
+                let PackContent::Spectral(s) = content else {
+                    panic!("Spectral pack produced non-Spectral content: {content:?}");
+                };
+                assert!(!s.is_rare(), "{s:?} should never appear in a normal draw");
+            }
+        }
+        assert!(saw_spectral, "expected at least one Spectral pack in 200 draws");
     }
 
     #[test]
@@ -623,5 +674,23 @@ mod tests {
             (10..250).contains(&rare),
             "expected ~5% Rare, got {rare}/{n}"
         );
+    }
+
+    #[test]
+    fn test_gen_edition_playing_cards_never_negative() {
+        use rand::SeedableRng;
+        let mut rng = ChaCha8Rng::seed_from_u64(42);
+        // prob_mult saturates every gen_ratio numerator at 1000/1000 (always true);
+        // with allow_negative=false this should fall through to Polychrome instead.
+        for _ in 0..500 {
+            assert_ne!(gen_edition(400, &mut rng, false), Edition::Negative);
+        }
+    }
+
+    #[test]
+    fn test_gen_edition_jokers_can_be_negative() {
+        use rand::SeedableRng;
+        let mut rng = ChaCha8Rng::seed_from_u64(42);
+        assert_eq!(gen_edition(400, &mut rng, true), Edition::Negative);
     }
 }

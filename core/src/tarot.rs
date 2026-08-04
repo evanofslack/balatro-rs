@@ -123,7 +123,17 @@ impl TarotEffect for Tarot {
                 game.money += total.min(50);
             }
             Self::WheelOfFortune => {
-                // TODO: Joker editions not implemented yet
+                if !game.jokers.is_empty() && game.prob_roll(1, 4) {
+                    let picked = game.backend.pick_random_joker(game.jokers.clone());
+                    let edition = game.backend.roll_random_edition();
+                    if let Some(j) = game
+                        .jokers
+                        .iter_mut()
+                        .find(|j| j.instance_id() == picked.instance_id())
+                    {
+                        j.set_edition(edition);
+                    }
+                }
             }
             Self::HighPriestess => {
                 let slots = game.config.consumable_slots;
@@ -401,5 +411,38 @@ mod tests {
         let card = cards.iter().find(|c| c.id == king_id).unwrap();
         assert_eq!(card.value, Value::Ace);
         assert!(!card.is_face_card());
+    }
+
+    #[test]
+    fn test_wheel_of_fortune_noop_without_jokers() {
+        let mut g = game_in_blind();
+        Tarot::WheelOfFortune.apply(&mut g).unwrap();
+        assert!(g.jokers.is_empty());
+    }
+
+    #[test]
+    fn test_wheel_of_fortune_gates_edition_by_prob_roll() {
+        use crate::joker::{Jokers, TheJoker};
+        use balatro_types::Edition;
+
+        let mut g = game_in_blind();
+        g.jokers.push(Jokers::TheJoker(TheJoker::default()));
+
+        let mut saw_base = false;
+        let mut saw_edition = false;
+        for _ in 0..200 {
+            Tarot::WheelOfFortune.apply(&mut g).unwrap();
+
+            assert_eq!(g.jokers.len(), 1, "joker count must not change");
+            match g.jokers[0].edition() {
+                Edition::Base => saw_base = true,
+                Edition::Foil | Edition::Holographic | Edition::Polychrome => saw_edition = true,
+                Edition::Negative => panic!("Wheel of Fortune must never apply Negative"),
+            }
+            g.jokers[0].set_edition(Edition::Base);
+        }
+
+        assert!(saw_base, "1-in-4 gate should sometimes not fire in 200 tries");
+        assert!(saw_edition, "1-in-4 gate should sometimes fire in 200 tries");
     }
 }

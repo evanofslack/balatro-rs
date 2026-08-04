@@ -4,10 +4,11 @@ use crate::deck::Deck;
 use crate::joker::Jokers;
 use crate::pack::{Pack, PackCategory, PackContent, PackSize};
 use crate::planet::{Planetarium, Planets};
-use crate::shop::{ConsumableGenerator, JokerGenerator, PackGenerator};
+use crate::shop::{gen_random_playing_card, ConsumableGenerator, JokerGenerator, PackGenerator};
 use crate::tag::Tag;
 use crate::tarot::Tarot;
 use balatro_seed::Instance;
+use balatro_types::{Edition, Rarity, Suit, Value};
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
@@ -45,7 +46,7 @@ pub(crate) trait RngBackend {
     /// table stays accurate. No-op for `Fast` mode.
     fn on_joker_bought(&mut self, joker: &Jokers);
     fn on_joker_sold(&mut self, joker: &Jokers);
-    /// Jokers::Showman's real effect. No call site yet — see `jokers.md`.
+    /// Jokers::Showman's real effect. No call site yet.
     #[allow(dead_code)]
     fn set_showman(&mut self, owned: bool);
 
@@ -53,6 +54,15 @@ pub(crate) trait RngBackend {
     /// currently only Judgement. Distinct from `gen_shop_item`'s joker arm
     /// since a shop slot's category (joker vs. consumable) is its own roll.
     fn gen_joker(&mut self, ante: i32, prob_mult: u32, exclude: &[Jokers]) -> Jokers;
+    fn gen_joker_of_rarity(
+        &mut self,
+        _ante: i32,
+        prob_mult: u32,
+        exclude: &[Jokers],
+        rarity: Rarity,
+    ) -> Jokers;
+    fn pick_random_joker(&mut self, available: Vec<Jokers>) -> Jokers;
+    fn clone_joker(&mut self, j: Jokers) -> Jokers;
     fn shuffle_deck(&mut self, deck: &mut Deck);
     fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool;
     /// Returns `(small_blind_tag, big_blind_tag)` for a fresh ante.
@@ -69,6 +79,16 @@ pub(crate) trait RngBackend {
     /// `gen_joker`/`gen_shop_item`/`gen_pack`, each already using the right
     /// stream per backend — this is only for rerolling an *existing* joker.
     fn roll_discard_selector(&mut self, j: &mut Jokers);
+    fn roll_random_edition(&mut self) -> Edition;
+    fn roll_random_suit(&mut self) -> Suit;
+    fn roll_random_value(&mut self) -> Value;
+    fn pick_random_card(&mut self, available: Vec<Card>) -> Card;
+    fn gen_random_card(
+        &mut self,
+        prob_mult: u32,
+        force_enhance: bool,
+        force_values: Option<&[Value]>,
+    ) -> Card;
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -142,6 +162,26 @@ impl RngBackend for FastBackend {
         self.joker_gen.gen_joker(prob_mult, exclude, &mut self.rng)
     }
 
+    fn gen_joker_of_rarity(
+        &mut self,
+        _ante: i32,
+        prob_mult: u32,
+        exclude: &[Jokers],
+        rarity: Rarity,
+    ) -> Jokers {
+        self.joker_gen
+            .gen_joker_of_rarity(prob_mult, exclude, rarity, &mut self.rng)
+    }
+
+    fn pick_random_joker(&mut self, available: Vec<Jokers>) -> Jokers {
+        let idx = self.rng.gen_range(0..available.len());
+        available[idx].clone()
+    }
+
+    fn clone_joker(&mut self, j: Jokers) -> Jokers {
+        self.joker_gen.clone_joker(j, &mut self.rng)
+    }
+
     fn shuffle_deck(&mut self, deck: &mut Deck) {
         deck.shuffle(&mut self.rng);
     }
@@ -170,6 +210,34 @@ impl RngBackend for FastBackend {
     fn roll_discard_selector(&mut self, j: &mut Jokers) {
         crate::joker::roll_discard_selector(&mut self.rng, j);
     }
+
+    fn roll_random_edition(&mut self) -> Edition {
+        const EDITIONS: [Edition; 3] = [Edition::Foil, Edition::Holographic, Edition::Polychrome];
+        EDITIONS[self.rng.gen_range(0..EDITIONS.len())]
+    }
+
+    fn roll_random_suit(&mut self) -> Suit {
+        let suits: Vec<Suit> = Suit::iter().collect();
+        suits[self.rng.gen_range(0..suits.len())]
+    }
+
+    fn roll_random_value(&mut self) -> Value {
+        let values: Vec<Value> = Value::iter().collect();
+        values[self.rng.gen_range(0..values.len())]
+    }
+
+    fn pick_random_card(&mut self, available: Vec<Card>) -> Card {
+        available[self.rng.gen_range(0..available.len())]
+    }
+
+    fn gen_random_card(
+        &mut self,
+        prob_mult: u32,
+        force_enhance: bool,
+        force_values: Option<&[Value]>,
+    ) -> Card {
+        gen_random_playing_card(prob_mult, &mut self.rng, force_enhance, force_values)
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -179,13 +247,16 @@ pub(crate) struct RealBackend {
     // `Instance` only replays real Balatro's actual seed algorithm,
     // need a separate dedicated fast rng for some other things atm.
     extra_rng: ChaCha8Rng,
+    // Need a fast backend for gen that real doesn't yet impl
+    fast: FastBackend,
 }
 
 impl RealBackend {
-    pub(crate) fn new(seed: &str) -> Self {
+    pub(crate) fn new(seed: &str, fast: FastBackend) -> Self {
         RealBackend {
             instance: Instance::new(seed),
             extra_rng: ChaCha8Rng::seed_from_u64(crate::seed_from_str(seed).wrapping_add(1)),
+            fast,
         }
     }
 
@@ -319,45 +390,86 @@ impl RngBackend for RealBackend {
     // `Instance::next_joker(source, ante)` exists and isn't wired up yet,
     // real accuracy here is a follow-up. Reuses the same Fast-style
     // generator `FastBackend` uses, seeded off `extra_rng` instead.
-    fn gen_joker(&mut self, _ante: i32, prob_mult: u32, exclude: &[Jokers]) -> Jokers {
-        JokerGenerator::new().gen_joker(prob_mult, exclude, &mut self.extra_rng)
+    fn gen_joker(&mut self, ante: i32, prob_mult: u32, exclude: &[Jokers]) -> Jokers {
+        self.fast.gen_joker(ante, prob_mult, exclude)
+    }
+
+    fn gen_joker_of_rarity(
+        &mut self,
+        ante: i32,
+        prob_mult: u32,
+        exclude: &[Jokers],
+        rarity: Rarity,
+    ) -> Jokers {
+        self.fast
+            .gen_joker_of_rarity(ante, prob_mult, exclude, rarity)
+    }
+
+    fn pick_random_joker(&mut self, available: Vec<Jokers>) -> Jokers {
+        self.fast.pick_random_joker(available)
+    }
+
+    fn clone_joker(&mut self, j: Jokers) -> Jokers {
+        self.fast.clone_joker(j)
     }
 
     // No real Instance equivalent for deck draw order, yet
     fn shuffle_deck(&mut self, deck: &mut Deck) {
-        deck.shuffle(&mut self.extra_rng);
+        self.fast.shuffle_deck(deck);
     }
 
     // No real Instance equivalent for scoring-time probability procs
     // (Lucky/Misprint/SpaceJoker/OopsAllSixes-class effects).
     fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool {
-        self.extra_rng
-            .gen_ratio(numerator.min(denominator), denominator)
+        self.fast.prob_roll(numerator, denominator)
     }
 
     // `Instance::next_tag(ante)` exists and isn't wired up yet - real
     // accuracy here is a follow-up.
     fn draw_ante_tags(&mut self) -> (Tag, Tag) {
-        let tags: Vec<Tag> = Tag::iter().collect();
-        let small = *tags.choose(&mut self.extra_rng).unwrap();
-        let big = *tags.choose(&mut self.extra_rng).unwrap();
-        (small, big)
+        self.fast.draw_ante_tags()
     }
 
     // `Instance::next_tarot(source, ante, soulable)` exists and isn't
     // wired up yet - real accuracy here is a follow-up.
     fn roll_random_tarot(&mut self, exclude: &[Tarot]) -> Consumable {
-        ConsumableGenerator::new().gen_tarot_consumable(exclude, &mut self.extra_rng)
+        self.fast.roll_random_tarot(exclude)
     }
 
     // `Instance::next_planet(source, ante, soulable)` exists and isn't
     // wired up yet - real accuracy here is a follow-up.
     fn roll_random_planet(&mut self, planetarium: &Planetarium, exclude: &[Planets]) -> Consumable {
-        ConsumableGenerator::new().gen_planet_consumable(planetarium, exclude, &mut self.extra_rng)
+        self.fast.roll_random_planet(planetarium, exclude)
     }
 
     fn roll_discard_selector(&mut self, j: &mut Jokers) {
-        crate::joker::roll_discard_selector(&mut self.extra_rng, j);
+        self.fast.roll_discard_selector(j);
+    }
+
+    fn roll_random_edition(&mut self) -> Edition {
+        self.fast.roll_random_edition()
+    }
+
+    fn roll_random_suit(&mut self) -> Suit {
+        self.fast.roll_random_suit()
+    }
+
+    fn roll_random_value(&mut self) -> Value {
+        self.fast.roll_random_value()
+    }
+
+    fn pick_random_card(&mut self, available: Vec<Card>) -> Card {
+        self.fast.pick_random_card(available)
+    }
+
+    fn gen_random_card(
+        &mut self,
+        prob_mult: u32,
+        force_enhance: bool,
+        force_values: Option<&[Value]>,
+    ) -> Card {
+        self.fast
+            .gen_random_card(prob_mult, force_enhance, force_values)
     }
 }
 
@@ -440,6 +552,33 @@ impl RngBackend for Backend {
         }
     }
 
+    fn gen_joker_of_rarity(
+        &mut self,
+        ante: i32,
+        prob_mult: u32,
+        exclude: &[Jokers],
+        rarity: Rarity,
+    ) -> Jokers {
+        match self {
+            Backend::Fast(b) => b.gen_joker_of_rarity(ante, prob_mult, exclude, rarity),
+            Backend::Real(b) => b.gen_joker_of_rarity(ante, prob_mult, exclude, rarity),
+        }
+    }
+
+    fn pick_random_joker(&mut self, available: Vec<Jokers>) -> Jokers {
+        match self {
+            Backend::Fast(b) => b.pick_random_joker(available),
+            Backend::Real(b) => b.pick_random_joker(available),
+        }
+    }
+
+    fn clone_joker(&mut self, j: Jokers) -> Jokers {
+        match self {
+            Backend::Fast(b) => b.clone_joker(j),
+            Backend::Real(b) => b.clone_joker(j),
+        }
+    }
+
     fn shuffle_deck(&mut self, deck: &mut Deck) {
         match self {
             Backend::Fast(b) => b.shuffle_deck(deck),
@@ -479,6 +618,45 @@ impl RngBackend for Backend {
         match self {
             Backend::Fast(b) => b.roll_discard_selector(j),
             Backend::Real(b) => b.roll_discard_selector(j),
+        }
+    }
+    fn roll_random_edition(&mut self) -> Edition {
+        match self {
+            Backend::Fast(b) => b.roll_random_edition(),
+            Backend::Real(b) => b.roll_random_edition(),
+        }
+    }
+
+    fn roll_random_suit(&mut self) -> Suit {
+        match self {
+            Backend::Fast(b) => b.roll_random_suit(),
+            Backend::Real(b) => b.roll_random_suit(),
+        }
+    }
+
+    fn roll_random_value(&mut self) -> Value {
+        match self {
+            Backend::Fast(b) => b.roll_random_value(),
+            Backend::Real(b) => b.roll_random_value(),
+        }
+    }
+
+    fn pick_random_card(&mut self, available: Vec<Card>) -> Card {
+        match self {
+            Backend::Fast(b) => b.pick_random_card(available),
+            Backend::Real(b) => b.pick_random_card(available),
+        }
+    }
+
+    fn gen_random_card(
+        &mut self,
+        prob_mult: u32,
+        force_enhance: bool,
+        force_values: Option<&[Value]>,
+    ) -> Card {
+        match self {
+            Backend::Fast(b) => b.gen_random_card(prob_mult, force_enhance, force_values),
+            Backend::Real(b) => b.gen_random_card(prob_mult, force_enhance, force_values),
         }
     }
 }
@@ -538,7 +716,8 @@ mod tests {
     // panic, not a claim of real-Balatro accuracy.
     #[test]
     fn real_backend_fallback_methods_all_work() {
-        let mut backend = RealBackend::new("TESTSEED");
+        let fast = FastBackend::new(ChaCha8Rng::seed_from_u64(1));
+        let mut backend = RealBackend::new("TESTSEED", fast);
 
         let mut deck = crate::deck::Deck::default();
         let before = deck.cards();
@@ -562,7 +741,8 @@ mod tests {
 
     #[test]
     fn real_backend_set_showman_propagates() {
-        let mut backend = RealBackend::new("TESTSEED");
+        let fast = FastBackend::new(ChaCha8Rng::seed_from_u64(1));
+        let mut backend = RealBackend::new("TESTSEED", fast);
         assert!(!backend.instance.params.showman);
         backend.set_showman(true);
         assert!(backend.instance.params.showman);
@@ -573,7 +753,8 @@ mod tests {
     // Structural check on gen_pack's typed plumbing across many draws.
     #[test]
     fn real_backend_gen_pack_contents_match_category_and_count() {
-        let mut backend = RealBackend::new("TESTSEED");
+        let fast = FastBackend::new(ChaCha8Rng::seed_from_u64(1));
+        let mut backend = RealBackend::new("TESTSEED", fast);
         let planetarium = Planetarium::new();
         let mut seen_categories: std::collections::HashSet<PackCategory> =
             std::collections::HashSet::new();
@@ -629,7 +810,8 @@ mod tests {
     fn real_backend_seed_joker_with_id_rolls_discard_selector() {
         use crate::joker::{Castle, MailInRebate};
 
-        let mut backend = RealBackend::new("TESTSEED");
+        let fast = FastBackend::new(ChaCha8Rng::seed_from_u64(1));
+        let mut backend = RealBackend::new("TESTSEED", fast);
         let castle = seed_joker_with_id(Jokers::Castle(Castle::default()), &mut backend.extra_rng);
         assert!(
             castle.state().selector.is_some(),

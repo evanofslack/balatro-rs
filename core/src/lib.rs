@@ -27,6 +27,7 @@ mod rng;
 pub mod score;
 pub mod shop;
 pub mod space;
+pub mod spectral;
 pub mod stage;
 pub mod tag;
 pub mod tarot;
@@ -231,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn test_tarot_hand_from_shop_draws_exactly_one_hand() {
+    fn test_use_consumable_hand_touching_tarot_illegal_from_shop() {
         use crate::tarot::Tarot;
         let mut g = Game::default();
         g.start();
@@ -239,20 +240,130 @@ mod tests {
         g.stage = Stage::Shop();
         assert_eq!(g.available.cards().len(), 0);
         g.consumables = vec![Consumable::Tarot(Tarot::Magician)];
-        g.handle_action(Action::UseConsumable(Consumable::Tarot(Tarot::Magician)))
+        let res = g.handle_action(Action::UseConsumable(Consumable::Tarot(Tarot::Magician)));
+        assert!(matches!(res, Err(GameError::InvalidAction)));
+        // Consumable is not consumed on a failed use, and no substitute hand is dealt.
+        assert_eq!(g.consumables, vec![Consumable::Tarot(Tarot::Magician)]);
+        assert_eq!(g.stage, Stage::Shop());
+        assert_eq!(g.available.cards().len(), 0);
+    }
+
+    #[test]
+    fn test_use_consumable_hand_touching_spectral_illegal_from_shop() {
+        use crate::spectral::Spectral;
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        assert_eq!(g.available.cards().len(), 0);
+        g.consumables = vec![Consumable::Spectral(Spectral::Talisman)];
+        let res = g.handle_action(Action::UseConsumable(Consumable::Spectral(
+            Spectral::Talisman,
+        )));
+        assert!(matches!(res, Err(GameError::InvalidAction)));
+        assert_eq!(g.consumables, vec![Consumable::Spectral(Spectral::Talisman)]);
+        assert_eq!(g.stage, Stage::Shop());
+        assert_eq!(g.available.cards().len(), 0);
+    }
+
+    // Fool copies the last Tarot or Planet used, never a Spectral (matches its
+    // own description text and real Balatro). Using a Spectral in between must
+    // not overwrite last_consumable_used, and Fool must never duplicate it.
+    #[test]
+    fn test_fool_does_not_copy_spectral_used_via_consumable() {
+        use crate::spectral::Spectral;
+        use crate::tarot::Tarot;
+
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.config.consumable_slots = 3;
+
+        g.consumables = vec![Consumable::Planet(Planets::Mercury)];
+        g.handle_action(Action::UseConsumable(Consumable::Planet(Planets::Mercury)))
             .unwrap();
-        assert!(matches!(g.stage, Stage::TarotHand(Tarot::Magician)));
-        assert_eq!(g.available.cards().len(), g.config.available);
+        assert_eq!(
+            g.last_consumable_used,
+            Some(Consumable::Planet(Planets::Mercury))
+        );
+
+        // Wraith is a 0-target Spectral that doesn't touch the hand, so it's
+        // legal from Shop.
+        g.consumables.push(Consumable::Spectral(Spectral::Wraith));
+        g.handle_action(Action::UseConsumable(Consumable::Spectral(
+            Spectral::Wraith,
+        )))
+        .unwrap();
+        // Using the Spectral must not overwrite what Fool remembers.
+        assert_eq!(
+            g.last_consumable_used,
+            Some(Consumable::Planet(Planets::Mercury))
+        );
+
+        g.consumables.push(Consumable::Tarot(Tarot::Fool));
+        g.handle_action(Action::UseConsumable(Consumable::Tarot(Tarot::Fool)))
+            .unwrap();
+        assert!(g.consumables.contains(&Consumable::Planet(Planets::Mercury)));
+        assert!(
+            !g.consumables
+                .iter()
+                .any(|c| matches!(c, Consumable::Spectral(_))),
+            "Fool must never duplicate a Spectral"
+        );
+    }
+
+    // A 0-target Spectral that still destroys a random card from the hand
+    // (see requires_hand()) must not be usable from Shop, where the hand is
+    // empty — this is the crash this gate exists to prevent.
+    #[test]
+    fn test_use_consumable_zero_target_hand_touching_spectral_illegal_from_shop() {
+        use crate::spectral::Spectral;
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        assert_eq!(g.available.cards().len(), 0);
+        g.consumables = vec![Consumable::Spectral(Spectral::Familiar)];
+        let res = g.handle_action(Action::UseConsumable(Consumable::Spectral(
+            Spectral::Familiar,
+        )));
+        assert!(matches!(res, Err(GameError::InvalidAction)));
+        assert_eq!(g.consumables, vec![Consumable::Spectral(Spectral::Familiar)]);
+
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(!actions.contains(&Action::UseConsumable(Consumable::Spectral(
+            Spectral::Familiar
+        ))));
+    }
+
+    #[test]
+    fn test_gen_actions_use_consumable_spectral_in_shop() {
+        use crate::spectral::Spectral;
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.consumables = vec![Consumable::Spectral(Spectral::Sigil)];
+        let actions: Vec<Action> = g.gen_actions().collect();
+        // Sigil is 0-target but still touches the hand, so it's not offered from Shop.
+        assert!(!actions.contains(&Action::UseConsumable(Consumable::Spectral(Spectral::Sigil))));
     }
 
     #[test]
     fn test_tarot_hand_selection_capped_at_max_targets() {
+        use crate::pack::{Pack, PackCategory, PackContent, PackSize};
         use crate::tarot::Tarot;
+
         let mut g = Game::default();
         g.start();
         g.stage = Stage::Shop();
-        g.consumables = vec![Consumable::Tarot(Tarot::Magician)];
-        g.handle_action(Action::UseConsumable(Consumable::Tarot(Tarot::Magician)))
+        g.money = 100;
+        let pack = Pack {
+            category: PackCategory::Arcana,
+            size: PackSize::Normal,
+            contents: vec![PackContent::Tarot(Tarot::Magician)],
+        };
+        g.shop.packs = vec![pack.clone()];
+        g.handle_action(Action::BuyPack(pack)).unwrap();
+        assert_eq!(g.stage, Stage::PackOpen());
+        g.handle_action(Action::PickPackCard(PackContent::Tarot(Tarot::Magician)))
             .unwrap();
         assert!(matches!(g.stage, Stage::TarotHand(Tarot::Magician)));
         let cards = g.available.cards();
@@ -264,6 +375,52 @@ mod tests {
         let actions: Vec<Action> = g.gen_actions().collect();
         assert!(!actions.iter().any(|a| matches!(a, Action::SelectCard(_))));
         assert!(actions.contains(&Action::ApplyTarot()));
+    }
+
+    #[test]
+    fn test_spectral_hand_select_and_apply_round_trip() {
+        use crate::card::Seal;
+        use crate::pack::{Pack, PackCategory, PackContent, PackSize};
+        use crate::spectral::Spectral;
+
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.money = 100;
+        let pack = Pack {
+            category: PackCategory::Spectral,
+            size: PackSize::Normal,
+            contents: vec![PackContent::Spectral(Spectral::Talisman)],
+        };
+        g.shop.packs = vec![pack.clone()];
+        g.handle_action(Action::BuyPack(pack)).unwrap();
+        g.handle_action(Action::PickPackCard(PackContent::Spectral(
+            Spectral::Talisman,
+        )))
+        .unwrap();
+        assert!(matches!(g.stage, Stage::SpectralHand(Spectral::Talisman)));
+
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(!actions.contains(&Action::ApplySpectral()));
+
+        let card = g.available.cards()[0];
+        g.handle_action(Action::SelectCard(card)).unwrap();
+
+        let actions: Vec<Action> = g.gen_actions().collect();
+        assert!(actions.contains(&Action::ApplySpectral()));
+
+        g.handle_action(Action::ApplySpectral()).unwrap();
+        // The Normal pack's single pick is now used, so finish_pack ran and
+        // returned to Shop, sending any leftover drawn-hand cards to the deck.
+        assert_eq!(g.stage, Stage::Shop());
+        assert_eq!(g.available.cards().len(), 0);
+        let updated = g
+            .deck
+            .cards()
+            .into_iter()
+            .find(|c| c.id == card.id)
+            .unwrap();
+        assert_eq!(updated.seal, Some(Seal::Gold));
     }
 
     #[test]
