@@ -121,6 +121,20 @@ impl fmt::Display for Card {
     }
 }
 
+pub fn card_display(c: &Card) -> String {
+    let mut s = format!("{}", c);
+    if let Some(enhancement) = c.enhancement {
+        s += &format!("[{:?}]", enhancement);
+    }
+    if c.edition != Edition::Base {
+        s += &format!("[{:?}]", c.edition);
+    }
+    if let Some(seal) = c.seal {
+        s += &format!("[{:?}]", seal);
+    }
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
