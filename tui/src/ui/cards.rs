@@ -44,7 +44,7 @@ pub fn suit_char(suit: Suit) -> char {
     }
 }
 
-fn edition_color(edition: Edition) -> Color {
+pub(crate) fn edition_color(edition: Edition) -> Color {
     match edition {
         Edition::Base => Color::Gray,
         Edition::Foil => Color::Cyan,

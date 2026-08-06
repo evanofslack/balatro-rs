@@ -1,4 +1,4 @@
-use crate::app::{AppState, RunInfoTab};
+use crate::app::{AppState, RunInfoTab, WidgetId};
 use crate::ui::overlay::{centered_rect, deck, poker_hands};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -63,6 +63,23 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
         .split(inner);
 
     f.render_widget(Paragraph::new(Line::from(tab_spans)), chunks[0]);
+
+    // Register mouse rects for tabs
+    let mut x = inner.x;
+    for (i, (_, label)) in tabs.iter().enumerate() {
+        let tab_w = label.len() as u16 + 4;
+        app.widget_rects.insert(
+            WidgetId::RunInfoTab(i),
+            Rect {
+                x,
+                y: chunks[0].y,
+                width: tab_w,
+                height: 1,
+            },
+        );
+        x += tab_w + 2;
+    }
+
     f.render_widget(
         Paragraph::new(Span::styled(
             "─".repeat(inner.width as usize),

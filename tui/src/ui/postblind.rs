@@ -1,11 +1,11 @@
-use crate::app::{AppState, WidgetId};
+use crate::app::{AppState, FocusZone, WidgetId};
 use crate::ui::{joker_strip, sidebar};
 use balatro_rs::stage::BlindExt;
 use ratatui::{
-    layout::Rect,
+    layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
 
@@ -40,9 +40,13 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     };
 
     let panel_w: u16 = 50;
-    let panel_h: u16 = 16;
+    let panel_h: u16 = 11;
+    let btn_w: u16 = 20;
+    let btn_h: u16 = 3;
+    let gap: u16 = 1;
+    let combined_h = panel_h + gap + btn_h;
     let panel_x = remaining.x + remaining.width.saturating_sub(panel_w) / 2;
-    let panel_y = remaining.y + remaining.height.saturating_sub(panel_h) / 2;
+    let panel_y = remaining.y + remaining.height.saturating_sub(combined_h) / 2;
     let panel_rect = Rect {
         x: panel_x,
         y: panel_y,
@@ -144,24 +148,36 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
                     .add_modifier(Modifier::BOLD),
             ),
         ]),
-        Line::from(""),
-        Line::from(Span::styled(
-            "         [ Cash Out ]",
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )),
     ];
 
     let para = Paragraph::new(Text::from(lines)).block(block);
     f.render_widget(para, panel_rect);
 
-    // Register cashout button rect
+    // Cash Out button, as its own bordered widget below the stats panel
     let btn_rect = Rect {
-        x: panel_x + 8,
-        y: panel_y + panel_h - 3,
-        width: 14,
-        height: 1,
+        x: remaining.x + remaining.width.saturating_sub(btn_w) / 2,
+        y: panel_y + panel_h + gap,
+        width: btn_w,
+        height: btn_h,
     };
+    let focused = app.focus == FocusZone::CashOutButton;
+    let border_type = if focused {
+        BorderType::Double
+    } else {
+        BorderType::Plain
+    };
+    let btn_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(border_type)
+        .border_style(Style::default().fg(if focused { Color::Yellow } else { Color::DarkGray }));
+    let btn_para = Paragraph::new(Line::from(Span::styled(
+        "Cash Out",
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    )))
+    .block(btn_block)
+    .alignment(Alignment::Center);
+    f.render_widget(btn_para, btn_rect);
     app.widget_rects.insert(WidgetId::CashOutButton, btn_rect);
 }

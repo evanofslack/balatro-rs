@@ -25,6 +25,7 @@ pub enum WidgetId {
     SpectralButton(usize),
     OverlayButton(usize),
     DeckTab(usize),
+    RunInfoTab(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
