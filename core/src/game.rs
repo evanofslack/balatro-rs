@@ -1,7 +1,7 @@
 use crate::action::{Action, MoveDirection};
 use crate::ante::Ante;
 use crate::available::Available;
-use crate::card::{Card, Edition, Enhancement, Seal};
+use crate::card::{card_display, Card, Edition, Enhancement, Seal};
 use crate::config::{Config, RngMode};
 use crate::consumable::Consumable;
 use crate::deck::Deck;
@@ -1305,16 +1305,32 @@ impl fmt::Display for Game {
             .iter()
             .map(|(c, sel)| {
                 if *sel {
-                    format!("[{}]", c)
+                    format!("[{}]", card_display(c))
                 } else {
-                    format!("{}", c)
+                    card_display(c)
                 }
             })
             .collect::<Vec<_>>()
             .join(" ");
         writeln!(f, "hand: {}", hand_str)?;
         writeln!(f, "discard pile: {}", self.discarded.len())?;
-        writeln!(f, "deck: {}", self.deck.len())?;
+        let deck_cards = self.deck.cards();
+        let modified: Vec<String> = deck_cards
+            .iter()
+            .filter(|c| c.enhancement.is_some() || c.edition != Edition::Base || c.seal.is_some())
+            .map(card_display)
+            .collect();
+        if modified.is_empty() {
+            writeln!(f, "deck: {}", deck_cards.len())?;
+        } else {
+            writeln!(
+                f,
+                "deck: {} ({} modified: {})",
+                deck_cards.len(),
+                modified.len(),
+                modified.join(" ")
+            )?;
+        }
         if self.jokers.is_empty() {
             writeln!(f, "jokers: (none)")?;
         } else {

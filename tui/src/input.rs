@@ -837,6 +837,14 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
                 _ => DT::Full,
             };
         }
+        RunInfoTab(idx) => {
+            use crate::app::RunInfoTab as RIT;
+            app.run_info_tab = match idx {
+                0 => RIT::Deck,
+                1 => RIT::PokerHands,
+                _ => RIT::Vouchers,
+            };
+        }
     }
 
     if app.game.stage != prev_stage || app.game.blind != prev_blind {

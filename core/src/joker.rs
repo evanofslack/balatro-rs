@@ -1,4 +1,4 @@
-use crate::card::{Card, Enhancement, Suit, Value};
+use crate::card::{Card, Edition, Enhancement, Suit, Value};
 use crate::effect::{Effects, RuleFlag};
 use crate::game::Game;
 use crate::hand::{MadeHand, SelectHand};
@@ -883,7 +883,36 @@ pub(crate) fn jokers_by_rarity(rarity: Rarity) -> Vec<Jokers> {
 /// foreign type both fail the orphan rule), so this free function stands in
 /// for the old `impl fmt::Display for Jokers`.
 pub fn joker_display(j: &Jokers) -> String {
-    format!("{} [${}, {}] {}", j.name(), j.cost(), j.rarity(), j.desc())
+    let edition = j.edition();
+    let edition_str = if edition == Edition::Base {
+        String::new()
+    } else {
+        format!(" [{:?}]", edition)
+    };
+    let stickers = j.stickers();
+    let mut sticker_flags = Vec::new();
+    if stickers.eternal {
+        sticker_flags.push("Eternal");
+    }
+    if stickers.perishable {
+        sticker_flags.push("Perishable");
+    }
+    if stickers.rental {
+        sticker_flags.push("Rental");
+    }
+    let sticker_str = if sticker_flags.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", sticker_flags.join(","))
+    };
+    format!(
+        "{} [{}]{}{} {}",
+        j.name(),
+        j.rarity(),
+        edition_str,
+        sticker_str,
+        j.desc()
+    )
 }
 
 #[cfg(test)]

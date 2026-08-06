@@ -1,5 +1,5 @@
 use crate::app::{AppState, InspectTarget, WidgetId};
-use crate::ui::cards::{rank_str, suit_char, suit_color};
+use crate::ui::cards::{edition_color, rank_str, suit_char, suit_color};
 use crate::ui::overlay::centered_rect;
 use crate::ui::wrap;
 use balatro_rs::pack::PackCategory;
@@ -70,21 +70,46 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
         InspectTarget::Joker(joker) => {
             let title = format!(" {} ", joker.name());
             let desc = joker.desc();
+            let edition = joker.edition();
+            let stickers = joker.stickers();
+            let mut sticker_flags = Vec::new();
+            if stickers.eternal {
+                sticker_flags.push("Eternal");
+            }
+            if stickers.perishable {
+                sticker_flags.push("Perishable");
+            }
+            if stickers.rental {
+                sticker_flags.push("Rental");
+            }
+            let sticker_str = if sticker_flags.is_empty() {
+                "none".to_string()
+            } else {
+                sticker_flags.join(", ")
+            };
             let mut lines = vec![
                 Line::from(""),
                 Line::from(vec![
-                    Span::raw("  Rarity: "),
+                    Span::raw("  Rarity:   "),
                     Span::styled(
                         joker.rarity().to_string(),
                         Style::default().fg(Color::Magenta),
                     ),
                 ]),
                 Line::from(vec![
-                    Span::raw("  Cost:   "),
+                    Span::raw("  Cost:     "),
                     Span::styled(
                         format!("${}", joker.cost()),
                         Style::default().fg(Color::Yellow),
                     ),
+                ]),
+                Line::from(vec![
+                    Span::raw("  Edition:  "),
+                    Span::styled(format!("{:?}", edition), Style::default().fg(edition_color(edition))),
+                ]),
+                Line::from(vec![
+                    Span::raw("  Stickers: "),
+                    Span::styled(sticker_str, Style::default().fg(Color::Cyan)),
                 ]),
                 Line::from(""),
             ];
