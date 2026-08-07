@@ -20,6 +20,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
         app.overlay = None;
         return;
     };
+    let type_color = crate::ui::consumable_type_color(&c);
 
     // Check if this consumable needs card targets and we're in blind stage
     let selection_info = consumable_selection_info(app, &c);
@@ -28,7 +29,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
         Line::from(""),
         Line::from(vec![
             Span::styled("  Type:  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(c.type_label().to_string(), Style::default().fg(Color::Cyan)),
+            Span::styled(c.type_label().to_string(), Style::default().fg(type_color)),
         ]),
         Line::from(""),
     ];
@@ -77,10 +78,14 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
     };
 
     let sell_value = c.sell_value();
+    let use_text = "  [ Use ]";
+    let gap = "   ";
+    let sell_text = format!("[ Sell (${}) ]", sell_value);
+    let button_row = lines.len() as u16;
     lines.push(Line::from(vec![
-        Span::styled("  [ Use ]", use_style),
-        Span::raw("   "),
-        Span::styled(format!("[ Sell (${}) ]", sell_value), sell_style),
+        Span::styled(use_text, use_style),
+        Span::raw(gap),
+        Span::styled(sell_text.clone(), sell_style),
     ]));
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
@@ -92,30 +97,34 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
         .title(Span::styled(
             format!(" {} ", c.name()),
             Style::default()
-                .fg(Color::Cyan)
+                .fg(type_color)
                 .add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(Style::default().fg(type_color));
 
     let para = Paragraph::new(Text::from(lines)).block(block);
     f.render_widget(para, rect);
 
+    // +1 for the block's top border row.
+    let y = rect.y + 1 + button_row;
+    let use_x = rect.x + 1;
+    let sell_x = use_x + use_text.chars().count() as u16 + gap.chars().count() as u16;
     app.widget_rects.insert(
         WidgetId::OverlayButton(0),
         Rect {
-            x: rect.x + 2,
-            y: rect.y + 7,
-            width: 7,
+            x: use_x,
+            y,
+            width: use_text.chars().count() as u16,
             height: 1,
         },
     );
     app.widget_rects.insert(
         WidgetId::OverlayButton(1),
         Rect {
-            x: rect.x + 12,
-            y: rect.y + 7,
-            width: 14,
+            x: sell_x,
+            y,
+            width: sell_text.chars().count() as u16,
             height: 1,
         },
     );

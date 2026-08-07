@@ -83,7 +83,7 @@ fn render_stats(f: &mut Frame, app: &AppState, inner: Rect) {
         Stage::TarotHand(t) => Line::from(Span::styled(
             t.name(),
             Style::default()
-                .fg(Color::Magenta)
+                .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         )),
         Stage::SpectralHand(s) => Line::from(Span::styled(

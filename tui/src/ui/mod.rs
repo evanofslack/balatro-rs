@@ -13,13 +13,14 @@ pub mod spectral;
 pub mod tarot;
 
 use crate::app::AppState;
+use balatro_rs::consumable::Consumable;
 use balatro_rs::rank::HandRank;
 use balatro_rs::stage::Stage;
 use ratatui::style::Color;
 use ratatui::Frame;
 
-const MIN_WIDTH: u16 = 80;
-const MIN_HEIGHT: u16 = 30;
+const MIN_WIDTH: u16 = 100;
+const MIN_HEIGHT: u16 = 34;
 
 pub fn render(f: &mut Frame, app: &mut AppState) {
     app.widget_rects.clear();
@@ -82,6 +83,17 @@ pub(super) fn hand_rank_name(rank: HandRank) -> &'static str {
         HandRank::FiveOfAKind => "Five of a Kind",
         HandRank::FlushHouse => "Flush House",
         HandRank::FlushFive => "Flush Five",
+    }
+}
+
+/// One color per consumable type, shared everywhere a Tarot/Planet/Spectral
+/// is drawn (shop, owned strip, use/sell dialog, inspect popup) so they
+/// don't drift out of sync with each other.
+pub(super) fn consumable_type_color(c: &Consumable) -> Color {
+    match c {
+        Consumable::Tarot(_) => Color::Yellow, // gold
+        Consumable::Planet(_) => Color::Blue,
+        Consumable::Spectral(_) => Color::Cyan,
     }
 }
 

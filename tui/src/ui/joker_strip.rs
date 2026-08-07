@@ -1,10 +1,10 @@
 use crate::app::{AppState, FocusZone, WidgetId};
-use crate::ui::cards::{CARD_H, CARD_W, SLOT_W};
+use crate::ui::cards::{self, CARD_H, CARD_W, SLOT_W};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
@@ -34,21 +34,6 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     render_consumables(f, app, chunks[1]);
 }
 
-fn wrap_joker_name(name: &str, max_w: usize) -> (String, String) {
-    if name.len() <= max_w {
-        return (name.to_string(), String::new());
-    }
-    let split = name[..max_w].rfind(' ').unwrap_or(max_w);
-    let line1 = name[..split].to_string();
-    let rest = name[split..].trim_start();
-    let line2 = if rest.len() > max_w {
-        format!("{}…", &rest[..max_w.saturating_sub(1)])
-    } else {
-        rest.to_string()
-    };
-    (line1, line2)
-}
-
 fn render_jokers(f: &mut Frame, app: &mut AppState, area: Rect) {
     let jokers = &app.game.jokers;
     let slots = app.game.config.joker_slots;
@@ -70,38 +55,16 @@ fn render_jokers(f: &mut Frame, app: &mut AppState, area: Rect) {
 
         if let Some(joker) = jokers.get(i) {
             let is_cursor = focused && app.cursor == i;
-            let border_type = if is_cursor {
-                BorderType::Double
-            } else {
-                BorderType::Plain
-            };
-            let border_style = if is_cursor {
-                Style::default().fg(Color::Yellow)
-            } else {
-                Style::default().fg(Color::Magenta)
-            };
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_type(border_type)
-                .border_style(border_style);
             let name = joker.name();
-            let (line1, line2) = wrap_joker_name(&name, inner_w);
+            let (line1, line2) = cards::wrap_two_lines(&name, inner_w);
+            let text_style = Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD);
             let lines = vec![
-                Line::from(Span::styled(
-                    line1,
-                    Style::default()
-                        .fg(Color::Magenta)
-                        .add_modifier(Modifier::BOLD),
-                )),
-                Line::from(Span::styled(
-                    line2,
-                    Style::default()
-                        .fg(Color::Magenta)
-                        .add_modifier(Modifier::BOLD),
-                )),
+                Line::from(Span::styled(line1, text_style)),
+                Line::from(Span::styled(line2, text_style)),
             ];
-            let para = Paragraph::new(lines).block(block);
-            f.render_widget(para, slot_rect);
+            cards::render_item_box(f, slot_rect, is_cursor, Color::Magenta, None, lines, None);
             app.widget_rects.insert(WidgetId::JokerSlot(i), slot_rect);
         } else {
             let block = Block::default()
@@ -148,40 +111,19 @@ fn render_consumables(f: &mut Frame, app: &mut AppState, area: Rect) {
 
         if let Some(c) = consumables.get(i) {
             let is_cursor = focused && app.cursor == i;
-            let border_type = if is_cursor {
-                BorderType::Double
-            } else {
-                BorderType::Plain
-            };
-            let border_style = if is_cursor {
-                Style::default().fg(Color::Yellow)
-            } else {
-                Style::default().fg(Color::Cyan)
-            };
-            let block = Block::default()
-                .borders(Borders::ALL)
-                .border_type(border_type)
-                .border_style(border_style);
+            let color = super::consumable_type_color(c);
             let name = c.name();
-            let truncated = if name.len() > inner_w {
-                format!("{}…", &name[..inner_w.saturating_sub(1)])
-            } else {
-                name.to_string()
-            };
+            let (line1, line2) = cards::wrap_two_lines(&name, inner_w);
+            let text_style = Style::default().fg(color).add_modifier(Modifier::BOLD);
             let lines = vec![
-                Line::from(Span::styled(
-                    truncated,
-                    Style::default()
-                        .fg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                )),
-                Line::from(Span::styled(
-                    c.type_label().to_string(),
-                    Style::default().fg(Color::DarkGray),
-                )),
+                Line::from(Span::styled(line1, text_style)),
+                Line::from(Span::styled(line2, text_style)),
             ];
-            let para = Paragraph::new(lines).block(block);
-            f.render_widget(para, slot_rect);
+            let footer = Line::from(Span::styled(
+                c.type_label().to_string(),
+                Style::default().fg(Color::DarkGray),
+            ));
+            cards::render_item_box(f, slot_rect, is_cursor, color, None, lines, Some(footer));
             app.widget_rects
                 .insert(WidgetId::ConsumableSlot(i), slot_rect);
         } else {

@@ -71,11 +71,12 @@ pub(crate) fn joker_lines(joker: &Jokers, w: u16) -> Vec<Line<'static>> {
 
 pub(crate) fn consumable_lines(c: &Consumable, w: u16) -> Vec<Line<'static>> {
     let desc = c.description();
+    let type_color = crate::ui::consumable_type_color(c);
     let mut lines = vec![
         Line::from(""),
         Line::from(vec![
             Span::raw("  Type:  "),
-            Span::styled(c.type_label().to_string(), Style::default().fg(Color::Cyan)),
+            Span::styled(c.type_label().to_string(), Style::default().fg(type_color)),
         ]),
         Line::from(vec![
             Span::raw("  Cost:  "),
@@ -132,7 +133,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
 
     f.render_widget(Clear, rect);
 
-    let (title, lines) = match target {
+    let (title, mut lines) = match target {
         InspectTarget::Card(card) => {
             let suit_style = Style::default()
                 .fg(suit_color(card.suit))
@@ -177,7 +178,6 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
                     ),
                 ]),
                 Line::from(""),
-                close_line(),
             ];
             (title, lines)
         }
@@ -185,21 +185,18 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
             let title = format!(" {} ", joker.name());
             let mut lines = joker_lines(&joker, w);
             lines.push(Line::from(""));
-            lines.push(close_line());
             (title, lines)
         }
         InspectTarget::Consumable(c) => {
             let title = format!(" {} ", c.name());
             let mut lines = consumable_lines(&c, w);
             lines.push(Line::from(""));
-            lines.push(close_line());
             (title, lines)
         }
         InspectTarget::Pack(pack) => {
             let title = format!(" {} ", pack.name());
             let mut lines = pack_lines(&pack, w);
             lines.push(Line::from(""));
-            lines.push(close_line());
             (title, lines)
         }
         InspectTarget::Tag(tag) => {
@@ -213,10 +210,21 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
                 )));
             }
             lines.push(Line::from(""));
-            lines.push(close_line());
             (title, lines)
         }
     };
+
+    // Track the close button's real row instead of assuming it lands at a
+    // fixed offset from the box bottom — content length varies a lot between
+    // target types (fixed-length Card vs. wrapped-description Joker/Pack/etc).
+    let close_row = lines.len() as u16;
+    let close_text = "       [ Close ]";
+    lines.push(Line::from(Span::styled(
+        close_text,
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    )));
 
     let block = Block::default()
         .title(Span::styled(
@@ -231,23 +239,14 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
     let para = Paragraph::new(Text::from(lines)).block(block);
     f.render_widget(para, rect);
 
-    // Close button rect
+    // Close button rect — +1 for the block's top border row.
     app.widget_rects.insert(
         WidgetId::OverlayButton(0),
         Rect {
-            x: rect.x + w / 2 - 5,
-            y: rect.y + h - 2,
-            width: 10,
+            x: rect.x + 1,
+            y: rect.y + 1 + close_row,
+            width: close_text.chars().count() as u16,
             height: 1,
         },
     );
-}
-
-fn close_line() -> Line<'static> {
-    Line::from(Span::styled(
-        "       [ Close ]",
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    ))
 }
