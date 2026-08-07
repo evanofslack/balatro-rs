@@ -449,7 +449,8 @@ impl Game {
         card.is_odd_impl(self.is_face_card(card))
     }
 
-    pub(crate) fn is_card_debuffed(&self, card: &Card) -> bool {
+    /// Whether the active boss (if any) currently debuffs card
+    pub fn is_card_debuffed(&self, card: &Card) -> bool {
         match self.active_boss() {
             Some(BossBlind::Club) => card.matches_suit(Suit::Club),
             Some(BossBlind::Goad) => card.matches_suit(Suit::Spade),
