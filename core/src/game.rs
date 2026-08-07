@@ -631,7 +631,10 @@ impl Game {
         // held in hand effects (cards not played this hand)
         for card in self.available.not_selected() {
             if self.is_card_debuffed(&card) {
-                self.boss_triggered_this_hand = true;
+                // Held-card Matador trigger unconfirmed, real-game check needed.
+                if matches!(card.enhancement, Some(Enhancement::Steel) | Some(Enhancement::Gold)) {
+                    self.boss_triggered_this_hand = true;
+                }
                 continue;
             }
             for trig in 0..self.trigger_count_held(&card) {
@@ -2218,6 +2221,40 @@ mod tests {
         let hand2 = SelectHand::new(vec![ace]).best_hand().unwrap();
         g.calc_score(hand2);
         assert!(!g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_boss_triggered_this_hand_false_for_debuffed_held_card_without_enhancement() {
+        // A bare (no enhancement) debuffed held card was never going to
+        // contribute anything in the held-card loop - the debuff didn't
+        // actually block anything, so it shouldn't pay Matador.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let held_king = Card::new(Value::King, Suit::Club);
+        g.available.extend(vec![held_king]);
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert!(!g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_boss_triggered_this_hand_true_for_debuffed_held_gold_card() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let mut held_king = Card::new(Value::King, Suit::Club);
+        held_king.enhancement = Some(Enhancement::Gold);
+        g.available.extend(vec![held_king]);
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert!(g.boss_triggered_this_hand);
     }
 
     #[test]
