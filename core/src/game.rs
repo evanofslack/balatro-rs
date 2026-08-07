@@ -1,7 +1,7 @@
 use crate::action::{Action, MoveDirection};
 use crate::ante::Ante;
 use crate::available::Available;
-use crate::card::{card_display, Card, Edition, Enhancement, Seal};
+use crate::card::{card_display, Card, Edition, Enhancement, Seal, Suit};
 use crate::config::{Config, RngMode};
 use crate::consumable::Consumable;
 use crate::deck::Deck;
@@ -94,6 +94,9 @@ pub struct Game {
     // set when Luchador is sold, disables the current Boss Blind's effect
     #[cfg_attr(feature = "serde", serde(default))]
     pub(crate) boss_disabled_by_luchador: bool,
+    // set when a boss's ability actually triggered (Matador's trigger condition).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) boss_triggered_this_hand: bool,
 
     pub last_consumable_used: Option<Consumable>,
     #[cfg_attr(feature = "serde", serde(default))]
@@ -181,6 +184,7 @@ impl Game {
             discarded_this_round: Vec::new(),
             total_cards_discarded: 0,
             boss_disabled_by_luchador: false,
+            boss_triggered_this_hand: false,
             last_consumable_used: None,
             last_score: 0,
             reroll_cost: default_reroll_cost(),
@@ -250,7 +254,6 @@ impl Game {
     /// The boss currently in effect, or `None` if we're not in the middle of
     /// that boss's own round, or its effect is disabled (Chicot held, or
     /// Luchador sold this Boss Blind).
-    #[allow(dead_code)] // TODO: use and remove
     pub(crate) fn active_boss(&self) -> Option<BossBlind> {
         if self.blind != Some(Blind::Boss) {
             return None;
@@ -417,6 +420,26 @@ impl Game {
         card.is_odd_impl(self.is_face_card(card))
     }
 
+    pub(crate) fn is_card_debuffed(&self, card: &Card) -> bool {
+        match self.active_boss() {
+            Some(BossBlind::Club) => card.matches_suit(Suit::Club),
+            Some(BossBlind::Goad) => card.matches_suit(Suit::Spade),
+            Some(BossBlind::Head) => card.matches_suit(Suit::Heart),
+            Some(BossBlind::Window) => card.matches_suit(Suit::Diamond),
+            Some(BossBlind::Plant) => self.is_face_card(card),
+            _ => false,
+        }
+    }
+
+    // Filters debuffed cards out of a collection
+    pub(crate) fn non_debuffed<'a>(&self, cards: impl IntoIterator<Item = &'a Card>) -> Vec<Card> {
+        cards
+            .into_iter()
+            .filter(|c| !self.is_card_debuffed(c))
+            .copied()
+            .collect()
+    }
+
     pub(crate) fn most_played_hand_rank(&self) -> HandRank {
         HandRank::iter()
             // royal flush has no storage slot of its own, its counted as straight flush
@@ -505,6 +528,8 @@ impl Game {
         mut hand: MadeHand,
         mut trace: Option<&mut ScoreTrace>,
     ) -> usize {
+        self.boss_triggered_this_hand = false;
+
         // compute chips and mult from hand level
         let chips_before = self.chips;
         let mult_before = self.mult;
@@ -531,6 +556,10 @@ impl Game {
 
         // per-scored-card, rank chips, enhancements, editions
         for card in hand.hand.cards() {
+            if self.is_card_debuffed(&card) {
+                self.boss_triggered_this_hand = true;
+                continue;
+            }
             let is_first = Some(card.id) == first_played_id;
             for trig in 0..self.trigger_count_played(&card, is_first) {
                 let chips_before = self.chips;
@@ -579,6 +608,10 @@ impl Game {
         // still subject to the same retrigger rules as any other played card.
         for card in &hand.all {
             if card.enhancement == Some(Enhancement::Stone) {
+                if self.is_card_debuffed(card) {
+                    self.boss_triggered_this_hand = true;
+                    continue;
+                }
                 let is_first = Some(card.id) == first_played_id;
                 for trig in 0..self.trigger_count_played(card, is_first) {
                     let chips_before = self.chips;
@@ -597,6 +630,10 @@ impl Game {
 
         // held in hand effects (cards not played this hand)
         for card in self.available.not_selected() {
+            if self.is_card_debuffed(&card) {
+                self.boss_triggered_this_hand = true;
+                continue;
+            }
             for trig in 0..self.trigger_count_held(&card) {
                 let chips_before = self.chips;
                 let mult_before = self.mult;
@@ -1930,6 +1967,257 @@ mod tests {
         };
         g.clear_blind();
         assert!(!g.boss_disabled_by_luchador);
+    }
+
+    #[test]
+    fn test_club_boss_debuffs_club_cards() {
+        // King alone: (5 + 10) * 1 = 15 baseline; debuffed, contributes 0 -> 5.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+
+        // doesn't debuff heart
+        let king_h = Card::new(Value::King, Suit::Heart);
+        let hand = SelectHand::new(vec![king_h]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 15);
+
+        // debuffs club
+        let king_c = Card::new(Value::King, Suit::Club);
+        let hand = SelectHand::new(vec![king_c]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_goad_boss_debuffs_spade_cards() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Goad),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Spade);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_head_boss_debuffs_heart_cards() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Head),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Heart);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_window_boss_debuffs_diamond_cards() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Window),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Diamond);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_plant_boss_debuffs_face_cards() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Plant),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Heart);
+        let king_hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(king_hand), 5);
+
+        // Non-face card in the same round, unaffected by Plant.
+        // (5 + 10) * 1 = 15.
+        let ten = Card::new(Value::Ten, Suit::Heart);
+        let ten_hand = SelectHand::new(vec![ten]).best_hand().unwrap();
+        assert_eq!(g.calc_score(ten_hand), 15);
+    }
+
+    #[test]
+    fn test_wild_card_debuffed_by_suit_boss_despite_different_suit() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Window),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        // Wild matches every suit, so it's debuffed by the
+        // Diamond-debuffing Window boss despite its literal suit (Heart).
+        let mut wild_ace = Card::new(Value::Ace, Suit::Heart);
+        wild_ace.enhancement = Some(Enhancement::Wild);
+        let wild_hand = SelectHand::new(vec![wild_ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(wild_hand), 5);
+
+        // Control: a genuinely Heart (non-Wild) card isn't debuffed by Window.
+        // (5 + 11) * 1 = 16.
+        let plain_ace = Card::new(Value::Ace, Suit::Heart);
+        let plain_hand = SelectHand::new(vec![plain_ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(plain_hand), 16);
+    }
+
+    #[test]
+    fn test_debuffed_stone_kicker_loses_chip_bonus() {
+        // Same shape as test_enhancement_stone_as_kicker, but the Stone
+        // card is Club-suited under the Club boss - the kicker's +50 chips
+        // no longer apply. (5 + 11) * 1 = 16, not 66.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let mut stone = Card::new(Value::Two, Suit::Club);
+        stone.enhancement = Some(Enhancement::Stone);
+        let hand = SelectHand::new(vec![ace, stone]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 16);
+    }
+
+    #[test]
+    fn test_debuff_only_applies_during_boss_round() {
+        // Same Club King as test_club_boss_debuffs_club_cards, but blind is
+        // Small, not Boss - active_boss() returns None (Step 2's
+        // round-scoping gate), so the debuff never applies.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Small),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Club);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 15);
+    }
+
+    #[test]
+    fn test_debuffed_card_still_counts_for_hand_type() {
+        // Two Club Kings still form a Pair even though both are debuffed -
+        // hand-type detection happens upstream of calc_score_inner. Pair
+        // level 1: chips=10, mult=2; neither King contributes chips ->
+        // 10 * 2 = 20.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king1 = Card::new(Value::King, Suit::Club);
+        let king2 = Card::new(Value::King, Suit::Club);
+        let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
+        assert_eq!(hand.rank, HandRank::OnePair);
+        assert_eq!(g.calc_score(hand), 20);
+    }
+
+    #[test]
+    fn test_debuffed_card_loses_seal_money() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let money_before = g.money;
+        let mut king = Card::new(Value::King, Suit::Club);
+        king.seal = Some(Seal::Gold);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_debuffed_held_card_loses_enhancement() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let money_before = g.money;
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let mut gold_king = Card::new(Value::King, Suit::Club);
+        gold_king.enhancement = Some(Enhancement::Gold);
+        g.available.extend(vec![gold_king]);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_debuffed_card_skips_retrigger() {
+        // Red Seal normally doubles trigger_count_played; under the Club
+        // boss, the debuffed card's contribution (and its retrigger) are
+        // skipped entirely - score matches the bare base level, not a
+        // doubled-then-zeroed contribution.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let mut king = Card::new(Value::King, Suit::Club);
+        king.seal = Some(Seal::Red);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_non_debuffed_filters_out_debuffed_cards() {
+        let g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let club_king = Card::new(Value::King, Suit::Club);
+        let heart_ace = Card::new(Value::Ace, Suit::Heart);
+        let cards = [club_king, heart_ace];
+        assert_eq!(g.non_debuffed(cards.iter()), vec![heart_ace]);
+    }
+
+    #[test]
+    fn test_boss_triggered_this_hand_set_on_debuff() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Club);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert!(g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_boss_triggered_this_hand_false_without_debuff() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert!(!g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_boss_triggered_this_hand_resets_each_hand() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Club);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert!(g.boss_triggered_this_hand);
+
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand2 = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand2);
+        assert!(!g.boss_triggered_this_hand);
     }
 
     #[test]
