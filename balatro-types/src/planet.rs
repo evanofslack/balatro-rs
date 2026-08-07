@@ -295,8 +295,8 @@ impl Planetarium {
         let (chips_step, mult_step) = Self::level_step(rank);
         let level = self.level_mut(rank);
         level.level -= 1;
-        level.chips -= chips_step;
-        level.mult -= mult_step;
+        level.chips = level.chips.saturating_sub(chips_step);
+        level.mult = level.mult.saturating_sub(mult_step);
     }
 
     /// Per-rank (chips, mult) step
@@ -433,6 +433,20 @@ mod tests {
         assert_eq!(before.level, 1);
         p.level_down(HandRank::OnePair);
         assert_eq!(p.level(HandRank::OnePair), before);
+    }
+
+    #[test]
+    fn test_planetarium_level_down_saturates_on_inconsistent_state() {
+        let mut p = Planetarium::new();
+        let level = p.level_mut(HandRank::OnePair);
+        level.level = 2;
+        level.chips = 0;
+        level.mult = 0;
+        p.level_down(HandRank::OnePair);
+        let after = p.level(HandRank::OnePair);
+        assert_eq!(after.level, 1);
+        assert_eq!(after.chips, 0);
+        assert_eq!(after.mult, 0);
     }
 
     #[test]
