@@ -1541,6 +1541,10 @@ impl Game {
             .map(|j| j.instance_id())
             .filter(|&id| id > 0)
             .max();
+        if game.current_boss.is_none() {
+            game.draw_ante_boss();
+        }
+
         if let Some(max_joker_id) = max_joker_id {
             crate::joker::ensure_joker_id_counter_past(max_joker_id);
         }
@@ -3285,6 +3289,27 @@ mod tests {
         let g2 = Game::from_json(&json).expect("deserialize");
         assert_eq!(g2.jokers.len(), 1);
         assert!(!g2.effect_registry.trigger_count_played.is_empty());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_from_json_backfills_missing_current_boss() {
+        let mut g = Game::default();
+        g.start();
+        assert!(g.current_boss.is_some());
+
+        // Simulate a save written before `current_boss` existed by stripping
+        // the field out of the serialized JSON.
+        let mut value: serde_json::Value =
+            serde_json::from_str(&g.to_json().expect("serialize")).expect("parse");
+        value
+            .as_object_mut()
+            .expect("game serializes to an object")
+            .remove("current_boss");
+        let json = serde_json::to_string(&value).expect("reserialize");
+
+        let g2 = Game::from_json(&json).expect("deserialize");
+        assert!(g2.current_boss.is_some());
     }
 
     #[cfg(feature = "serde")]
