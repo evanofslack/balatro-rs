@@ -39,16 +39,25 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD),
         )),
-        Stage::Blind(b) => Line::from(Span::styled(
-            blind_display(b),
-            Style::default()
-                .fg(match b {
-                    balatro_rs::stage::Blind::Small => Color::Cyan,
-                    balatro_rs::stage::Blind::Big => Color::Yellow,
-                    balatro_rs::stage::Blind::Boss => Color::Red,
-                })
-                .add_modifier(Modifier::BOLD),
-        )),
+        Stage::Blind(b) => {
+            let title = match b {
+                balatro_rs::stage::Blind::Boss => game
+                    .current_boss
+                    .map(|boss| boss.name().to_string())
+                    .unwrap_or_else(|| blind_display(b).to_string()),
+                _ => blind_display(b).to_string(),
+            };
+            Line::from(Span::styled(
+                title,
+                Style::default()
+                    .fg(match b {
+                        balatro_rs::stage::Blind::Small => Color::Cyan,
+                        balatro_rs::stage::Blind::Big => Color::Yellow,
+                        balatro_rs::stage::Blind::Boss => Color::Red,
+                    })
+                    .add_modifier(Modifier::BOLD),
+            ))
+        }
         Stage::PostBlind() => Line::from(Span::styled(
             "Cash Out",
             Style::default()
@@ -85,6 +94,18 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
         )),
     };
     lines.push(stage_line);
+
+    // Boss ability description
+    if let Stage::Blind(balatro_rs::stage::Blind::Boss) = &game.stage {
+        if let Some(boss) = game.current_boss {
+            for word_line in wrap(boss.description(), (inner.width as usize).saturating_sub(1)) {
+                lines.push(Line::from(Span::styled(
+                    word_line,
+                    Style::default().fg(Color::Gray),
+                )));
+            }
+        }
+    }
     lines.push(Line::from(""));
 
     // Target score (during blind)
@@ -191,7 +212,7 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     ]));
     lines.push(Line::from(vec![
         label("Discards "),
-        value(game.discards.to_string(), Color::Red),
+        value(game.discards().to_string(), Color::Red),
     ]));
     lines.push(Line::from(vec![
         label("Money    "),

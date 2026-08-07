@@ -74,9 +74,8 @@ impl JokerEffects for Jokers {
             }
             Self::GreedyJoker(_) => {
                 fn apply(g: &mut Game, hand: MadeHand) {
-                    let diamonds = hand
-                        .hand
-                        .cards()
+                    let diamonds = g
+                        .non_debuffed(hand.hand.cards().iter())
                         .iter()
                         .filter(|c| c.matches_suit(Suit::Diamond))
                         .count();
@@ -86,9 +85,8 @@ impl JokerEffects for Jokers {
             }
             Self::LustyJoker(_) => {
                 fn apply(g: &mut Game, hand: MadeHand) {
-                    let hearts = hand
-                        .hand
-                        .cards()
+                    let hearts = g
+                        .non_debuffed(hand.hand.cards().iter())
                         .iter()
                         .filter(|c| c.matches_suit(Suit::Heart))
                         .count();
@@ -98,9 +96,8 @@ impl JokerEffects for Jokers {
             }
             Self::WrathfulJoker(_) => {
                 fn apply(g: &mut Game, hand: MadeHand) {
-                    let spades = hand
-                        .hand
-                        .cards()
+                    let spades = g
+                        .non_debuffed(hand.hand.cards().iter())
                         .iter()
                         .filter(|c| c.matches_suit(Suit::Spade))
                         .count();
@@ -110,9 +107,8 @@ impl JokerEffects for Jokers {
             }
             Self::GluttonousJoker(_) => {
                 fn apply(g: &mut Game, hand: MadeHand) {
-                    let clubs = hand
-                        .hand
-                        .cards()
+                    let clubs = g
+                        .non_debuffed(hand.hand.cards().iter())
                         .iter()
                         .filter(|c| c.matches_suit(Suit::Club))
                         .count();
@@ -219,13 +215,13 @@ impl JokerEffects for Jokers {
             }
             Self::Banner(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    g.chips += 30 * g.discards;
+                    g.chips += 30 * g.discards();
                 }
                 vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
             }
             Self::MysticSummit(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    if g.discards == 0 {
+                    if g.discards() == 0 {
                         g.mult += 15;
                     }
                 }
@@ -239,7 +235,10 @@ impl JokerEffects for Jokers {
             }
             Self::RideTheBus(_) => {
                 fn apply(g: &mut Game, hand: MadeHand) {
-                    let has_face = hand.hand.cards().iter().any(|c| g.is_face_card(c));
+                    let has_face = g
+                        .non_debuffed(hand.hand.cards().iter())
+                        .iter()
+                        .any(|c| g.is_face_card(c));
                     if has_face {
                         g.consecutive_hands_without_face_card = 0;
                     } else {
@@ -331,7 +330,7 @@ impl JokerEffects for Jokers {
             }
             Self::ScaryFace(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    for card in _hand.hand.cards() {
+                    for card in g.non_debuffed(_hand.hand.cards().iter()) {
                         if g.is_face_card(&card) {
                             g.chips += 30;
                         }
@@ -379,7 +378,7 @@ impl JokerEffects for Jokers {
             }
             Self::BusinessCard(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    for card in _hand.hand.cards() {
+                    for card in g.non_debuffed(_hand.hand.cards().iter()) {
                         if g.is_face_card(&card) && g.prob_roll(1, 2) {
                             g.money += 2;
                         }
@@ -398,8 +397,7 @@ impl JokerEffects for Jokers {
             Self::Baron(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     let kings = g
-                        .available
-                        .not_selected()
+                        .non_debuffed(g.available.not_selected().iter())
                         .iter()
                         .filter(|c| c.value == Value::King)
                         .count();
@@ -418,7 +416,7 @@ impl JokerEffects for Jokers {
                         .cards()
                         .into_iter()
                         .map(|mut c| {
-                            if g.is_face_card(&c) {
+                            if g.is_face_card(&c) && !g.is_card_debuffed(&c) {
                                 c.enhancement = Some(Enhancement::Gold);
                                 g.mutate_card(c.id, |c| c.enhancement = Some(Enhancement::Gold));
                             }
@@ -431,7 +429,7 @@ impl JokerEffects for Jokers {
             }
             Self::Photograph(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    for card in _hand.hand.cards() {
+                    for card in g.non_debuffed(_hand.hand.cards().iter()) {
                         if g.is_face_card(&card) {
                             g.mult *= 2;
                             break;
@@ -442,7 +440,7 @@ impl JokerEffects for Jokers {
             }
             Self::ReservedParking(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    for card in g.available.not_selected() {
+                    for card in g.non_debuffed(g.available.not_selected().iter()) {
                         if g.is_face_card(&card) && g.prob_roll(1, 2) {
                             g.money += 1;
                         }
@@ -482,7 +480,7 @@ impl JokerEffects for Jokers {
             }
             Self::SmileyFace(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    for card in _hand.hand.cards() {
+                    for card in g.non_debuffed(_hand.hand.cards().iter()) {
                         if g.is_face_card(&card) {
                             g.mult += 5;
                         }
@@ -510,7 +508,7 @@ impl JokerEffects for Jokers {
             }
             Self::RoughGem(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    for card in _hand.hand.cards() {
+                    for card in g.non_debuffed(_hand.hand.cards().iter()) {
                         if card.matches_suit(Suit::Diamond) {
                             g.money += 1;
                         }
@@ -520,7 +518,7 @@ impl JokerEffects for Jokers {
             }
             Self::Bloodstone(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    for card in _hand.hand.cards() {
+                    for card in g.non_debuffed(_hand.hand.cards().iter()) {
                         if card.matches_suit(Suit::Heart) && g.prob_roll(1, 2) {
                             g.mult += g.mult / 2;
                         }
@@ -530,7 +528,7 @@ impl JokerEffects for Jokers {
             }
             Self::Arrowhead(_) => {
                 fn apply(g: &mut Game, hand: MadeHand) {
-                    for card in hand.hand.cards() {
+                    for card in g.non_debuffed(hand.hand.cards().iter()) {
                         if card.matches_suit(Suit::Spade) {
                             g.chips += 50;
                         }
@@ -540,7 +538,7 @@ impl JokerEffects for Jokers {
             }
             Self::OnyxAgate(_) => {
                 fn apply(g: &mut Game, hand: MadeHand) {
-                    for card in hand.hand.cards() {
+                    for card in g.non_debuffed(hand.hand.cards().iter()) {
                         if card.matches_suit(Suit::Club) {
                             g.mult += 7;
                         }
@@ -713,7 +711,7 @@ impl JokerEffects for Jokers {
                 // (discard_selected decrements before invoking OnDiscard).
                 fn apply(g: &mut Game, hand: MadeHand) {
                     if hand.all.len() == 1
-                        && g.discards == g.config.discards.saturating_sub(1)
+                        && g.discards_remaining == g.config.discards.saturating_sub(1)
                     {
                         g.destroy_card(hand.all[0].id);
                         g.money += 3;
@@ -726,7 +724,7 @@ impl JokerEffects for Jokers {
                 // round, both already reset to config values in clear_blind.
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     let hands_played = g.config.plays - g.plays;
-                    let discards_used = g.config.discards - g.discards;
+                    let discards_used = g.config.discards - g.discards_remaining;
                     let delta = hands_played as i64 - discards_used as i64;
                     g.mult = (g.mult as i64 + delta).max(0) as usize;
                 }
@@ -735,7 +733,7 @@ impl JokerEffects for Jokers {
             Self::HitTheRoad(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     let jacks = g
-                        .discarded_this_round
+                        .non_debuffed(g.discarded_this_round.iter())
                         .iter()
                         .filter(|c| c.value == Value::Jack)
                         .count();
@@ -762,7 +760,7 @@ impl JokerEffects for Jokers {
                         return;
                     };
                     let count = g
-                        .discarded_this_round
+                        .non_debuffed(g.discarded_this_round.iter())
                         .iter()
                         .filter(|c| c.matches_suit(suit))
                         .count();
@@ -920,6 +918,7 @@ mod tests {
     use crate::card::{Card, Enhancement, Suit, Value};
     use crate::hand::SelectHand;
     use crate::stage::{Blind, Stage};
+    use balatro_types::BossBlind;
 
     use super::*;
 
@@ -1783,7 +1782,7 @@ mod tests {
         // (5 + 11 + 120) * 1 = 136
         assert_eq!(g.calc_score(best.clone()), 136);
 
-        g.discards = 0;
+        g.discards_remaining = 0;
         // Banner: +0 chips
         // (5 + 11 + 0) * 1 = 16
         assert_eq!(g.calc_score(best.clone()), 16);
@@ -1816,7 +1815,7 @@ mod tests {
         assert_eq!(g.calc_score(best.clone()), 16);
 
         // Now set discards to 0 -> +15 mult
-        g.discards = 0;
+        g.discards_remaining = 0;
         // (5 + 11) * (1 + 15) = 16 * 16 = 256
         assert_eq!(g.calc_score(best.clone()), 256);
     }
@@ -3531,11 +3530,11 @@ mod tests {
                       // mult = 1 + (1 - 0) = 2; score = 16 * 2 = 32
         assert_eq!(g.calc_score(ace_hand.clone()), 32);
 
-        g.discards -= 1; // 1 discard used
+        g.discards_remaining -= 1; // 1 discard used
                          // mult = 1 + (1 - 1) = 1; score = 16
         assert_eq!(g.calc_score(ace_hand.clone()), 16);
 
-        g.discards -= 1; // 2 discards used
+        g.discards_remaining -= 1; // 2 discards used
                          // mult = 1 + (1 - 2) = 0 (floored, not negative); score = 0
         assert_eq!(g.calc_score(ace_hand), 0);
     }
@@ -3753,5 +3752,291 @@ mod tests {
             mail.state().selector.is_some(),
             "MailInRebate minted with no selector"
         );
+    }
+
+    // --- Group A boss debuff x joker interactions ---
+    // Each test plays/holds/discards a card that would normally trigger the
+    // joker, but the card is debuffed by the relevant Group A boss (via
+    // `non_debuffed`) - the joker's bonus must not apply.
+
+    #[test]
+    fn test_greedy_joker_does_not_count_debuffed_diamond() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Window),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::GreedyJoker(GreedyJoker::default())],
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Diamond);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        // (5) * 1 = 5 - debuffed card contributes nothing and isn't counted.
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_lusty_joker_does_not_count_debuffed_heart() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Head),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::LustyJoker(LustyJoker::default())],
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_wrathful_joker_does_not_count_debuffed_spade() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Goad),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::WrathfulJoker(WrathfulJoker::default())],
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Spade);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_gluttonous_joker_does_not_count_debuffed_club() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::GluttonousJoker(GluttonousJoker::default())],
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Club);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_rough_gem_does_not_pay_for_debuffed_diamond() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Window),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::RoughGem(RoughGem::default())],
+            ..Default::default()
+        };
+        let money_before = g.money;
+        let ace = Card::new(Value::Ace, Suit::Diamond);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_bloodstone_does_not_trigger_on_debuffed_heart() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Head),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::Bloodstone(Bloodstone::default())],
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        // debuffed card is filtered before the probabilistic roll ever
+        // happens, so this is deterministic despite Bloodstone's own RNG.
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_arrowhead_does_not_add_chips_for_debuffed_spade() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Goad),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::Arrowhead(Arrowhead::default())],
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Spade);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_onyx_agate_does_not_add_mult_for_debuffed_club() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::OnyxAgate(OnyxAgate::default())],
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Club);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_castle_does_not_count_debuffed_discarded_suit() {
+        let mut j = Jokers::Castle(Castle::default());
+        j.set_instance_id(1);
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            jokers: vec![j],
+            ..Default::default()
+        };
+        g.joker_state_mut(1).unwrap().selector = Some(SelectorValue::Suit(Suit::Club));
+
+        let club_card = Card::new(Value::Four, Suit::Club);
+        g.available.extend(vec![club_card]);
+        g.select_card(club_card).unwrap();
+        g.discard_selected().unwrap();
+
+        let ace_hand = SelectHand::new(vec![Card::new(Value::Ace, Suit::Heart)])
+            .best_hand()
+            .unwrap();
+        // debuffed discarded Club doesn't count -> Castle contributes 0
+        // chips. (5 + 11) * 1 = 16, not 16 + 3 = 19.
+        assert_eq!(g.calc_score(ace_hand), 16);
+    }
+
+    #[test]
+    fn test_hit_the_road_does_not_count_debuffed_discarded_jack() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::HitTheRoad(HitTheRoad::default())],
+            ..Default::default()
+        };
+        let jack_club = Card::new(Value::Jack, Suit::Club);
+        g.available.extend(vec![jack_club]);
+        g.select_card(jack_club).unwrap();
+        g.discard_selected().unwrap();
+
+        let ace_hand = SelectHand::new(vec![Card::new(Value::Ace, Suit::Heart)])
+            .best_hand()
+            .unwrap();
+        // debuffed discarded Jack doesn't count -> HitTheRoad contributes
+        // 0 mult. (5 + 11) * 1 = 16, not (5 + 11) * 1.5 = 24.
+        assert_eq!(g.calc_score(ace_hand), 16);
+    }
+
+    #[test]
+    fn test_smiley_face_does_not_count_debuffed_face_card() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Plant),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::SmileyFace(SmileyFace::default())],
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Heart);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_scary_face_does_not_add_chips_for_debuffed_face_card() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Plant),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::ScaryFace(ScaryFace::default())],
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Heart);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_business_card_does_not_trigger_on_debuffed_face_card() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Plant),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::BusinessCard(BusinessCard::default())],
+            ..Default::default()
+        };
+        let money_before = g.money;
+        let king = Card::new(Value::King, Suit::Heart);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_photograph_does_not_double_mult_for_debuffed_face_card() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Plant),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::Photograph(Photograph::default())],
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Heart);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        // mult stays at 1 (never doubled) -> 5 * 1 = 5, not 5 * 2 = 10.
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_ride_the_bus_ignores_debuffed_face_card() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Plant),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::RideTheBus(RideTheBus::default())],
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Heart);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        // debuffed King doesn't count as a face card -> streak 0 -> 1,
+        // +1 mult. chips = 5 (debuffed), mult = 1 + 1 = 2 -> 5 * 2 = 10.
+        // If the debuff were ignored here, the King would reset the streak
+        // instead (mult stays 1, score 5).
+        assert_eq!(g.calc_score(hand), 10);
+    }
+
+    #[test]
+    fn test_midas_mask_does_not_convert_debuffed_face_card() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Plant),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::MidasMask(MidasMask::default())],
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Heart);
+        g.available.extend(vec![king]);
+
+        let hand = SelectHand::new(vec![king]);
+        g.calc_score(hand.best_hand().unwrap());
+
+        let scored = g.available.cards().into_iter().find(|c| c.id == king.id);
+        assert_eq!(scored.unwrap().enhancement, None);
+    }
+
+    #[test]
+    fn test_reserved_parking_does_not_trigger_on_debuffed_held_face_card() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Plant),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::ReservedParking(ReservedParking::default())],
+            ..Default::default()
+        };
+        let money_before = g.money;
+        let king = Card::new(Value::King, Suit::Heart);
+        g.available.extend(vec![king]); // held, not played
+
+        let ace = Card::new(Value::Ace, Suit::Diamond);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_baron_does_not_count_debuffed_held_king() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Plant),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::Baron(Baron::default())],
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Heart);
+        g.available.extend(vec![king]); // held, not played
+
+        let ace = Card::new(Value::Ace, Suit::Diamond);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        // Baron never sees the held King (debuffed) -> mult stays 1.
+        // (5 + 11) * 1 = 16, not * 1.5 = 24.
+        assert_eq!(g.calc_score(hand), 16);
     }
 }

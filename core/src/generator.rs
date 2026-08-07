@@ -63,7 +63,7 @@ impl Game {
             return None;
         }
         // If no discards remaining, return None
-        if self.discards == 0 {
+        if self.discards() == 0 {
             return None;
         }
         // If no cards selected, return None
@@ -513,7 +513,7 @@ impl Game {
         if self.plays != 0 {
             space.unmask_play();
         }
-        if self.discards != 0 {
+        if self.discards() != 0 {
             space.unmask_discard();
         }
     }

@@ -197,6 +197,27 @@ impl BossBlind {
                 | Self::VioletVessel
         )
     }
+
+    /// Earliest ante this boss can be drawn at. 0 means "any ante".
+    pub fn min_ante(&self) -> i32 {
+        match self {
+            Self::Ox => 6,
+            Self::Serpent => 5,
+            Self::Plant => 4,
+            Self::Eye | Self::Tooth => 3,
+            Self::House
+            | Self::Wall
+            | Self::Wheel
+            | Self::Arm
+            | Self::Fish
+            | Self::Water
+            | Self::Mouth
+            | Self::Needle
+            | Self::Flint
+            | Self::Mark => 2,
+            _ => 0,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -224,5 +245,18 @@ mod tests {
     #[test]
     fn test_boss_blind_finisher_count() {
         assert_eq!(BossBlind::iter().filter(|b| b.is_finisher()).count(), 5);
+    }
+
+    #[test]
+    fn test_boss_blind_any_min_ante_count() {
+        // 8 regular bosses have no minimum ante (matches the wiki: "Ante 1 has
+        // only 8 eligible bosses").
+        let regular_any = BossBlind::iter()
+            .filter(|b| !b.is_finisher() && b.min_ante() == 0)
+            .count();
+        assert_eq!(regular_any, 8);
+
+        let all_any = BossBlind::iter().filter(|b| b.min_ante() == 0).count();
+        assert_eq!(all_any, 13);
     }
 }

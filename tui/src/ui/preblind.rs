@@ -1,7 +1,19 @@
 use crate::app::{AppState, FocusZone, WidgetId};
-use crate::ui::sidebar;
+use crate::ui::{sidebar, wrap};
 use balatro_rs::action::Action;
 use balatro_rs::stage::{blind_display, Blind, BlindExt};
+
+/// The score a given blind will require - unlike `Game::required_score()`,
+/// doesn't depend on `self.blind` already being set to this blind, so it
+/// can preview all three (including the as-yet-unselected Boss) up front.
+fn preview_required_score(game: &balatro_rs::game::Game, blind: &Blind) -> usize {
+    let base = game.ante_current.base();
+    match blind {
+        Blind::Small => base,
+        Blind::Big => (base as f32 * 1.5) as usize,
+        Blind::Boss => game.boss_required_score(),
+    }
+}
 
 fn blind_state(game: &balatro_rs::game::Game, blind: &Blind) -> BlindState {
     let valid = game
@@ -111,9 +123,17 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
             Style::default().fg(border_color)
         };
 
+        let title_text = match blind {
+            Blind::Boss => app
+                .game
+                .current_boss
+                .map(|boss| boss.name().to_string())
+                .unwrap_or_else(|| blind_display(blind).to_string()),
+            _ => blind_display(blind).to_string(),
+        };
         let block = Block::default()
             .title(Span::styled(
-                blind_display(blind),
+                title_text,
                 Style::default()
                     .fg(title_color)
                     .add_modifier(Modifier::BOLD),
@@ -123,6 +143,42 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
             .border_style(border_style);
 
         let mut lines = vec![Line::from("")];
+
+        // Boss ability description - shown up front since the boss is known
+        // ante-wide, before Small/Big are even selected.
+        if *blind == Blind::Boss && state != BlindState::Cleared {
+            if let Some(boss) = app.game.current_boss {
+                let desc_color = if state == BlindState::Available {
+                    Color::White
+                } else {
+                    Color::DarkGray
+                };
+                for word_line in wrap(boss.description(), (card_w as usize).saturating_sub(3)) {
+                    lines.push(Line::from(Span::styled(
+                        format!("  {word_line}"),
+                        Style::default().fg(desc_color),
+                    )));
+                }
+                lines.push(Line::from(""));
+            }
+        }
+
+        let score_style = if state == BlindState::Available {
+            Style::default()
+                .fg(Color::LightBlue)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+        if state != BlindState::Cleared {
+            lines.push(Line::from(vec![
+                Span::styled("  Score: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    format!("{}", preview_required_score(&app.game, blind)),
+                    score_style,
+                ),
+            ]));
+        }
 
         match state {
             BlindState::Available => {

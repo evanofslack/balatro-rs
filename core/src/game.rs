@@ -1,7 +1,7 @@
 use crate::action::{Action, MoveDirection};
 use crate::ante::Ante;
 use crate::available::Available;
-use crate::card::{card_display, Card, Edition, Enhancement, Seal};
+use crate::card::{card_display, Card, Edition, Enhancement, Seal, Suit};
 use crate::config::{Config, RngMode};
 use crate::consumable::Consumable;
 use crate::deck::Deck;
@@ -20,6 +20,7 @@ use crate::stage::{Blind, BlindExt, End, Stage};
 use crate::tag::Tag;
 use crate::tarot::{Tarot, TarotEffect};
 
+use balatro_types::BossBlind;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashSet;
@@ -48,6 +49,8 @@ pub struct Game {
     pub small_blind_tag: Tag,
     pub big_blind_tag: Tag,
     pub blind: Option<Blind>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub current_boss: Option<BossBlind>,
     pub stage: Stage,
     pub ante_start: Ante,
     pub ante_end: Ante,
@@ -65,7 +68,8 @@ pub struct Game {
 
     // playing
     pub plays: usize,
-    pub discards: usize,
+    #[cfg_attr(feature = "serde", serde(rename = "discards"))] // shouldn't access directly
+    pub discards_remaining: usize,
     pub reward: usize,
     pub money: usize,
 
@@ -88,6 +92,12 @@ pub struct Game {
     // run total of cards discarded (Discard action only), never reset.
     #[cfg_attr(feature = "serde", serde(default))]
     pub(crate) total_cards_discarded: usize,
+    // set when Luchador is sold, disables the current Boss Blind's effect
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) boss_disabled_by_luchador: bool,
+    // set when a boss's ability actually triggered (Matador's trigger condition).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) boss_triggered_this_hand: bool,
 
     pub last_consumable_used: Option<Consumable>,
     #[cfg_attr(feature = "serde", serde(default))]
@@ -155,13 +165,14 @@ impl Game {
             effect_registry: EffectRegistry::new(),
             consumables: Vec::new(),
             blind: None,
+            current_boss: None,
             stage: Stage::PreBlind(),
             ante_start,
             ante_end: Ante::try_from(config.ante_end).unwrap_or(Ante::Eight),
             ante_current: ante_start,
             round: config.round_start,
             plays: config.plays,
-            discards: config.discards,
+            discards_remaining: config.discards,
             reward: config.reward_base,
             money: config.money_start,
             chips: config.base_chips,
@@ -173,6 +184,8 @@ impl Game {
             consecutive_hands_not_most_played_type: 0,
             discarded_this_round: Vec::new(),
             total_cards_discarded: 0,
+            boss_disabled_by_luchador: false,
+            boss_triggered_this_hand: false,
             last_consumable_used: None,
             last_score: 0,
             reroll_cost: default_reroll_cost(),
@@ -185,6 +198,7 @@ impl Game {
             config,
         };
         game.draw_ante_tags();
+        game.draw_ante_boss();
         game
     }
 
@@ -227,14 +241,49 @@ impl Game {
     pub(crate) fn clear_blind(&mut self) {
         self.score = self.config.base_score;
         self.plays = self.config.plays;
-        self.discards = self.config.discards;
+        self.discards_remaining = self.config.discards;
         self.hand_ranks_played_this_round.clear();
         self.discarded_this_round.clear();
+        self.boss_disabled_by_luchador = false;
         self.deck.append(&mut self.discarded);
         self.deck.extend(self.available.cards());
         self.available.empty();
         self.backend.shuffle_deck(&mut self.deck);
         self.roll_discard_selectors();
+    }
+
+    /// The boss currently in effect, or `None` if we're not in the middle of
+    /// that boss's own round, or its effect is disabled (Chicot held, or
+    /// Luchador sold this Boss Blind).
+    pub(crate) fn active_boss(&self) -> Option<BossBlind> {
+        if self.blind != Some(Blind::Boss) {
+            return None;
+        }
+        if self.jokers.iter().any(|j| matches!(j, Jokers::Chicot(_))) {
+            return None;
+        }
+        if self.boss_disabled_by_luchador {
+            return None;
+        }
+        self.current_boss
+    }
+
+    /// Discards actually usable right now
+    pub fn discards(&self) -> usize {
+        if self.active_boss() == Some(BossBlind::Water) {
+            0
+        } else {
+            self.discards_remaining
+        }
+    }
+
+    /// Cards dealt per round
+    pub fn hand_size(&self) -> usize {
+        if self.active_boss() == Some(BossBlind::Manacle) {
+            self.config.available.saturating_sub(1)
+        } else {
+            self.config.available
+        }
     }
 
     // Castle/MailInRebate lock onto a fresh random suit/rank each round
@@ -259,7 +308,7 @@ impl Game {
         self.deck.extend(self.available.cards());
         self.available.empty();
         self.backend.shuffle_deck(&mut self.deck);
-        self.draw(self.config.available);
+        self.draw(self.hand_size());
     }
 
     /// Reshuffles discarded/held cards back into the deck and redraws a
@@ -300,7 +349,12 @@ impl Game {
         }
         self.discarded.extend(self.available.selected());
         let removed = self.available.remove_selected();
-        self.draw(removed);
+        let n = if self.active_boss() == Some(BossBlind::Serpent) {
+            3
+        } else {
+            removed
+        };
+        self.draw(n);
         for card in scored.hand.cards() {
             if card.enhancement == Some(Enhancement::Glass) && self.prob_roll(1, 4) {
                 self.destroy_card(card.id);
@@ -314,16 +368,21 @@ impl Game {
 
     // discard selected cards from available and draw equal number back to available
     pub(crate) fn discard_selected(&mut self) -> Result<(), GameError> {
-        if self.discards == 0 {
+        if self.discards() == 0 {
             return Err(GameError::NoRemainingDiscards);
         }
-        self.discards -= 1;
+        self.discards_remaining -= 1;
         let discarded = self.available.selected();
         self.discarded.extend(discarded.iter().copied());
         self.discarded_this_round.extend(discarded.iter().copied());
         self.total_cards_discarded += discarded.len();
         let removed = self.available.remove_selected();
-        self.draw(removed);
+        let n = if self.active_boss() == Some(BossBlind::Serpent) {
+            3
+        } else {
+            removed
+        };
+        self.draw(n);
 
         // Check for purple seals
         for card in &discarded {
@@ -388,6 +447,27 @@ impl Game {
 
     pub(crate) fn is_odd(&self, card: &Card) -> bool {
         card.is_odd_impl(self.is_face_card(card))
+    }
+
+    /// Whether the active boss (if any) currently debuffs card
+    pub fn is_card_debuffed(&self, card: &Card) -> bool {
+        match self.active_boss() {
+            Some(BossBlind::Club) => card.matches_suit(Suit::Club),
+            Some(BossBlind::Goad) => card.matches_suit(Suit::Spade),
+            Some(BossBlind::Head) => card.matches_suit(Suit::Heart),
+            Some(BossBlind::Window) => card.matches_suit(Suit::Diamond),
+            Some(BossBlind::Plant) => self.is_face_card(card),
+            _ => false,
+        }
+    }
+
+    // Filters debuffed cards out of a collection
+    pub(crate) fn non_debuffed<'a>(&self, cards: impl IntoIterator<Item = &'a Card>) -> Vec<Card> {
+        cards
+            .into_iter()
+            .filter(|c| !self.is_card_debuffed(c))
+            .copied()
+            .collect()
     }
 
     pub(crate) fn most_played_hand_rank(&self) -> HandRank {
@@ -478,12 +558,25 @@ impl Game {
         mut hand: MadeHand,
         mut trace: Option<&mut ScoreTrace>,
     ) -> usize {
+        self.boss_triggered_this_hand = false;
+
         // compute chips and mult from hand level
         let chips_before = self.chips;
         let mult_before = self.mult;
+        if self.active_boss() == Some(BossBlind::Arm) && self.planetarium.level(hand.rank).level > 1
+        {
+            self.planetarium.level_down(hand.rank);
+            self.boss_triggered_this_hand = true;
+        }
         let level = self.planetarium.play(hand.rank);
-        self.chips += level.chips;
-        self.mult += level.mult;
+        let (level_chips, level_mult) = if self.active_boss() == Some(BossBlind::Flint) {
+            self.boss_triggered_this_hand = true;
+            (level.chips / 2, level.mult / 2)
+        } else {
+            (level.chips, level.mult)
+        };
+        self.chips += level_chips;
+        self.mult += level_mult;
         self.record_step(
             &mut trace,
             ScoreSource::HandLevel(hand.rank),
@@ -504,6 +597,10 @@ impl Game {
 
         // per-scored-card, rank chips, enhancements, editions
         for card in hand.hand.cards() {
+            if self.is_card_debuffed(&card) {
+                self.boss_triggered_this_hand = true;
+                continue;
+            }
             let is_first = Some(card.id) == first_played_id;
             for trig in 0..self.trigger_count_played(&card, is_first) {
                 let chips_before = self.chips;
@@ -552,6 +649,10 @@ impl Game {
         // still subject to the same retrigger rules as any other played card.
         for card in &hand.all {
             if card.enhancement == Some(Enhancement::Stone) {
+                if self.is_card_debuffed(card) {
+                    self.boss_triggered_this_hand = true;
+                    continue;
+                }
                 let is_first = Some(card.id) == first_played_id;
                 for trig in 0..self.trigger_count_played(card, is_first) {
                     let chips_before = self.chips;
@@ -570,6 +671,16 @@ impl Game {
 
         // held in hand effects (cards not played this hand)
         for card in self.available.not_selected() {
+            if self.is_card_debuffed(&card) {
+                // Held-card Matador trigger unconfirmed, real-game check needed.
+                if matches!(
+                    card.enhancement,
+                    Some(Enhancement::Steel) | Some(Enhancement::Gold)
+                ) {
+                    self.boss_triggered_this_hand = true;
+                }
+                continue;
+            }
             for trig in 0..self.trigger_count_held(&card) {
                 let chips_before = self.chips;
                 let mult_before = self.mult;
@@ -662,7 +773,22 @@ impl Game {
             None => base,
             Some(Blind::Small) => base,
             Some(Blind::Big) => (base as f32 * 1.5) as usize,
-            Some(Blind::Boss) => base * 2,
+            Some(Blind::Boss) => base * Self::boss_score_multiplier(self.active_boss()),
+        }
+    }
+
+    /// The score the upcoming Boss Blind will require, based on
+    /// `current_boss`, valid before boss blind is active.
+    pub fn boss_required_score(&self) -> usize {
+        self.ante_current.base() * Self::boss_score_multiplier(self.current_boss)
+    }
+
+    fn boss_score_multiplier(boss: Option<BossBlind>) -> usize {
+        match boss {
+            Some(BossBlind::Wall) => 4,
+            Some(BossBlind::VioletVessel) => 6,
+            Some(BossBlind::Needle) => 1,
+            _ => 2,
         }
     }
 
@@ -1127,6 +1253,10 @@ impl Game {
         self.big_blind_tag = big;
     }
 
+    fn draw_ante_boss(&mut self) {
+        self.current_boss = Some(self.backend.draw_boss(self.ante_current as i32));
+    }
+
     pub fn skip_tag(&self, blind: Blind) -> Option<Tag> {
         match blind {
             Blind::Small => Some(self.small_blind_tag),
@@ -1177,6 +1307,7 @@ impl Game {
                 self.ante_current = ante_next;
                 self.blind = None;
                 self.draw_ante_tags();
+                self.draw_ante_boss();
             } else {
                 self.stage = Stage::End(End::Win);
                 return Ok(false);
@@ -1355,7 +1486,7 @@ impl fmt::Display for Game {
         writeln!(f, "blind: {:?}", self.blind)?;
         writeln!(f, "round: {}", self.round)?;
         writeln!(f, "hands remaining: {}", self.plays)?;
-        writeln!(f, "discards remaining: {}", self.discards)?;
+        writeln!(f, "discards remaining: {}", self.discards())?;
         writeln!(f, "money: {}", self.money)?;
         if matches!(self.stage, Stage::Blind(_)) {
             writeln!(
@@ -1410,6 +1541,10 @@ impl Game {
             .map(|j| j.instance_id())
             .filter(|&id| id > 0)
             .max();
+        if game.current_boss.is_none() {
+            game.draw_ante_boss();
+        }
+
         if let Some(max_joker_id) = max_joker_id {
             crate::joker::ensure_joker_id_counter_past(max_joker_id);
         }
@@ -1454,6 +1589,21 @@ mod tests {
         assert_eq!(g.shop.packs[1].size, PackSize::Normal);
         let p2_contents: Vec<String> = g.shop.packs[1].contents.iter().map(|c| c.name()).collect();
         assert_eq!(p2_contents, vec!["Medium", "Wraith"]);
+    }
+
+    // `cargo run -p balatro-seed --bin explore -- TEST --ante 1` reports
+    // `Boss: The Goad` for this seed, but `RealBackend::draw_boss` doesn't
+    // match it (yet).
+    // TODO: Fix min ante for real rng boss gen
+    #[test]
+    fn test_real_rng_mode_draw_boss_reaches_instance() {
+        let config = Config {
+            rng_mode: RngMode::Real,
+            seed_str: Some("TEST".to_string()),
+            ..Config::default()
+        };
+        let g = Game::new(config);
+        assert_eq!(g.current_boss, Some(BossBlind::Flint));
     }
 
     // Same seed through two independent `Game`s: proves `RngMode::Real`
@@ -1833,6 +1983,716 @@ mod tests {
     }
 
     #[test]
+    fn test_active_boss_during_boss_blind() {
+        let g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        assert_eq!(g.active_boss(), Some(BossBlind::Club));
+    }
+
+    #[test]
+    fn test_active_boss_none_outside_boss_round() {
+        let g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Small),
+            ..Default::default()
+        };
+        assert_eq!(g.active_boss(), None);
+    }
+
+    #[test]
+    fn test_active_boss_none_when_chicot_held() {
+        use crate::joker::*;
+        let g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::Chicot(Chicot::default())],
+            ..Default::default()
+        };
+        assert_eq!(g.active_boss(), None);
+    }
+
+    #[test]
+    fn test_active_boss_none_when_luchador_disabled() {
+        let g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            boss_disabled_by_luchador: true,
+            ..Default::default()
+        };
+        assert_eq!(g.active_boss(), None);
+    }
+
+    #[test]
+    fn test_boss_disabled_by_luchador_resets_on_clear_blind() {
+        let mut g = Game {
+            boss_disabled_by_luchador: true,
+            ..Default::default()
+        };
+        g.clear_blind();
+        assert!(!g.boss_disabled_by_luchador);
+    }
+
+    #[test]
+    fn test_club_boss_debuffs_club_cards() {
+        // King alone: (5 + 10) * 1 = 15 baseline; debuffed, contributes 0 -> 5.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+
+        // doesn't debuff heart
+        let king_h = Card::new(Value::King, Suit::Heart);
+        let hand = SelectHand::new(vec![king_h]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 15);
+
+        // debuffs club
+        let king_c = Card::new(Value::King, Suit::Club);
+        let hand = SelectHand::new(vec![king_c]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_goad_boss_debuffs_spade_cards() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Goad),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Spade);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_head_boss_debuffs_heart_cards() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Head),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Heart);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_window_boss_debuffs_diamond_cards() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Window),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Diamond);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_plant_boss_debuffs_face_cards() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Plant),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Heart);
+        let king_hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(king_hand), 5);
+
+        // Non-face card in the same round, unaffected by Plant.
+        // (5 + 10) * 1 = 15.
+        let ten = Card::new(Value::Ten, Suit::Heart);
+        let ten_hand = SelectHand::new(vec![ten]).best_hand().unwrap();
+        assert_eq!(g.calc_score(ten_hand), 15);
+    }
+
+    #[test]
+    fn test_wild_card_debuffed_by_suit_boss_despite_different_suit() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Window),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        // Wild matches every suit, so it's debuffed by the
+        // Diamond-debuffing Window boss despite its literal suit (Heart).
+        let mut wild_ace = Card::new(Value::Ace, Suit::Heart);
+        wild_ace.enhancement = Some(Enhancement::Wild);
+        let wild_hand = SelectHand::new(vec![wild_ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(wild_hand), 5);
+
+        // Control: a genuinely Heart (non-Wild) card isn't debuffed by Window.
+        // (5 + 11) * 1 = 16.
+        let plain_ace = Card::new(Value::Ace, Suit::Heart);
+        let plain_hand = SelectHand::new(vec![plain_ace]).best_hand().unwrap();
+        assert_eq!(g.calc_score(plain_hand), 16);
+    }
+
+    #[test]
+    fn test_debuffed_stone_kicker_loses_chip_bonus() {
+        // Same shape as test_enhancement_stone_as_kicker, but the Stone
+        // card is Club-suited under the Club boss - the kicker's +50 chips
+        // no longer apply. (5 + 11) * 1 = 16, not 66.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let mut stone = Card::new(Value::Two, Suit::Club);
+        stone.enhancement = Some(Enhancement::Stone);
+        let hand = SelectHand::new(vec![ace, stone]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 16);
+    }
+
+    #[test]
+    fn test_debuff_only_applies_during_boss_round() {
+        // Same Club King as test_club_boss_debuffs_club_cards, but blind is
+        // Small, not Boss - active_boss() returns None (Step 2's
+        // round-scoping gate), so the debuff never applies.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Small),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Club);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 15);
+    }
+
+    #[test]
+    fn test_debuffed_card_still_counts_for_hand_type() {
+        // Two Club Kings still form a Pair even though both are debuffed -
+        // hand-type detection happens upstream of calc_score_inner. Pair
+        // level 1: chips=10, mult=2; neither King contributes chips ->
+        // 10 * 2 = 20.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king1 = Card::new(Value::King, Suit::Club);
+        let king2 = Card::new(Value::King, Suit::Club);
+        let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
+        assert_eq!(hand.rank, HandRank::OnePair);
+        assert_eq!(g.calc_score(hand), 20);
+    }
+
+    #[test]
+    fn test_debuffed_card_loses_seal_money() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let money_before = g.money;
+        let mut king = Card::new(Value::King, Suit::Club);
+        king.seal = Some(Seal::Gold);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_debuffed_held_card_loses_enhancement() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let money_before = g.money;
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let mut gold_king = Card::new(Value::King, Suit::Club);
+        gold_king.enhancement = Some(Enhancement::Gold);
+        g.available.extend(vec![gold_king]);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_debuffed_card_skips_retrigger() {
+        // Red Seal normally doubles trigger_count_played; under the Club
+        // boss, the debuffed card's contribution (and its retrigger) are
+        // skipped entirely - score matches the bare base level, not a
+        // doubled-then-zeroed contribution.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let mut king = Card::new(Value::King, Suit::Club);
+        king.seal = Some(Seal::Red);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        assert_eq!(g.calc_score(hand), 5);
+    }
+
+    #[test]
+    fn test_non_debuffed_filters_out_debuffed_cards() {
+        let g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let club_king = Card::new(Value::King, Suit::Club);
+        let heart_ace = Card::new(Value::Ace, Suit::Heart);
+        let cards = [club_king, heart_ace];
+        assert_eq!(g.non_debuffed(cards.iter()), vec![heart_ace]);
+    }
+
+    #[test]
+    fn test_boss_triggered_this_hand_set_on_debuff() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Club);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert!(g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_boss_triggered_this_hand_false_without_debuff() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert!(!g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_boss_triggered_this_hand_resets_each_hand() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king = Card::new(Value::King, Suit::Club);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert!(g.boss_triggered_this_hand);
+
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand2 = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand2);
+        assert!(!g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_boss_triggered_this_hand_false_for_debuffed_held_card_without_enhancement() {
+        // A bare (no enhancement) debuffed held card was never going to
+        // contribute anything in the held-card loop - the debuff didn't
+        // actually block anything, so it shouldn't pay Matador.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let held_king = Card::new(Value::King, Suit::Club);
+        g.available.extend(vec![held_king]);
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert!(!g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_boss_triggered_this_hand_true_for_debuffed_held_gold_card() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let mut held_king = Card::new(Value::King, Suit::Club);
+        held_king.enhancement = Some(Enhancement::Gold);
+        g.available.extend(vec![held_king]);
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert!(g.boss_triggered_this_hand);
+    }
+
+    // --- Group B: required-score multiplier (Wall, VioletVessel, Needle) ---
+
+    #[test]
+    fn test_wall_boss_quadruples_required_score() {
+        let g = Game {
+            current_boss: Some(BossBlind::Wall),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        assert_eq!(g.required_score(), 300 * 4);
+    }
+
+    #[test]
+    fn test_violet_vessel_boss_sextuples_required_score() {
+        let g = Game {
+            current_boss: Some(BossBlind::VioletVessel),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        assert_eq!(g.required_score(), 300 * 6);
+    }
+
+    #[test]
+    fn test_needle_boss_reduces_required_score() {
+        let g = Game {
+            current_boss: Some(BossBlind::Needle),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        assert_eq!(g.required_score(), 300);
+    }
+
+    #[test]
+    fn test_required_score_default_boss_multiplier_for_other_bosses() {
+        let g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        assert_eq!(g.required_score(), 300 * 2);
+    }
+
+    #[test]
+    fn test_required_score_returns_to_default_when_boss_disabled() {
+        let g = Game {
+            current_boss: Some(BossBlind::Wall),
+            blind: Some(Blind::Boss),
+            boss_disabled_by_luchador: true,
+            ..Default::default()
+        };
+        assert_eq!(g.required_score(), 300 * 2);
+    }
+
+    #[test]
+    fn test_boss_required_score_previews_before_boss_blind_selected() {
+        let g = Game {
+            current_boss: Some(BossBlind::Wall),
+            blind: Some(Blind::Big),
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        // required_score() reflects the *current* blind (Big), not Boss -
+        // boss_required_score() previews the upcoming Boss's number instead.
+        assert_eq!(g.required_score(), (300f32 * 1.5) as usize);
+        assert_eq!(g.boss_required_score(), 300 * 4);
+    }
+
+    // --- Group C: hand-level chip/mult halving (Flint) ---
+
+    #[test]
+    fn test_flint_boss_halves_pair_base_chips_and_mult() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Flint),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Diamond);
+        let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
+        // OnePair level 1: (10, 2) halved to (5, 1). Cards unaffected: +20 chips.
+        // (5 + 20) * 1 = 25.
+        assert_eq!(g.calc_score(hand), 25);
+    }
+
+    #[test]
+    fn test_flint_boss_zeroes_score_when_mult_floors_to_zero() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Flint),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        // HighCard level 1: (5, 1) halved via integer division to (2, 0).
+        // mult 0 zeroes the whole score regardless of chips - unconfirmed
+        // against real Balatro's exact rounding, worth a real-game check.
+        assert_eq!(g.calc_score(hand), 0);
+    }
+
+    #[test]
+    fn test_flint_boss_sets_boss_triggered_this_hand() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Flint),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert!(g.boss_triggered_this_hand);
+    }
+
+    // --- Group D: delevel by one (Arm) ---
+
+    #[test]
+    fn test_arm_boss_decrements_level_by_one_not_to_one() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Arm),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        g.planetarium.level_up(HandRank::OnePair);
+        g.planetarium.level_up(HandRank::OnePair);
+        // level 3: (40, 4) -> Arm decrements once to level 2: (25, 3).
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Diamond);
+        let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
+        // (25 + 20) * 3 = 135, NOT level-1 (10 + 20) * 2 = 60.
+        assert_eq!(g.calc_score(hand), 135);
+    }
+
+    #[test]
+    fn test_arm_boss_decrement_is_permanent() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Arm),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        g.planetarium.level_up(HandRank::OnePair);
+        g.planetarium.level_up(HandRank::OnePair);
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Diamond);
+        let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.planetarium.level(HandRank::OnePair).level, 2);
+    }
+
+    #[test]
+    fn test_arm_boss_cannot_decrement_below_level_one() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Arm),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Diamond);
+        let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
+        // Already level 1: (10 + 20) * 2 = 60, unaffected.
+        assert_eq!(g.calc_score(hand), 60);
+        assert_eq!(g.planetarium.level(HandRank::OnePair).level, 1);
+    }
+
+    #[test]
+    fn test_arm_boss_decrements_again_each_subsequent_play_until_level_one() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Arm),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        g.planetarium.level_up(HandRank::OnePair);
+        g.planetarium.level_up(HandRank::OnePair);
+        let hand = || {
+            let king1 = Card::new(Value::King, Suit::Heart);
+            let king2 = Card::new(Value::King, Suit::Diamond);
+            SelectHand::new(vec![king1, king2]).best_hand().unwrap()
+        };
+
+        g.calc_score(hand()); // level 3 -> 2
+        assert!(g.boss_triggered_this_hand);
+        assert_eq!(g.planetarium.level(HandRank::OnePair).level, 2);
+
+        g.calc_score(hand()); // level 2 -> 1
+        assert!(g.boss_triggered_this_hand);
+        assert_eq!(g.planetarium.level(HandRank::OnePair).level, 1);
+
+        g.calc_score(hand()); // already level 1, no further decrement
+        assert!(!g.boss_triggered_this_hand);
+        assert_eq!(g.planetarium.level(HandRank::OnePair).level, 1);
+    }
+
+    #[test]
+    fn test_arm_boss_triggers_matador_only_when_actually_deleveled() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Arm),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Diamond);
+        let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert!(!g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_arm_boss_still_increments_real_play_count() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Arm),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        g.planetarium.level_up(HandRank::OnePair);
+        let king1 = Card::new(Value::King, Suit::Heart);
+        let king2 = Card::new(Value::King, Suit::Diamond);
+        let hand = SelectHand::new(vec![king1, king2]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.planetarium.level(HandRank::OnePair).plays, 1);
+    }
+
+    // --- Group E, part 1: Water, Manacle, Serpent ---
+
+    #[test]
+    fn test_water_boss_blocks_discards() {
+        let g = Game {
+            current_boss: Some(BossBlind::Water),
+            blind: Some(Blind::Boss),
+            discards_remaining: 4,
+            ..Default::default()
+        };
+        assert_eq!(g.discards(), 0);
+        assert_eq!(g.discards_remaining, 4);
+    }
+
+    #[test]
+    fn test_water_boss_discards_restored_when_disabled_mid_round() {
+        let g = Game {
+            current_boss: Some(BossBlind::Water),
+            blind: Some(Blind::Boss),
+            discards_remaining: 4,
+            boss_disabled_by_luchador: true,
+            ..Default::default()
+        };
+        assert_eq!(g.discards(), 4);
+    }
+
+    #[test]
+    fn test_water_boss_no_effect_outside_boss_round() {
+        let g = Game {
+            current_boss: Some(BossBlind::Water),
+            blind: Some(Blind::Small),
+            discards_remaining: 4,
+            ..Default::default()
+        };
+        assert_eq!(g.discards(), 4);
+    }
+
+    #[test]
+    fn test_discard_selected_rejected_under_water() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Water),
+            blind: Some(Blind::Big),
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        g.select_blind(Blind::Boss).expect("can select boss blind");
+        let card = g.available.cards()[0];
+        g.select_card(card).expect("can select card");
+        let before = g.discards_remaining;
+        let result = g.discard_selected();
+        assert!(matches!(result, Err(GameError::NoRemainingDiscards)));
+        assert_eq!(g.discards_remaining, before);
+    }
+
+    #[test]
+    fn test_manacle_boss_reduces_hand_size() {
+        let g = Game {
+            current_boss: Some(BossBlind::Manacle),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        assert_eq!(g.hand_size(), 7);
+    }
+
+    #[test]
+    fn test_manacle_boss_deals_reduced_hand() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Manacle),
+            blind: Some(Blind::Big),
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        g.select_blind(Blind::Boss).expect("can select boss blind");
+        assert_eq!(g.available.cards().len(), 7);
+    }
+
+    #[test]
+    fn test_manacle_boss_no_effect_outside_boss_round() {
+        let g = Game {
+            current_boss: Some(BossBlind::Manacle),
+            blind: Some(Blind::Small),
+            ..Default::default()
+        };
+        assert_eq!(g.hand_size(), 8);
+    }
+
+    #[test]
+    fn test_serpent_boss_grows_hand_when_fewer_than_three_removed() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Serpent),
+            blind: Some(Blind::Big),
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        g.select_blind(Blind::Boss).expect("can select boss blind");
+        let cards: Vec<Card> = g.available.cards().into_iter().take(2).collect();
+        for card in cards {
+            g.select_card(card).expect("can select card");
+        }
+        g.discard_selected().expect("can discard");
+        assert_eq!(g.available.cards().len(), 9);
+    }
+
+    #[test]
+    fn test_serpent_boss_shrinks_hand_when_more_than_three_removed() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Serpent),
+            blind: Some(Blind::Big),
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        g.select_blind(Blind::Boss).expect("can select boss blind");
+        let cards: Vec<Card> = g.available.cards().into_iter().take(5).collect();
+        for card in cards {
+            g.select_card(card).expect("can select card");
+        }
+        g.discard_selected().expect("can discard");
+        assert_eq!(g.available.cards().len(), 6);
+    }
+
+    #[test]
+    fn test_serpent_boss_applies_to_play_selected_too() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Serpent),
+            blind: Some(Blind::Big),
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        g.select_blind(Blind::Boss).expect("can select boss blind");
+        let card = g.available.cards()[0];
+        g.select_card(card).expect("can select card");
+        g.play_selected().expect("can play selected");
+        assert_eq!(g.available.cards().len(), 10);
+    }
+
+    #[test]
+    fn test_serpent_boss_no_effect_outside_boss_round() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Serpent),
+            blind: None,
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        g.select_blind(Blind::Small)
+            .expect("can select small blind");
+        let cards: Vec<Card> = g.available.cards().into_iter().take(2).collect();
+        for card in cards {
+            g.select_card(card).expect("can select card");
+        }
+        g.discard_selected().expect("can discard");
+        assert_eq!(g.available.cards().len(), 8);
+    }
+
+    #[test]
     fn test_play_selected() {
         let mut g = Game::default();
         g.start();
@@ -1854,7 +2714,7 @@ mod tests {
         assert_eq!(g.score, g.config.base_score);
         // Plays and discards should reset
         assert_eq!(g.plays, g.config.plays);
-        assert_eq!(g.discards, g.config.discards);
+        assert_eq!(g.discards_remaining, g.config.discards);
         // All cards back in deck after clear_blind, available is empty
         assert_eq!(g.deck.len(), 52);
         // Discarded should be length 0
@@ -2406,7 +3266,7 @@ mod tests {
         assert_eq!(g2.stage, g.stage);
         assert_eq!(g2.ante_current, g.ante_current);
         assert_eq!(g2.plays, g.plays);
-        assert_eq!(g2.discards, g.discards);
+        assert_eq!(g2.discards_remaining, g.discards_remaining);
         assert_eq!(g2.money, g.money);
         assert_eq!(g2.available.cards().len(), g.available.cards().len());
         assert_eq!(g2.deck.len(), g.deck.len());
@@ -2429,6 +3289,27 @@ mod tests {
         let g2 = Game::from_json(&json).expect("deserialize");
         assert_eq!(g2.jokers.len(), 1);
         assert!(!g2.effect_registry.trigger_count_played.is_empty());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_from_json_backfills_missing_current_boss() {
+        let mut g = Game::default();
+        g.start();
+        assert!(g.current_boss.is_some());
+
+        // Simulate a save written before `current_boss` existed by stripping
+        // the field out of the serialized JSON.
+        let mut value: serde_json::Value =
+            serde_json::from_str(&g.to_json().expect("serialize")).expect("parse");
+        value
+            .as_object_mut()
+            .expect("game serializes to an object")
+            .remove("current_boss");
+        let json = serde_json::to_string(&value).expect("reserialize");
+
+        let g2 = Game::from_json(&json).expect("deserialize");
+        assert!(g2.current_boss.is_some());
     }
 
     #[cfg(feature = "serde")]
@@ -2783,6 +3664,27 @@ mod tests {
         assert_ne!(g.ante_current, ante_before);
         assert!(Tag::iter().any(|t| t == g.small_blind_tag));
         assert!(Tag::iter().any(|t| t == g.big_blind_tag));
+    }
+
+    #[test]
+    fn test_current_boss_set_on_game_new() {
+        let g = Game::new(Config::default());
+        assert!(g.current_boss.is_some());
+        assert!(!g.current_boss.unwrap().is_finisher());
+    }
+
+    #[test]
+    fn test_current_boss_redrawn_after_boss_defeated() {
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Boss),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        g.handle_score(1_000_000).expect("handle score");
+        let boss = g
+            .current_boss
+            .expect("current_boss redrawn after ante advance");
+        assert_eq!(boss.is_finisher(), g.ante_current as i32 % 8 == 0);
     }
 
     #[test]

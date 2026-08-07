@@ -136,7 +136,7 @@ fn main() -> Result<()> {
         }
         Command::SetRound { round } => game.round = round,
         Command::SetPlays { plays } => game.plays = plays,
-        Command::SetDiscards { discards } => game.discards = discards,
+        Command::SetDiscards { discards } => game.discards_remaining = discards,
         Command::SetScore { score } => game.score = score,
         Command::SetChips { chips } => game.chips = chips,
         Command::SetMult { mult } => game.mult = mult,
