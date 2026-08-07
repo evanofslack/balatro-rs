@@ -20,6 +20,7 @@ use crate::stage::{Blind, BlindExt, End, Stage};
 use crate::tag::Tag;
 use crate::tarot::{Tarot, TarotEffect};
 
+use balatro_types::BossBlind;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use std::collections::HashSet;
@@ -48,6 +49,8 @@ pub struct Game {
     pub small_blind_tag: Tag,
     pub big_blind_tag: Tag,
     pub blind: Option<Blind>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub current_boss: Option<BossBlind>,
     pub stage: Stage,
     pub ante_start: Ante,
     pub ante_end: Ante,
@@ -88,6 +91,9 @@ pub struct Game {
     // run total of cards discarded (Discard action only), never reset.
     #[cfg_attr(feature = "serde", serde(default))]
     pub(crate) total_cards_discarded: usize,
+    // set when Luchador is sold, disables the current Boss Blind's effect
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) boss_disabled_by_luchador: bool,
 
     pub last_consumable_used: Option<Consumable>,
     #[cfg_attr(feature = "serde", serde(default))]
@@ -155,6 +161,7 @@ impl Game {
             effect_registry: EffectRegistry::new(),
             consumables: Vec::new(),
             blind: None,
+            current_boss: None,
             stage: Stage::PreBlind(),
             ante_start,
             ante_end: Ante::try_from(config.ante_end).unwrap_or(Ante::Eight),
@@ -173,6 +180,7 @@ impl Game {
             consecutive_hands_not_most_played_type: 0,
             discarded_this_round: Vec::new(),
             total_cards_discarded: 0,
+            boss_disabled_by_luchador: false,
             last_consumable_used: None,
             last_score: 0,
             reroll_cost: default_reroll_cost(),
@@ -185,6 +193,7 @@ impl Game {
             config,
         };
         game.draw_ante_tags();
+        game.draw_ante_boss();
         game
     }
 
@@ -230,11 +239,29 @@ impl Game {
         self.discards = self.config.discards;
         self.hand_ranks_played_this_round.clear();
         self.discarded_this_round.clear();
+        self.boss_disabled_by_luchador = false;
         self.deck.append(&mut self.discarded);
         self.deck.extend(self.available.cards());
         self.available.empty();
         self.backend.shuffle_deck(&mut self.deck);
         self.roll_discard_selectors();
+    }
+
+    /// The boss currently in effect, or `None` if we're not in the middle of
+    /// that boss's own round, or its effect is disabled (Chicot held, or
+    /// Luchador sold this Boss Blind).
+    #[allow(dead_code)] // TODO: use and remove
+    pub(crate) fn active_boss(&self) -> Option<BossBlind> {
+        if self.blind != Some(Blind::Boss) {
+            return None;
+        }
+        if self.jokers.iter().any(|j| matches!(j, Jokers::Chicot(_))) {
+            return None;
+        }
+        if self.boss_disabled_by_luchador {
+            return None;
+        }
+        self.current_boss
     }
 
     // Castle/MailInRebate lock onto a fresh random suit/rank each round
@@ -1127,6 +1154,10 @@ impl Game {
         self.big_blind_tag = big;
     }
 
+    fn draw_ante_boss(&mut self) {
+        self.current_boss = Some(self.backend.draw_boss(self.ante_current as i32));
+    }
+
     pub fn skip_tag(&self, blind: Blind) -> Option<Tag> {
         match blind {
             Blind::Small => Some(self.small_blind_tag),
@@ -1177,6 +1208,7 @@ impl Game {
                 self.ante_current = ante_next;
                 self.blind = None;
                 self.draw_ante_tags();
+                self.draw_ante_boss();
             } else {
                 self.stage = Stage::End(End::Win);
                 return Ok(false);
@@ -1454,6 +1486,21 @@ mod tests {
         assert_eq!(g.shop.packs[1].size, PackSize::Normal);
         let p2_contents: Vec<String> = g.shop.packs[1].contents.iter().map(|c| c.name()).collect();
         assert_eq!(p2_contents, vec!["Medium", "Wraith"]);
+    }
+
+    // `cargo run -p balatro-seed --bin explore -- TEST --ante 1` reports
+    // `Boss: The Goad` for this seed, but `RealBackend::draw_boss` doesn't
+    // match it (yet).
+    // TODO: Fix min ante for real rng boss gen
+    #[test]
+    fn test_real_rng_mode_draw_boss_reaches_instance() {
+        let config = Config {
+            rng_mode: RngMode::Real,
+            seed_str: Some("TEST".to_string()),
+            ..Config::default()
+        };
+        let g = Game::new(config);
+        assert_eq!(g.current_boss, Some(BossBlind::Flint));
     }
 
     // Same seed through two independent `Game`s: proves `RngMode::Real`
@@ -1830,6 +1877,59 @@ mod tests {
         // all cards return to deck, available is empty
         assert_eq!(g.deck.len(), 52);
         assert_eq!(g.available.cards().len(), 0);
+    }
+
+    #[test]
+    fn test_active_boss_during_boss_blind() {
+        let g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        assert_eq!(g.active_boss(), Some(BossBlind::Club));
+    }
+
+    #[test]
+    fn test_active_boss_none_outside_boss_round() {
+        let g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Small),
+            ..Default::default()
+        };
+        assert_eq!(g.active_boss(), None);
+    }
+
+    #[test]
+    fn test_active_boss_none_when_chicot_held() {
+        use crate::joker::*;
+        let g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::Chicot(Chicot::default())],
+            ..Default::default()
+        };
+        assert_eq!(g.active_boss(), None);
+    }
+
+    #[test]
+    fn test_active_boss_none_when_luchador_disabled() {
+        let g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            boss_disabled_by_luchador: true,
+            ..Default::default()
+        };
+        assert_eq!(g.active_boss(), None);
+    }
+
+    #[test]
+    fn test_boss_disabled_by_luchador_resets_on_clear_blind() {
+        let mut g = Game {
+            boss_disabled_by_luchador: true,
+            ..Default::default()
+        };
+        g.clear_blind();
+        assert!(!g.boss_disabled_by_luchador);
     }
 
     #[test]
@@ -2783,6 +2883,27 @@ mod tests {
         assert_ne!(g.ante_current, ante_before);
         assert!(Tag::iter().any(|t| t == g.small_blind_tag));
         assert!(Tag::iter().any(|t| t == g.big_blind_tag));
+    }
+
+    #[test]
+    fn test_current_boss_set_on_game_new() {
+        let g = Game::new(Config::default());
+        assert!(g.current_boss.is_some());
+        assert!(!g.current_boss.unwrap().is_finisher());
+    }
+
+    #[test]
+    fn test_current_boss_redrawn_after_boss_defeated() {
+        let mut g = Game {
+            stage: Stage::Blind(Blind::Boss),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        g.handle_score(1_000_000).expect("handle score");
+        let boss = g
+            .current_boss
+            .expect("current_boss redrawn after ante advance");
+        assert_eq!(boss.is_finisher(), g.ante_current as i32 % 8 == 0);
     }
 
     #[test]

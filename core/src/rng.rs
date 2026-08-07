@@ -8,7 +8,7 @@ use crate::shop::{gen_random_playing_card, ConsumableGenerator, JokerGenerator, 
 use crate::tag::Tag;
 use crate::tarot::Tarot;
 use balatro_seed::Instance;
-use balatro_types::{Edition, Rarity, Suit, Value};
+use balatro_types::{BossBlind, Edition, Rarity, Suit, Value};
 use rand::distributions::WeightedIndex;
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
@@ -67,6 +67,8 @@ pub(crate) trait RngBackend {
     fn prob_roll(&mut self, numerator: u32, denominator: u32) -> bool;
     /// Returns `(small_blind_tag, big_blind_tag)` for a fresh ante.
     fn draw_ante_tags(&mut self) -> (Tag, Tag);
+    /// Returns the Boss Blind for a fresh ante.
+    fn draw_boss(&mut self, ante: i32) -> BossBlind;
     /// A single random Tarot consumable, respecting `exclude` — used by
     /// the purple-seal discard trigger and the Emperor/High Priestess
     /// tarot effects.
@@ -195,6 +197,14 @@ impl RngBackend for FastBackend {
         let small = *tags.choose(&mut self.rng).unwrap();
         let big = *tags.choose(&mut self.rng).unwrap();
         (small, big)
+    }
+
+    fn draw_boss(&mut self, ante: i32) -> BossBlind {
+        let pool: Vec<BossBlind> = BossBlind::iter()
+            .filter(|b| b.is_finisher() == (ante % 8 == 0))
+            .filter(|b| ante >= b.min_ante())
+            .collect();
+        *pool.choose(&mut self.rng).unwrap()
     }
 
     fn roll_random_tarot(&mut self, exclude: &[Tarot]) -> Consumable {
@@ -430,6 +440,15 @@ impl RngBackend for RealBackend {
         self.fast.draw_ante_tags()
     }
 
+    // Correct category (regular vs. finisher) and correct pool-cycling, both
+    // handled internally by `next_boss`. Minimum-ante is NOT: real Balatro
+    // enforces that by pre-locking each not-yet-eligible boss name via
+    // `Instance::init_locks`/`init_unlocks`, which nothing in `core` calls.
+    // TODO: Fix min ante for real rng boss gen
+    fn draw_boss(&mut self, ante: i32) -> BossBlind {
+        self.instance.next_boss(ante)
+    }
+
     // `Instance::next_tarot(source, ante, soulable)` exists and isn't
     // wired up yet - real accuracy here is a follow-up.
     fn roll_random_tarot(&mut self, exclude: &[Tarot]) -> Consumable {
@@ -600,6 +619,13 @@ impl RngBackend for Backend {
         }
     }
 
+    fn draw_boss(&mut self, ante: i32) -> BossBlind {
+        match self {
+            Backend::Fast(b) => b.draw_boss(ante),
+            Backend::Real(b) => b.draw_boss(ante),
+        }
+    }
+
     fn roll_random_tarot(&mut self, exclude: &[Tarot]) -> Consumable {
         match self {
             Backend::Fast(b) => b.roll_random_tarot(exclude),
@@ -675,6 +701,28 @@ mod tests {
     }
 
     #[test]
+    fn fast_backend_draw_boss_matches_category() {
+        let mut backend = FastBackend::new(ChaCha8Rng::seed_from_u64(1));
+        for ante in [1, 7, 8, 9, 16] {
+            let boss = backend.draw_boss(ante);
+            assert_eq!(
+                boss.is_finisher(),
+                ante % 8 == 0,
+                "ante {ante} drew {boss:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn fast_backend_draw_boss_respects_min_ante() {
+        let mut backend = FastBackend::new(ChaCha8Rng::seed_from_u64(1));
+        for _ in 0..200 {
+            let boss = backend.draw_boss(1);
+            assert!(boss.min_ante() <= 1, "ante 1 drew {boss:?} (min_ante > 1)");
+        }
+    }
+
+    #[test]
     fn fast_backend_prob_roll_respects_ratio_edges() {
         let mut backend = FastBackend::new(ChaCha8Rng::seed_from_u64(1));
         // numerator 0 -> never; numerator == denominator -> always,
@@ -737,6 +785,20 @@ mod tests {
 
         let joker = backend.gen_joker(1, 1, &[]);
         assert!(joker.is_implemented());
+    }
+
+    #[test]
+    fn real_backend_draw_boss_matches_category() {
+        let fast = FastBackend::new(ChaCha8Rng::seed_from_u64(1));
+        let mut backend = RealBackend::new("TESTSEED", fast);
+        for ante in [1, 7, 8, 9, 16] {
+            let boss = backend.draw_boss(ante);
+            assert_eq!(
+                boss.is_finisher(),
+                ante % 8 == 0,
+                "ante {ante} drew {boss:?}"
+            );
+        }
     }
 
     #[test]
