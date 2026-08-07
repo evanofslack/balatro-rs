@@ -74,7 +74,11 @@ pub const CARD_H: u16 = 7;
 pub const SLOT_W: u16 = 11; // CARD_W + 1 gap
 pub const SLOT_H: u16 = 8; // CARD_H + 1 shift row
 
-fn card_inner_text(card: Card) -> Text<'static> {
+// Dark red (#8B0000) - distinct from the bright Color::Red used for Hearts/
+// seals/enhancements, so a debuffed card reads as "muted" not "alert".
+const DEBUFF_COLOR: Color = Color::Rgb(139, 0, 0);
+
+fn card_inner_text(card: Card, debuffed: bool) -> Text<'static> {
     let is_wild = card.enhancement == Some(Enhancement::Wild);
     let is_stone = card.enhancement == Some(Enhancement::Stone);
 
@@ -144,10 +148,23 @@ fn card_inner_text(card: Card) -> Text<'static> {
         _ => Line::from(""),
     };
 
-    Text::from(vec![row0, row1, Line::from(""), row3, Line::from("")])
+    // Row 4 is otherwise always blank - claimed here for the debuff label,
+    // coexisting with the seal (row 0) and enhancement (row 3) indicators,
+    // which stay visible: a debuffed card keeps its real identity, it just
+    // no longer scores.
+    let row4 = if debuffed {
+        Line::from(Span::styled(
+            "Debuffed",
+            Style::default().fg(DEBUFF_COLOR).add_modifier(Modifier::BOLD),
+        ))
+    } else {
+        Line::from("")
+    };
+
+    Text::from(vec![row0, row1, Line::from(""), row3, row4])
 }
 
-fn card_block(card: Card, is_cursor: bool) -> Block<'static> {
+fn card_block(card: Card, is_cursor: bool, debuffed: bool) -> Block<'static> {
     let border_type = if is_cursor {
         BorderType::Double
     } else {
@@ -155,6 +172,8 @@ fn card_block(card: Card, is_cursor: bool) -> Block<'static> {
     };
     let border_color = if is_cursor {
         Color::Yellow
+    } else if debuffed {
+        DEBUFF_COLOR
     } else {
         edition_color(card.edition)
     };
@@ -164,9 +183,9 @@ fn card_block(card: Card, is_cursor: bool) -> Block<'static> {
         .border_style(Style::default().fg(border_color))
 }
 
-pub fn render_card(f: &mut Frame, card: Card, rect: Rect, is_cursor: bool) {
-    let block = card_block(card, is_cursor);
-    let text = card_inner_text(card);
+pub fn render_card(f: &mut Frame, card: Card, rect: Rect, is_cursor: bool, debuffed: bool) {
+    let block = card_block(card, is_cursor, debuffed);
+    let text = card_inner_text(card, debuffed);
     f.render_widget(Paragraph::new(text).block(block), rect);
 }
 
@@ -194,8 +213,9 @@ pub fn render_hand(
         };
 
         let is_cursor = i == cursor_idx;
-        let block = card_block(*card, is_cursor);
-        let text = card_inner_text(*card);
+        let debuffed = app.game.is_card_debuffed(card);
+        let block = card_block(*card, is_cursor, debuffed);
+        let text = card_inner_text(*card, debuffed);
         let para = Paragraph::new(text).block(block);
         f.render_widget(para, card_rect);
 

@@ -100,7 +100,8 @@ fn render_contents(f: &mut Frame, app: &mut AppState, contents: &[PackContent], 
 
         match content {
             PackContent::PlayingCard(card) => {
-                cards::render_card(f, *card, item_rect, is_cursor);
+                // Packs only open during Shop, where no boss is ever active.
+                cards::render_card(f, *card, item_rect, is_cursor, false);
             }
             _ => {
                 let color = content_color(content);
