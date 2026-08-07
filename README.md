@@ -11,16 +11,16 @@ A toolbox of Rust crates for [Balatro](https://www.playbalatro.com/)
 
 ## Crates
 
-| Crate                                 | What it does                                                                                                                                                                                                                                                          |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`core`](core) (package `balatro-rs`) | The rules engine — scoring, playing/discarding, blinds, shop, jokers/tarots/planets. Exposes an exhaustive move generator, meant as a base for simulation and reinforcement learning. Ships a `calc` CLI that scores an existing hand without needing a running game. |
-| [`balatro-types`](balatro-types)      | Neutral vocabulary shared by everything — `Card`, `Jokers`, `Tarot`, `Voucher`, etc. Pure data, no behavior.                                                                                                                                                          |
-| [`balatro-jkr`](balatro-jkr)          | Codec for Balatro's `.jkr` save-file container format (raw-DEFLATE + Lua table literals). No game vocabulary. Ships a `jkr` CLI that dumps a `.jkr` file's decoded contents.                                                                                          |
-| [`balatro-profile`](balatro-profile)  | Reads real save/profile files into typed data (`Profile`, `SaveSnapshot`) using `balatro-jkr` + `balatro-types`. Read-only; ships a `profile` CLI.                                                                                                                    |
-| [`balatro-seed`](balatro-seed)        | A byte-accurate port of Balatro's actual seed/RNG algorithm (pseudohash + per-node `LuaRandom`), verified against a reference implementation ante-by-ante. Ships an `explore` CLI to print a seed's full expected contents.                                           |
-| [`cli`](cli) (`balatro-cli`)          | Interactive terminal game over `core`. Also ships `balatro-edit`, a CLI for editing a `core::Game`'s JSON state.                                                                                                                                                      |
-| [`tui`](tui) (`balatro-tui`)          | Full ratatui-based terminal UI over `core::Game`.                                                                                                                                                                                                                     |
-| [`pylatro`](pylatro)                  | PyO3 Python bindings over `core`, for scripting and RL experimentation.                                                                                                                                                                                               |
+| Crate                                 | What it does                                                                                                                                                                         |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`core`](core) (package `balatro-rs`) | The rules engine: scoring, playing/discarding, blinds, shop, jokers/tarots/planets. Exposes an exhaustive move generator, meant as a base for simulation and reinforcement learning. |
+| [`balatro-types`](balatro-types)      | Neutral vocabulary shared by everything, pure data, no behavior. `Card`, `Jokers`, `Tarot`, `Voucher`, etc.                                                                          |
+| [`balatro-jkr`](balatro-jkr)          | Codec for Balatro's `.jkr` save-file container format.                                                                                                                               |
+| [`balatro-profile`](balatro-profile)  | Reads real save/profile files into typed structs (using `balatro-jkr` + `balatro-types`).                                                                                            |
+| [`balatro-seed`](balatro-seed)        | A byte-accurate port of Balatro's actual seed/RNG algorithm.                                                                                                                         |
+| [`cli`](cli) (`balatro-cli`)          | Interactive terminal game over `core`.                                                                                                                                               |
+| [`tui`](tui) (`balatro-tui`)          | Full ratatui-based terminal UI over `core::Game`.                                                                                                                                    |
+| [`pylatro`](pylatro)                  | PyO3 Python bindings over `core`, for scripting and RL experimentation.                                                                                                              |
 
 ## Example
 
@@ -61,18 +61,17 @@ variable-length iterator.
 - [x] blind pass/fail and game win/lose conditions
 - [x] money/interest generation
 - [x] ante progression (1-8) and blind progression (small/big/boss)
-- [x] buying/selling/using jokers, tarots, and planets
+- [x] buying/selling/using jokers, tarots, planets and spectrals
 - [x] card enhancements, editions, and seals in effect
-- [x] skip blind / tags (partialy)
-- [x] optional real-seed-accurate shop/pack generation via `balatro-seed` (partially wired)
+- [x] 71/151 jokers implemented so far
 
 The following are missing and may or may not be added:
 
-- [ ] spectral card use-effects
+- [ ] skip blind/tags
 - [ ] boss blind modifiers
 - [ ] vouchers
-- [ ] alternative decks and stakes as wired starting config
-- [ ] remaining unimplemented jokers
+- [ ] alternative decks
+- [ ] alternative stakes
 
 ## Building & running
 
