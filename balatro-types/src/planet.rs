@@ -280,67 +280,60 @@ impl Planetarium {
     /// increments. Since `RoyalFlush` shares `StraightFlush`'s slot,
     /// levelling up either one levels up the same stored data.
     pub fn level_up(&mut self, rank: HandRank) {
+        let (chips_step, mult_step) = Self::level_step(rank);
+        let level = self.level_mut(rank);
+        level.level += 1;
+        level.chips += chips_step;
+        level.mult += mult_step;
+    }
+
+    /// Reverses one level-up for the given rank, stopping at level 1
+    pub fn level_down(&mut self, rank: HandRank) {
+        if self.level(rank).level <= 1 {
+            return;
+        }
+        let (chips_step, mult_step) = Self::level_step(rank);
+        let level = self.level_mut(rank);
+        level.level -= 1;
+        level.chips -= chips_step;
+        level.mult -= mult_step;
+    }
+
+    /// Per-rank (chips, mult) step
+    fn level_step(rank: HandRank) -> (usize, usize) {
         match rank.scoring_rank() {
-            HandRank::HighCard => {
-                self.highcard.level += 1;
-                self.highcard.chips += 10;
-                self.highcard.mult += 1;
-            }
-            HandRank::OnePair => {
-                self.onepair.level += 1;
-                self.onepair.chips += 15;
-                self.onepair.mult += 1;
-            }
-            HandRank::TwoPair => {
-                self.twopair.level += 1;
-                self.twopair.chips += 20;
-                self.twopair.mult += 1;
-            }
-            HandRank::ThreeOfAKind => {
-                self.threeofkind.level += 1;
-                self.threeofkind.chips += 20;
-                self.threeofkind.mult += 2;
-            }
-            HandRank::Straight => {
-                self.straight.level += 1;
-                self.straight.chips += 30;
-                self.straight.mult += 3;
-            }
-            HandRank::Flush => {
-                self.flush.level += 1;
-                self.flush.chips += 15;
-                self.flush.mult += 2;
-            }
-            HandRank::FullHouse => {
-                self.fullhouse.level += 1;
-                self.fullhouse.chips += 25;
-                self.fullhouse.mult += 2;
-            }
-            HandRank::FourOfAKind => {
-                self.fourofkind.level += 1;
-                self.fourofkind.chips += 30;
-                self.fourofkind.mult += 3;
-            }
-            HandRank::StraightFlush => {
-                self.straightflush.level += 1;
-                self.straightflush.chips += 40;
-                self.straightflush.mult += 4;
-            }
-            HandRank::FiveOfAKind => {
-                self.fiveofkind.level += 1;
-                self.fiveofkind.chips += 35;
-                self.fiveofkind.mult += 3;
-            }
-            HandRank::FlushHouse => {
-                self.flushhouse.level += 1;
-                self.flushhouse.chips += 40;
-                self.flushhouse.mult += 4;
-            }
-            HandRank::FlushFive => {
-                self.flushfive.level += 1;
-                self.flushfive.chips += 50;
-                self.flushfive.mult += 3;
-            }
+            HandRank::HighCard => (10, 1),
+            HandRank::OnePair => (15, 1),
+            HandRank::TwoPair => (20, 1),
+            HandRank::ThreeOfAKind => (20, 2),
+            HandRank::Straight => (30, 3),
+            HandRank::Flush => (15, 2),
+            HandRank::FullHouse => (25, 2),
+            HandRank::FourOfAKind => (30, 3),
+            HandRank::StraightFlush => (40, 4),
+            HandRank::FiveOfAKind => (35, 3),
+            HandRank::FlushHouse => (40, 4),
+            HandRank::FlushFive => (50, 3),
+            HandRank::RoyalFlush => unreachable!("scoring_rank() never returns RoyalFlush"),
+        }
+    }
+
+    /// Mutable access to the stored `Level` for a rank (`RoyalFlush` shares
+    /// `StraightFlush`'s slot).
+    fn level_mut(&mut self, rank: HandRank) -> &mut Level {
+        match rank.scoring_rank() {
+            HandRank::HighCard => &mut self.highcard,
+            HandRank::OnePair => &mut self.onepair,
+            HandRank::TwoPair => &mut self.twopair,
+            HandRank::ThreeOfAKind => &mut self.threeofkind,
+            HandRank::Straight => &mut self.straight,
+            HandRank::Flush => &mut self.flush,
+            HandRank::FullHouse => &mut self.fullhouse,
+            HandRank::FourOfAKind => &mut self.fourofkind,
+            HandRank::StraightFlush => &mut self.straightflush,
+            HandRank::FiveOfAKind => &mut self.fiveofkind,
+            HandRank::FlushHouse => &mut self.flushhouse,
+            HandRank::FlushFive => &mut self.flushfive,
             HandRank::RoyalFlush => unreachable!("scoring_rank() never returns RoyalFlush"),
         }
     }
@@ -418,6 +411,28 @@ mod tests {
         assert_eq!(after.level, before.level + 1);
         assert_eq!(after.chips, before.chips + 10);
         assert_eq!(after.mult, before.mult + 1);
+    }
+
+    #[test]
+    fn test_planetarium_level_down_reverses_level_up() {
+        let mut p = Planetarium::new();
+        p.level_up(HandRank::OnePair);
+        p.level_up(HandRank::OnePair);
+        let before = p.level(HandRank::OnePair);
+        p.level_down(HandRank::OnePair);
+        let after = p.level(HandRank::OnePair);
+        assert_eq!(after.level, before.level - 1);
+        assert_eq!(after.chips, before.chips - 15);
+        assert_eq!(after.mult, before.mult - 1);
+    }
+
+    #[test]
+    fn test_planetarium_level_down_stops_at_level_one() {
+        let mut p = Planetarium::new();
+        let before = p.level(HandRank::OnePair);
+        assert_eq!(before.level, 1);
+        p.level_down(HandRank::OnePair);
+        assert_eq!(p.level(HandRank::OnePair), before);
     }
 
     #[test]
