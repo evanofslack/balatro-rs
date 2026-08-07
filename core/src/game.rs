@@ -777,9 +777,7 @@ impl Game {
     }
 
     /// The score the upcoming Boss Blind will require, based on
-    /// `current_boss` - unlike `required_score()`, valid before
-    /// `self.blind` becomes `Some(Blind::Boss)`, so UIs can preview the
-    /// number during `PreBlind`, before the boss round is actually entered.
+    /// `current_boss`, valid before boss blind is active.
     pub fn boss_required_score(&self) -> usize {
         self.ante_current.base() * Self::boss_score_multiplier(self.current_boss)
     }
