@@ -68,7 +68,8 @@ pub struct Game {
 
     // playing
     pub plays: usize,
-    pub discards: usize,
+    #[cfg_attr(feature = "serde", serde(rename = "discards"))] // shouldn't access directly
+    pub discards_remaining: usize,
     pub reward: usize,
     pub money: usize,
 
@@ -171,7 +172,7 @@ impl Game {
             ante_current: ante_start,
             round: config.round_start,
             plays: config.plays,
-            discards: config.discards,
+            discards_remaining: config.discards,
             reward: config.reward_base,
             money: config.money_start,
             chips: config.base_chips,
@@ -240,7 +241,7 @@ impl Game {
     pub(crate) fn clear_blind(&mut self) {
         self.score = self.config.base_score;
         self.plays = self.config.plays;
-        self.discards = self.config.discards;
+        self.discards_remaining = self.config.discards;
         self.hand_ranks_played_this_round.clear();
         self.discarded_this_round.clear();
         self.boss_disabled_by_luchador = false;
@@ -267,6 +268,24 @@ impl Game {
         self.current_boss
     }
 
+    /// Discards actually usable right now
+    pub fn discards(&self) -> usize {
+        if self.active_boss() == Some(BossBlind::Water) {
+            0
+        } else {
+            self.discards_remaining
+        }
+    }
+
+    /// Cards dealt per round
+    pub fn hand_size(&self) -> usize {
+        if self.active_boss() == Some(BossBlind::Manacle) {
+            self.config.available.saturating_sub(1)
+        } else {
+            self.config.available
+        }
+    }
+
     // Castle/MailInRebate lock onto a fresh random suit/rank each round
     // ("changes every round") - unconditional, overwrites whatever was
     // already there.
@@ -289,7 +308,7 @@ impl Game {
         self.deck.extend(self.available.cards());
         self.available.empty();
         self.backend.shuffle_deck(&mut self.deck);
-        self.draw(self.config.available);
+        self.draw(self.hand_size());
     }
 
     /// Reshuffles discarded/held cards back into the deck and redraws a
@@ -330,7 +349,12 @@ impl Game {
         }
         self.discarded.extend(self.available.selected());
         let removed = self.available.remove_selected();
-        self.draw(removed);
+        let n = if self.active_boss() == Some(BossBlind::Serpent) {
+            3
+        } else {
+            removed
+        };
+        self.draw(n);
         for card in scored.hand.cards() {
             if card.enhancement == Some(Enhancement::Glass) && self.prob_roll(1, 4) {
                 self.destroy_card(card.id);
@@ -344,16 +368,21 @@ impl Game {
 
     // discard selected cards from available and draw equal number back to available
     pub(crate) fn discard_selected(&mut self) -> Result<(), GameError> {
-        if self.discards == 0 {
+        if self.discards() == 0 {
             return Err(GameError::NoRemainingDiscards);
         }
-        self.discards -= 1;
+        self.discards_remaining -= 1;
         let discarded = self.available.selected();
         self.discarded.extend(discarded.iter().copied());
         self.discarded_this_round.extend(discarded.iter().copied());
         self.total_cards_discarded += discarded.len();
         let removed = self.available.remove_selected();
-        self.draw(removed);
+        let n = if self.active_boss() == Some(BossBlind::Serpent) {
+            3
+        } else {
+            removed
+        };
+        self.draw(n);
 
         // Check for purple seals
         for card in &discarded {
@@ -643,7 +672,10 @@ impl Game {
         for card in self.available.not_selected() {
             if self.is_card_debuffed(&card) {
                 // Held-card Matador trigger unconfirmed, real-game check needed.
-                if matches!(card.enhancement, Some(Enhancement::Steel) | Some(Enhancement::Gold)) {
+                if matches!(
+                    card.enhancement,
+                    Some(Enhancement::Steel) | Some(Enhancement::Gold)
+                ) {
                     self.boss_triggered_this_hand = true;
                 }
                 continue;
@@ -740,12 +772,24 @@ impl Game {
             None => base,
             Some(Blind::Small) => base,
             Some(Blind::Big) => (base as f32 * 1.5) as usize,
-            Some(Blind::Boss) => match self.active_boss() {
-                Some(BossBlind::Wall) => base * 4,
-                Some(BossBlind::VioletVessel) => base * 6,
-                Some(BossBlind::Needle) => base,
-                _ => base * 2,
-            },
+            Some(Blind::Boss) => base * Self::boss_score_multiplier(self.active_boss()),
+        }
+    }
+
+    /// The score the upcoming Boss Blind will require, based on
+    /// `current_boss` - unlike `required_score()`, valid before
+    /// `self.blind` becomes `Some(Blind::Boss)`, so UIs can preview the
+    /// number during `PreBlind`, before the boss round is actually entered.
+    pub fn boss_required_score(&self) -> usize {
+        self.ante_current.base() * Self::boss_score_multiplier(self.current_boss)
+    }
+
+    fn boss_score_multiplier(boss: Option<BossBlind>) -> usize {
+        match boss {
+            Some(BossBlind::Wall) => 4,
+            Some(BossBlind::VioletVessel) => 6,
+            Some(BossBlind::Needle) => 1,
+            _ => 2,
         }
     }
 
@@ -1443,7 +1487,7 @@ impl fmt::Display for Game {
         writeln!(f, "blind: {:?}", self.blind)?;
         writeln!(f, "round: {}", self.round)?;
         writeln!(f, "hands remaining: {}", self.plays)?;
-        writeln!(f, "discards remaining: {}", self.discards)?;
+        writeln!(f, "discards remaining: {}", self.discards())?;
         writeln!(f, "money: {}", self.money)?;
         if matches!(self.stage, Stage::Blind(_)) {
             writeln!(
@@ -2326,6 +2370,20 @@ mod tests {
         assert_eq!(g.required_score(), 300 * 2);
     }
 
+    #[test]
+    fn test_boss_required_score_previews_before_boss_blind_selected() {
+        let g = Game {
+            current_boss: Some(BossBlind::Wall),
+            blind: Some(Blind::Big),
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        // required_score() reflects the *current* blind (Big), not Boss -
+        // boss_required_score() previews the upcoming Boss's number instead.
+        assert_eq!(g.required_score(), (300f32 * 1.5) as usize);
+        assert_eq!(g.boss_required_score(), 300 * 4);
+    }
+
     // --- Group C: hand-level chip/mult halving (Flint) ---
 
     #[test]
@@ -2478,6 +2536,159 @@ mod tests {
         assert_eq!(g.planetarium.level(HandRank::OnePair).plays, 1);
     }
 
+    // --- Group E, part 1: Water, Manacle, Serpent ---
+
+    #[test]
+    fn test_water_boss_blocks_discards() {
+        let g = Game {
+            current_boss: Some(BossBlind::Water),
+            blind: Some(Blind::Boss),
+            discards_remaining: 4,
+            ..Default::default()
+        };
+        assert_eq!(g.discards(), 0);
+        assert_eq!(g.discards_remaining, 4);
+    }
+
+    #[test]
+    fn test_water_boss_discards_restored_when_disabled_mid_round() {
+        let g = Game {
+            current_boss: Some(BossBlind::Water),
+            blind: Some(Blind::Boss),
+            discards_remaining: 4,
+            boss_disabled_by_luchador: true,
+            ..Default::default()
+        };
+        assert_eq!(g.discards(), 4);
+    }
+
+    #[test]
+    fn test_water_boss_no_effect_outside_boss_round() {
+        let g = Game {
+            current_boss: Some(BossBlind::Water),
+            blind: Some(Blind::Small),
+            discards_remaining: 4,
+            ..Default::default()
+        };
+        assert_eq!(g.discards(), 4);
+    }
+
+    #[test]
+    fn test_discard_selected_rejected_under_water() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Water),
+            blind: Some(Blind::Big),
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        g.select_blind(Blind::Boss).expect("can select boss blind");
+        let card = g.available.cards()[0];
+        g.select_card(card).expect("can select card");
+        let before = g.discards_remaining;
+        let result = g.discard_selected();
+        assert!(matches!(result, Err(GameError::NoRemainingDiscards)));
+        assert_eq!(g.discards_remaining, before);
+    }
+
+    #[test]
+    fn test_manacle_boss_reduces_hand_size() {
+        let g = Game {
+            current_boss: Some(BossBlind::Manacle),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        assert_eq!(g.hand_size(), 7);
+    }
+
+    #[test]
+    fn test_manacle_boss_deals_reduced_hand() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Manacle),
+            blind: Some(Blind::Big),
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        g.select_blind(Blind::Boss).expect("can select boss blind");
+        assert_eq!(g.available.cards().len(), 7);
+    }
+
+    #[test]
+    fn test_manacle_boss_no_effect_outside_boss_round() {
+        let g = Game {
+            current_boss: Some(BossBlind::Manacle),
+            blind: Some(Blind::Small),
+            ..Default::default()
+        };
+        assert_eq!(g.hand_size(), 8);
+    }
+
+    #[test]
+    fn test_serpent_boss_grows_hand_when_fewer_than_three_removed() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Serpent),
+            blind: Some(Blind::Big),
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        g.select_blind(Blind::Boss).expect("can select boss blind");
+        let cards: Vec<Card> = g.available.cards().into_iter().take(2).collect();
+        for card in cards {
+            g.select_card(card).expect("can select card");
+        }
+        g.discard_selected().expect("can discard");
+        assert_eq!(g.available.cards().len(), 9);
+    }
+
+    #[test]
+    fn test_serpent_boss_shrinks_hand_when_more_than_three_removed() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Serpent),
+            blind: Some(Blind::Big),
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        g.select_blind(Blind::Boss).expect("can select boss blind");
+        let cards: Vec<Card> = g.available.cards().into_iter().take(5).collect();
+        for card in cards {
+            g.select_card(card).expect("can select card");
+        }
+        g.discard_selected().expect("can discard");
+        assert_eq!(g.available.cards().len(), 6);
+    }
+
+    #[test]
+    fn test_serpent_boss_applies_to_play_selected_too() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Serpent),
+            blind: Some(Blind::Big),
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        g.select_blind(Blind::Boss).expect("can select boss blind");
+        let card = g.available.cards()[0];
+        g.select_card(card).expect("can select card");
+        g.play_selected().expect("can play selected");
+        assert_eq!(g.available.cards().len(), 10);
+    }
+
+    #[test]
+    fn test_serpent_boss_no_effect_outside_boss_round() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Serpent),
+            blind: None,
+            stage: Stage::PreBlind(),
+            ..Default::default()
+        };
+        g.select_blind(Blind::Small)
+            .expect("can select small blind");
+        let cards: Vec<Card> = g.available.cards().into_iter().take(2).collect();
+        for card in cards {
+            g.select_card(card).expect("can select card");
+        }
+        g.discard_selected().expect("can discard");
+        assert_eq!(g.available.cards().len(), 8);
+    }
+
     #[test]
     fn test_play_selected() {
         let mut g = Game::default();
@@ -2500,7 +2711,7 @@ mod tests {
         assert_eq!(g.score, g.config.base_score);
         // Plays and discards should reset
         assert_eq!(g.plays, g.config.plays);
-        assert_eq!(g.discards, g.config.discards);
+        assert_eq!(g.discards_remaining, g.config.discards);
         // All cards back in deck after clear_blind, available is empty
         assert_eq!(g.deck.len(), 52);
         // Discarded should be length 0
@@ -3052,7 +3263,7 @@ mod tests {
         assert_eq!(g2.stage, g.stage);
         assert_eq!(g2.ante_current, g.ante_current);
         assert_eq!(g2.plays, g.plays);
-        assert_eq!(g2.discards, g.discards);
+        assert_eq!(g2.discards_remaining, g.discards_remaining);
         assert_eq!(g2.money, g.money);
         assert_eq!(g2.available.cards().len(), g.available.cards().len());
         assert_eq!(g2.deck.len(), g.deck.len());

@@ -215,13 +215,13 @@ impl JokerEffects for Jokers {
             }
             Self::Banner(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    g.chips += 30 * g.discards;
+                    g.chips += 30 * g.discards();
                 }
                 vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
             }
             Self::MysticSummit(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    if g.discards == 0 {
+                    if g.discards() == 0 {
                         g.mult += 15;
                     }
                 }
@@ -711,7 +711,7 @@ impl JokerEffects for Jokers {
                 // (discard_selected decrements before invoking OnDiscard).
                 fn apply(g: &mut Game, hand: MadeHand) {
                     if hand.all.len() == 1
-                        && g.discards == g.config.discards.saturating_sub(1)
+                        && g.discards_remaining == g.config.discards.saturating_sub(1)
                     {
                         g.destroy_card(hand.all[0].id);
                         g.money += 3;
@@ -724,7 +724,7 @@ impl JokerEffects for Jokers {
                 // round, both already reset to config values in clear_blind.
                 fn apply(g: &mut Game, _hand: MadeHand) {
                     let hands_played = g.config.plays - g.plays;
-                    let discards_used = g.config.discards - g.discards;
+                    let discards_used = g.config.discards - g.discards_remaining;
                     let delta = hands_played as i64 - discards_used as i64;
                     g.mult = (g.mult as i64 + delta).max(0) as usize;
                 }
@@ -1782,7 +1782,7 @@ mod tests {
         // (5 + 11 + 120) * 1 = 136
         assert_eq!(g.calc_score(best.clone()), 136);
 
-        g.discards = 0;
+        g.discards_remaining = 0;
         // Banner: +0 chips
         // (5 + 11 + 0) * 1 = 16
         assert_eq!(g.calc_score(best.clone()), 16);
@@ -1815,7 +1815,7 @@ mod tests {
         assert_eq!(g.calc_score(best.clone()), 16);
 
         // Now set discards to 0 -> +15 mult
-        g.discards = 0;
+        g.discards_remaining = 0;
         // (5 + 11) * (1 + 15) = 16 * 16 = 256
         assert_eq!(g.calc_score(best.clone()), 256);
     }
@@ -3530,11 +3530,11 @@ mod tests {
                       // mult = 1 + (1 - 0) = 2; score = 16 * 2 = 32
         assert_eq!(g.calc_score(ace_hand.clone()), 32);
 
-        g.discards -= 1; // 1 discard used
+        g.discards_remaining -= 1; // 1 discard used
                          // mult = 1 + (1 - 1) = 1; score = 16
         assert_eq!(g.calc_score(ace_hand.clone()), 16);
 
-        g.discards -= 1; // 2 discards used
+        g.discards_remaining -= 1; // 2 discards used
                          // mult = 1 + (1 - 2) = 0 (floored, not negative); score = 0
         assert_eq!(g.calc_score(ace_hand), 0);
     }
