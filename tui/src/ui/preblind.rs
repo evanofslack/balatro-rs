@@ -83,7 +83,9 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     let gap: u16 = 4;
     let total_w = blinds.len() as u16 * card_w + (blinds.len() as u16 - 1) * gap;
     let x_start = inner.x + inner.width.saturating_sub(total_w) / 2;
-    let y_start = inner.y + (inner.height.saturating_sub(card_h)) / 2;
+    // Anchor a small fixed distance below the header instead of centering in the
+    // full remaining height, which left a large empty gap on tall terminals.
+    let y_start = header_area.y + header_area.height + 2;
 
     let play_focused = app.focus == FocusZone::BlindSelect;
     let skip_focused = app.focus == FocusZone::BlindSkip;

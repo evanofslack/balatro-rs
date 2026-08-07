@@ -26,6 +26,7 @@ pub enum WidgetId {
     OverlayButton(usize),
     DeckTab(usize),
     RunInfoTab(usize),
+    SidebarButton(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +59,13 @@ pub enum InspectTarget {
     Tag(Tag),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShopSlot {
+    Joker(usize),
+    Consumable(usize),
+    Pack(usize),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeckTab {
     Remaining,
@@ -79,6 +87,7 @@ pub enum Overlay {
     Save,
     Consumable(usize),
     Joker(usize),
+    ShopBuy(ShopSlot),
 }
 
 pub struct AppState {

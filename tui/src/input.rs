@@ -1,4 +1,4 @@
-use crate::app::{AppState, DeckTab, FocusZone, Overlay, RunInfoTab};
+use crate::app::{AppState, DeckTab, FocusZone, Overlay, RunInfoTab, ShopSlot};
 use balatro_rs::action::{Action, SortBy};
 use balatro_rs::stage::Stage;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
@@ -122,6 +122,48 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
             },
             KeyCode::Esc => app.close_overlay(),
             _ => {}
+        },
+        Overlay::ShopBuy(slot) => match key.code {
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab => {
+                if app.overlay_cursor > 0 {
+                    app.overlay_cursor -= 1;
+                }
+            }
+            KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => {
+                if app.overlay_cursor < 1 {
+                    app.overlay_cursor += 1;
+                }
+            }
+            KeyCode::Enter => match app.overlay_cursor {
+                0 => {
+                    if execute_shop_buy(app, slot) {
+                        app.close_overlay();
+                    }
+                }
+                _ => app.close_overlay(),
+            },
+            KeyCode::Esc => app.close_overlay(),
+            _ => {}
+        },
+    }
+}
+
+/// Attempts the shop purchase for `slot`, returning whether it succeeded
+/// (e.g. `false` on insufficient funds) — shared by the mouse and keyboard
+/// paths through the shop Buy/Cancel overlay.
+fn execute_shop_buy(app: &mut AppState, slot: ShopSlot) -> bool {
+    match slot {
+        ShopSlot::Joker(idx) => match app.game.shop.jokers.get(idx).cloned() {
+            Some(joker) => app.game.handle_action(Action::BuyJoker(joker)).is_ok(),
+            None => false,
+        },
+        ShopSlot::Consumable(idx) => match app.game.shop.consumables.get(idx).copied() {
+            Some(c) => app.game.handle_action(Action::BuyConsumable(c)).is_ok(),
+            None => false,
+        },
+        ShopSlot::Pack(idx) => match app.game.shop.packs.get(idx).cloned() {
+            Some(pack) => app.game.handle_action(Action::BuyPack(pack)).is_ok(),
+            None => false,
         },
     }
 }
@@ -436,8 +478,8 @@ fn handle_key_shop_packs(app: &mut AppState, key: KeyEvent) {
         }
         KeyCode::Enter => {
             if app.cursor < count {
-                let pack = app.game.shop.packs[app.cursor].clone();
-                let _ = app.game.handle_action(Action::BuyPack(pack));
+                app.overlay = Some(Overlay::ShopBuy(ShopSlot::Pack(app.cursor)));
+                app.overlay_cursor = 0;
             }
         }
         _ => {}
@@ -509,11 +551,13 @@ fn handle_key_shop_jokers(app: &mut AppState, key: KeyEvent) {
         }
         KeyCode::Enter => {
             if app.cursor < joker_count {
-                let joker = app.game.shop.jokers[app.cursor].clone();
-                let _ = app.game.handle_action(Action::BuyJoker(joker));
+                app.overlay = Some(Overlay::ShopBuy(ShopSlot::Joker(app.cursor)));
+                app.overlay_cursor = 0;
             } else if app.cursor < count {
-                let consumable = app.game.shop.consumables[app.cursor - joker_count];
-                let _ = app.game.handle_action(Action::BuyConsumable(consumable));
+                app.overlay = Some(Overlay::ShopBuy(ShopSlot::Consumable(
+                    app.cursor - joker_count,
+                )));
+                app.overlay_cursor = 0;
             }
         }
         _ => {}
@@ -721,15 +765,17 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
         ShopJoker(idx) => {
             app.focus = FocusZone::ShopJokers;
             app.cursor = idx;
-            if let Some(joker) = app.game.shop.jokers.get(idx) {
-                let _ = app.game.handle_action(Action::BuyJoker(joker.clone()));
+            if idx < app.game.shop.jokers.len() {
+                app.overlay = Some(Overlay::ShopBuy(ShopSlot::Joker(idx)));
+                app.overlay_cursor = 0;
             }
         }
         ShopConsumable(idx) => {
             app.focus = FocusZone::ShopJokers;
             app.cursor = app.game.shop.jokers.len() + idx;
-            if let Some(consumable) = app.game.shop.consumables.get(idx) {
-                let _ = app.game.handle_action(Action::BuyConsumable(*consumable));
+            if idx < app.game.shop.consumables.len() {
+                app.overlay = Some(Overlay::ShopBuy(ShopSlot::Consumable(idx)));
+                app.overlay_cursor = 0;
             }
         }
         RerollButton => {
@@ -739,8 +785,9 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
         ShopPack(idx) => {
             app.focus = FocusZone::ShopPacks;
             app.cursor = idx;
-            if let Some(pack) = app.game.shop.packs.get(idx) {
-                let _ = app.game.handle_action(Action::BuyPack(pack.clone()));
+            if idx < app.game.shop.packs.len() {
+                app.overlay = Some(Overlay::ShopBuy(ShopSlot::Pack(idx)));
+                app.overlay_cursor = 0;
             }
         }
         PackContent(idx) => {
@@ -819,6 +866,11 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
                 }
             }
             Some(crate::app::Overlay::Save) => do_save(app),
+            Some(crate::app::Overlay::ShopBuy(slot)) => {
+                if execute_shop_buy(app, slot) {
+                    app.close_overlay();
+                }
+            }
             _ => app.close_overlay(),
         },
         OverlayButton(1) => match app.overlay.clone() {
@@ -844,6 +896,11 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
                 1 => RIT::PokerHands,
                 _ => RIT::Vouchers,
             };
+        }
+        SidebarButton(idx) => {
+            use crate::app::RunInfoTab as RIT;
+            app.run_info_tab = if idx == 0 { RIT::Deck } else { RIT::PokerHands };
+            app.overlay = Some(Overlay::RunInfo);
         }
     }
 

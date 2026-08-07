@@ -1,8 +1,8 @@
 use super::{hand_rank_name, level_color, wrap};
-use crate::app::AppState;
+use crate::app::{AppState, WidgetId};
 use balatro_rs::stage::{blind_display, BlindExt, Stage};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
@@ -19,7 +19,7 @@ fn value(s: String, color: Color) -> Span<'static> {
     Span::styled(s, Style::default().fg(color).add_modifier(Modifier::BOLD))
 }
 
-pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
+pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray));
@@ -27,6 +27,16 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(3)])
+        .split(inner);
+
+    render_stats(f, app, chunks[0]);
+    render_buttons(f, app, chunks[1]);
+}
+
+fn render_stats(f: &mut Frame, app: &AppState, inner: Rect) {
     let game = &app.game;
 
     let mut lines: Vec<Line> = Vec::new();
@@ -239,6 +249,46 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
 
     let para = Paragraph::new(Text::from(lines));
     f.render_widget(para, inner);
+}
+
+fn render_buttons(f: &mut Frame, app: &mut AppState, area: Rect) {
+    let gap: u16 = 1;
+    let deck_w = area.width.saturating_sub(gap) / 2;
+    let run_info_w = area.width.saturating_sub(deck_w + gap);
+
+    let deck_rect = Rect {
+        x: area.x,
+        y: area.y,
+        width: deck_w,
+        height: area.height,
+    };
+    let run_info_rect = Rect {
+        x: area.x + deck_w + gap,
+        y: area.y,
+        width: run_info_w,
+        height: area.height,
+    };
+
+    render_sidebar_button(f, deck_rect, "Deck");
+    app.widget_rects
+        .insert(WidgetId::SidebarButton(0), deck_rect);
+
+    render_sidebar_button(f, run_info_rect, "Run Info");
+    app.widget_rects
+        .insert(WidgetId::SidebarButton(1), run_info_rect);
+}
+
+fn render_sidebar_button(f: &mut Frame, rect: Rect, label_text: &str) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let para = Paragraph::new(Line::from(Span::styled(
+        label_text,
+        Style::default().fg(Color::White),
+    )))
+    .block(block)
+    .alignment(Alignment::Center);
+    f.render_widget(para, rect);
 }
 
 fn ante_num(ante: balatro_rs::ante::Ante) -> usize {

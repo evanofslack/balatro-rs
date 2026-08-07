@@ -114,12 +114,28 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Min(0), Constraint::Length(seed_w)])
         .split(chunks[3]);
+    let prefix = "  Tab next  ←/→ deck view  ";
+    let close_label = "[ Close ]";
     f.render_widget(
-        Paragraph::new(Span::styled(
-            "  Tab next  ←/→ deck view  Esc / r close",
-            Style::default().fg(Color::DarkGray),
-        )),
+        Paragraph::new(Line::from(vec![
+            Span::styled(prefix, Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                close_label,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])),
         footer[0],
+    );
+    app.widget_rects.insert(
+        WidgetId::OverlayButton(0),
+        Rect {
+            x: footer[0].x + prefix.chars().count() as u16,
+            y: footer[0].y,
+            width: close_label.len() as u16,
+            height: 1,
+        },
     );
     f.render_widget(
         Paragraph::new(Line::from(vec![

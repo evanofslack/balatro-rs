@@ -6,6 +6,7 @@ pub mod joker;
 pub mod poker_hands;
 pub mod run_info;
 pub mod save;
+pub mod shop_buy;
 
 use crate::app::{AppState, Overlay};
 use ratatui::{layout::Rect, Frame};
@@ -18,6 +19,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, overlay: &Overlay) 
         Overlay::Save => save::render(f, app, area),
         Overlay::Consumable(idx) => consumable::render(f, app, area, *idx),
         Overlay::Joker(idx) => joker::render(f, app, area, *idx),
+        Overlay::ShopBuy(slot) => shop_buy::render(f, app, area, *slot),
     }
 }
 
