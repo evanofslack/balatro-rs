@@ -26,6 +26,7 @@ pub enum WidgetId {
     OverlayButton(usize),
     DeckTab(usize),
     RunInfoTab(usize),
+    SidebarButton(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +59,13 @@ pub enum InspectTarget {
     Tag(Tag),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShopSlot {
+    Joker(usize),
+    Consumable(usize),
+    Pack(usize),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeckTab {
     Remaining,
@@ -66,8 +74,8 @@ pub enum DeckTab {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunInfoTab {
-    Deck,
     PokerHands,
+    Blinds,
     Vouchers,
 }
 
@@ -79,6 +87,10 @@ pub enum Overlay {
     Save,
     Consumable(usize),
     Joker(usize),
+    ShopBuy(ShopSlot),
+    Deck,
+    Options,
+    PackPick(usize),
 }
 
 pub struct AppState {
@@ -104,7 +116,7 @@ impl AppState {
             overlay: None,
             overlay_cursor: 0,
             deck_tab: DeckTab::Remaining,
-            run_info_tab: RunInfoTab::Deck,
+            run_info_tab: RunInfoTab::PokerHands,
             save_input: String::new(),
             should_quit: false,
             widget_rects: HashMap::new(),

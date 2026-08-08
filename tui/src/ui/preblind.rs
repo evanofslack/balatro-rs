@@ -1,19 +1,7 @@
 use crate::app::{AppState, FocusZone, WidgetId};
-use crate::ui::{sidebar, wrap};
+use crate::ui::{blind_info, sidebar, wrap};
 use balatro_rs::action::Action;
 use balatro_rs::stage::{blind_display, Blind, BlindExt};
-
-/// The score a given blind will require - unlike `Game::required_score()`,
-/// doesn't depend on `self.blind` already being set to this blind, so it
-/// can preview all three (including the as-yet-unselected Boss) up front.
-fn preview_required_score(game: &balatro_rs::game::Game, blind: &Blind) -> usize {
-    let base = game.ante_current.base();
-    match blind {
-        Blind::Small => base,
-        Blind::Big => (base as f32 * 1.5) as usize,
-        Blind::Boss => game.boss_required_score(),
-    }
-}
 
 fn blind_state(game: &balatro_rs::game::Game, blind: &Blind) -> BlindState {
     let valid = game
@@ -22,11 +10,7 @@ fn blind_state(game: &balatro_rs::game::Game, blind: &Blind) -> BlindState {
     if valid {
         return BlindState::Available;
     }
-    let cleared = match game.blind {
-        Some(ref last) => blind <= last,
-        None => false,
-    };
-    if cleared {
+    if blind_info::is_cleared(game, *blind) {
         BlindState::Cleared
     } else {
         BlindState::NotYet
@@ -83,7 +67,9 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     let gap: u16 = 4;
     let total_w = blinds.len() as u16 * card_w + (blinds.len() as u16 - 1) * gap;
     let x_start = inner.x + inner.width.saturating_sub(total_w) / 2;
-    let y_start = inner.y + (inner.height.saturating_sub(card_h)) / 2;
+    // Anchor a small fixed distance below the header instead of centering in the
+    // full remaining height, which left a large empty gap on tall terminals.
+    let y_start = header_area.y + header_area.height + 2;
 
     let play_focused = app.focus == FocusZone::BlindSelect;
     let skip_focused = app.focus == FocusZone::BlindSkip;
@@ -174,7 +160,7 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
             lines.push(Line::from(vec![
                 Span::styled("  Score: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
-                    format!("{}", preview_required_score(&app.game, blind)),
+                    format!("{}", blind_info::required_score(&app.game, *blind)),
                     score_style,
                 ),
             ]));

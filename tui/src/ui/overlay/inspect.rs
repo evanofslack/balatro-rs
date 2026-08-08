@@ -2,7 +2,9 @@ use crate::app::{AppState, InspectTarget, WidgetId};
 use crate::ui::cards::{edition_color, rank_str, suit_char, suit_color};
 use crate::ui::overlay::centered_rect;
 use crate::ui::wrap;
-use balatro_rs::pack::PackCategory;
+use balatro_rs::consumable::Consumable;
+use balatro_rs::joker::Jokers;
+use balatro_rs::pack::{Pack, PackCategory};
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -11,6 +13,165 @@ use ratatui::{
     Frame,
 };
 
+/// Body lines shared by the read-only Inspect overlay and the shop Buy/Cancel
+/// overlay, so the two don't drift out of sync — only the footer differs.
+pub(crate) fn joker_lines(joker: &Jokers, w: u16) -> Vec<Line<'static>> {
+    let desc = joker.desc();
+    let edition = joker.edition();
+    let stickers = joker.stickers();
+    let mut sticker_flags = Vec::new();
+    if stickers.eternal {
+        sticker_flags.push("Eternal");
+    }
+    if stickers.perishable {
+        sticker_flags.push("Perishable");
+    }
+    if stickers.rental {
+        sticker_flags.push("Rental");
+    }
+
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  Rarity:   "),
+            Span::styled(
+                joker.rarity().to_string(),
+                Style::default().fg(Color::Magenta),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("  Cost:     "),
+            Span::styled(
+                format!("${}", joker.cost()),
+                Style::default().fg(Color::Yellow),
+            ),
+        ]),
+    ];
+    if edition != balatro_rs::card::Edition::Base {
+        lines.push(Line::from(vec![
+            Span::raw("  Edition:  "),
+            Span::styled(format!("{:?}", edition), Style::default().fg(edition_color(edition))),
+        ]));
+    }
+    if !sticker_flags.is_empty() {
+        lines.push(Line::from(vec![
+            Span::raw("  Stickers: "),
+            Span::styled(sticker_flags.join(", "), Style::default().fg(Color::Cyan)),
+        ]));
+    }
+    lines.push(Line::from(""));
+    for word_line in wrap(desc, w as usize - 4) {
+        lines.push(Line::from(Span::styled(
+            format!("  {}", word_line),
+            Style::default().fg(Color::White),
+        )));
+    }
+    lines
+}
+
+pub(crate) fn consumable_lines(c: &Consumable, w: u16) -> Vec<Line<'static>> {
+    let desc = c.description();
+    let type_color = crate::ui::consumable_type_color(c);
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  Type:  "),
+            Span::styled(c.type_label().to_string(), Style::default().fg(type_color)),
+        ]),
+        Line::from(vec![
+            Span::raw("  Cost:  "),
+            Span::styled(format!("${}", c.cost()), Style::default().fg(Color::Yellow)),
+        ]),
+        Line::from(""),
+    ];
+    for word_line in wrap(&desc, w as usize - 4) {
+        lines.push(Line::from(Span::styled(
+            format!("  {}", word_line),
+            Style::default().fg(Color::White),
+        )));
+    }
+    lines
+}
+
+pub(crate) fn card_lines(card: &balatro_rs::card::Card) -> Vec<Line<'static>> {
+    let suit_style = Style::default()
+        .fg(suit_color(card.suit))
+        .add_modifier(Modifier::BOLD);
+    vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  Rank:        "),
+            Span::styled(
+                rank_str(card.value),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("  Suit:        "),
+            Span::styled(suit_char(card.suit).to_string(), suit_style),
+        ]),
+        Line::from(vec![
+            Span::raw("  Enhancement: "),
+            Span::styled(
+                card.enhancement
+                    .map_or_else(|| "none".to_string(), |e| format!("{:?}", e)),
+                Style::default().fg(Color::Cyan),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("  Edition:     "),
+            Span::styled(
+                format!("{:?}", card.edition),
+                Style::default().fg(Color::Cyan),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("  Seal:        "),
+            Span::styled(
+                card.seal
+                    .map_or_else(|| "none".to_string(), |e| format!("{:?}", e)),
+                Style::default().fg(Color::Cyan),
+            ),
+        ]),
+        Line::from(""),
+    ]
+}
+
+pub(crate) fn pack_lines(pack: &Pack, w: u16) -> Vec<Line<'static>> {
+    let category = match &pack.category {
+        PackCategory::Arcana => "Arcana",
+        PackCategory::Buffoon => "Buffoon",
+        PackCategory::Celestial => "Celestial",
+        PackCategory::Standard => "Standard",
+        PackCategory::Spectral => "Spectral",
+    };
+    let desc = pack.description();
+    let mut lines = vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  Category: "),
+            Span::styled(category, Style::default().fg(Color::Cyan)),
+        ]),
+        Line::from(vec![
+            Span::raw("  Cost:     "),
+            Span::styled(
+                format!("${}", pack.cost()),
+                Style::default().fg(Color::Yellow),
+            ),
+        ]),
+        Line::from(""),
+    ];
+    for word_line in wrap(&desc, w as usize - 4) {
+        lines.push(Line::from(Span::styled(
+            format!("  {}", word_line),
+            Style::default().fg(Color::White),
+        )));
+    }
+    lines
+}
+
 pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarget) {
     let w: u16 = 44;
     let h: u16 = 18;
@@ -18,169 +179,27 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
 
     f.render_widget(Clear, rect);
 
-    let (title, lines) = match target {
+    let (title, mut lines) = match target {
         InspectTarget::Card(card) => {
-            let suit_style = Style::default()
-                .fg(suit_color(card.suit))
-                .add_modifier(Modifier::BOLD);
             let title = format!(" {} of {}s ", rank_str(card.value), suit_char(card.suit));
-            let lines = vec![
-                Line::from(""),
-                Line::from(vec![
-                    Span::raw("  Rank:        "),
-                    Span::styled(
-                        rank_str(card.value),
-                        Style::default()
-                            .fg(Color::White)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Suit:        "),
-                    Span::styled(suit_char(card.suit).to_string(), suit_style),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Enhancement: "),
-                    Span::styled(
-                        card.enhancement
-                            .map_or_else(|| "none".to_string(), |e| format!("{:?}", e)),
-                        Style::default().fg(Color::Cyan),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Edition:     "),
-                    Span::styled(
-                        format!("{:?}", card.edition),
-                        Style::default().fg(Color::Cyan),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Seal:        "),
-                    Span::styled(
-                        card.seal
-                            .map_or_else(|| "none".to_string(), |e| format!("{:?}", e)),
-                        Style::default().fg(Color::Cyan),
-                    ),
-                ]),
-                Line::from(""),
-                close_line(),
-            ];
-            (title, lines)
+            (title, card_lines(&card))
         }
         InspectTarget::Joker(joker) => {
             let title = format!(" {} ", joker.name());
-            let desc = joker.desc();
-            let edition = joker.edition();
-            let stickers = joker.stickers();
-            let mut sticker_flags = Vec::new();
-            if stickers.eternal {
-                sticker_flags.push("Eternal");
-            }
-            if stickers.perishable {
-                sticker_flags.push("Perishable");
-            }
-            if stickers.rental {
-                sticker_flags.push("Rental");
-            }
-            let sticker_str = if sticker_flags.is_empty() {
-                "none".to_string()
-            } else {
-                sticker_flags.join(", ")
-            };
-            let mut lines = vec![
-                Line::from(""),
-                Line::from(vec![
-                    Span::raw("  Rarity:   "),
-                    Span::styled(
-                        joker.rarity().to_string(),
-                        Style::default().fg(Color::Magenta),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Cost:     "),
-                    Span::styled(
-                        format!("${}", joker.cost()),
-                        Style::default().fg(Color::Yellow),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Edition:  "),
-                    Span::styled(format!("{:?}", edition), Style::default().fg(edition_color(edition))),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Stickers: "),
-                    Span::styled(sticker_str, Style::default().fg(Color::Cyan)),
-                ]),
-                Line::from(""),
-            ];
-            for word_line in wrap(desc, w as usize - 4) {
-                lines.push(Line::from(Span::styled(
-                    format!("  {}", word_line),
-                    Style::default().fg(Color::White),
-                )));
-            }
+            let mut lines = joker_lines(&joker, w);
             lines.push(Line::from(""));
-            lines.push(close_line());
             (title, lines)
         }
         InspectTarget::Consumable(c) => {
             let title = format!(" {} ", c.name());
-            let desc = c.description();
-            let mut lines = vec![
-                Line::from(""),
-                Line::from(vec![
-                    Span::raw("  Type:  "),
-                    Span::styled(c.type_label().to_string(), Style::default().fg(Color::Cyan)),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Cost:  "),
-                    Span::styled(format!("${}", c.cost()), Style::default().fg(Color::Yellow)),
-                ]),
-                Line::from(""),
-            ];
-            for word_line in wrap(&desc, w as usize - 4) {
-                lines.push(Line::from(Span::styled(
-                    format!("  {}", word_line),
-                    Style::default().fg(Color::White),
-                )));
-            }
+            let mut lines = consumable_lines(&c, w);
             lines.push(Line::from(""));
-            lines.push(close_line());
             (title, lines)
         }
         InspectTarget::Pack(pack) => {
             let title = format!(" {} ", pack.name());
-            let category = match &pack.category {
-                PackCategory::Arcana => "Arcana",
-                PackCategory::Buffoon => "Buffoon",
-                PackCategory::Celestial => "Celestial",
-                PackCategory::Standard => "Standard",
-                PackCategory::Spectral => "Spectral",
-            };
-            let desc = pack.description();
-            let mut lines = vec![
-                Line::from(""),
-                Line::from(vec![
-                    Span::raw("  Category: "),
-                    Span::styled(category, Style::default().fg(Color::Cyan)),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Cost:     "),
-                    Span::styled(
-                        format!("${}", pack.cost()),
-                        Style::default().fg(Color::Yellow),
-                    ),
-                ]),
-                Line::from(""),
-            ];
-            for word_line in wrap(&desc, w as usize - 4) {
-                lines.push(Line::from(Span::styled(
-                    format!("  {}", word_line),
-                    Style::default().fg(Color::White),
-                )));
-            }
+            let mut lines = pack_lines(&pack, w);
             lines.push(Line::from(""));
-            lines.push(close_line());
             (title, lines)
         }
         InspectTarget::Tag(tag) => {
@@ -194,10 +213,21 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
                 )));
             }
             lines.push(Line::from(""));
-            lines.push(close_line());
             (title, lines)
         }
     };
+
+    // Track the close button's real row instead of assuming it lands at a
+    // fixed offset from the box bottom — content length varies a lot between
+    // target types (fixed-length Card vs. wrapped-description Joker/Pack/etc).
+    let close_row = lines.len() as u16;
+    let close_text = "       [ Close ]";
+    lines.push(Line::from(Span::styled(
+        close_text,
+        Style::default()
+            .fg(Color::White)
+            .add_modifier(Modifier::BOLD),
+    )));
 
     let block = Block::default()
         .title(Span::styled(
@@ -212,23 +242,14 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
     let para = Paragraph::new(Text::from(lines)).block(block);
     f.render_widget(para, rect);
 
-    // Close button rect
+    // Close button rect — +1 for the block's top border row.
     app.widget_rects.insert(
         WidgetId::OverlayButton(0),
         Rect {
-            x: rect.x + w / 2 - 5,
-            y: rect.y + h - 2,
-            width: 10,
+            x: rect.x + 1,
+            y: rect.y + 1 + close_row,
+            width: close_text.chars().count() as u16,
             height: 1,
         },
     );
-}
-
-fn close_line() -> Line<'static> {
-    Line::from(Span::styled(
-        "       [ Close ]",
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD),
-    ))
 }

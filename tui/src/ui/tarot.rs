@@ -165,7 +165,7 @@ fn render_tarot_info(f: &mut Frame, tarot: &balatro_rs::tarot::Tarot, app: &AppS
             Span::styled(
                 tarot.name(),
                 Style::default()
-                    .fg(Color::Magenta)
+                    .fg(Color::Yellow)
                     .add_modifier(Modifier::BOLD),
             ),
         ]),

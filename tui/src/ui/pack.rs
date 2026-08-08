@@ -105,38 +105,23 @@ fn render_contents(f: &mut Frame, app: &mut AppState, contents: &[PackContent], 
             }
             _ => {
                 let color = content_color(content);
-                let border_type = if is_cursor {
-                    BorderType::Double
-                } else {
-                    BorderType::Plain
-                };
-                let border_color = if is_cursor { Color::Yellow } else { color };
                 let inner_w = (cards::CARD_W as usize).saturating_sub(2);
 
-                let block = Block::default()
-                    .title(Span::styled(
-                        format!(" {} ", content.type_label()),
-                        Style::default().fg(color).add_modifier(Modifier::BOLD),
-                    ))
-                    .borders(Borders::ALL)
-                    .border_type(border_type)
-                    .border_style(Style::default().fg(border_color));
-
+                let title = Span::styled(
+                    format!(" {} ", content.type_label()),
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
+                );
                 let name = content.name();
-                let name_lines = crate::ui::wrap(&name, inner_w);
-                let mut lines = vec![Line::from("")];
-                for l in name_lines.iter().take(2) {
-                    lines.push(Line::from(Span::styled(
-                        l.clone(),
-                        Style::default()
-                            .fg(Color::White)
-                            .add_modifier(Modifier::BOLD),
-                    )));
-                }
-                let para = Paragraph::new(lines)
-                    .block(block)
-                    .alignment(Alignment::Center);
-                f.render_widget(para, item_rect);
+                let (line1, line2) = cards::wrap_two_lines(&name, inner_w);
+                let text_style = Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD);
+                let lines = vec![
+                    Line::from(Span::styled(line1, text_style)),
+                    Line::from(Span::styled(line2, text_style)),
+                ];
+
+                cards::render_item_box(f, item_rect, is_cursor, color, Some(title), lines, None);
             }
         }
 
@@ -236,9 +221,9 @@ fn render_drawn_hand(f: &mut Frame, app: &mut AppState, area: Rect) {
 
 fn content_color(content: &PackContent) -> Color {
     match content {
-        PackContent::Tarot(_) => Color::Magenta,
+        PackContent::Tarot(_) => Color::Yellow, // gold, matches consumable_type_color
         PackContent::Planet(_) => Color::Blue,
-        PackContent::Joker(_) => Color::Yellow,
+        PackContent::Joker(_) => Color::Magenta,
         PackContent::PlayingCard(_) => Color::White,
         PackContent::Spectral(_) => Color::Cyan,
     }

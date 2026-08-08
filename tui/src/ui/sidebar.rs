@@ -1,8 +1,8 @@
 use super::{hand_rank_name, level_color, wrap};
-use crate::app::AppState;
+use crate::app::{AppState, WidgetId};
 use balatro_rs::stage::{blind_display, BlindExt, Stage};
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
@@ -19,7 +19,7 @@ fn value(s: String, color: Color) -> Span<'static> {
     Span::styled(s, Style::default().fg(color).add_modifier(Modifier::BOLD))
 }
 
-pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
+pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray));
@@ -27,6 +27,16 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(11)])
+        .split(inner);
+
+    render_stats(f, app, chunks[0]);
+    render_buttons(f, app, chunks[1]);
+}
+
+fn render_stats(f: &mut Frame, app: &AppState, inner: Rect) {
     let game = &app.game;
 
     let mut lines: Vec<Line> = Vec::new();
@@ -73,7 +83,7 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
         Stage::TarotHand(t) => Line::from(Span::styled(
             t.name(),
             Style::default()
-                .fg(Color::Magenta)
+                .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         )),
         Stage::SpectralHand(s) => Line::from(Span::styled(
@@ -239,6 +249,42 @@ pub fn render(f: &mut Frame, app: &AppState, area: Rect) {
 
     let para = Paragraph::new(Text::from(lines));
     f.render_widget(para, inner);
+}
+
+fn render_buttons(f: &mut Frame, app: &mut AppState, area: Rect) {
+    let btn_h: u16 = 3;
+    let gap: u16 = 1;
+
+    let deck_count = app.game.deck.cards().len();
+    let deck_total =
+        deck_count + app.game.available.cards().len() + app.game.discarded.len();
+    let deck_label = format!("Deck {}/{}", deck_count, deck_total);
+
+    let labels = ["Run Info", "Options", &deck_label];
+    for (i, text) in labels.iter().enumerate() {
+        let rect = Rect {
+            x: area.x,
+            y: area.y + i as u16 * (btn_h + gap),
+            width: area.width,
+            height: btn_h,
+        };
+        render_sidebar_button(f, rect, text);
+        app.widget_rects
+            .insert(WidgetId::SidebarButton(i), rect);
+    }
+}
+
+fn render_sidebar_button(f: &mut Frame, rect: Rect, label_text: &str) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let para = Paragraph::new(Line::from(Span::styled(
+        label_text,
+        Style::default().fg(Color::White),
+    )))
+    .block(block)
+    .alignment(Alignment::Center);
+    f.render_widget(para, rect);
 }
 
 fn ante_num(ante: balatro_rs::ante::Ante) -> usize {

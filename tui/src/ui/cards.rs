@@ -67,12 +67,12 @@ fn enhancement_indicator(enh: Enhancement) -> (&'static str, Color) {
     }
 }
 
-// Card dimensions: 10 wide × 7 tall (including borders)
-// Each card slot: 11 wide (10 + 1 gap), 8 tall (7 card + 1 shift buffer)
-pub const CARD_W: u16 = 10;
-pub const CARD_H: u16 = 7;
-pub const SLOT_W: u16 = 11; // CARD_W + 1 gap
-pub const SLOT_H: u16 = 8; // CARD_H + 1 shift row
+// Card dimensions: 13 wide × 9 tall (including borders)
+// Each card slot: 14 wide (13 + 1 gap), 10 tall (9 card + 1 shift buffer)
+pub const CARD_W: u16 = 13;
+pub const CARD_H: u16 = 9;
+pub const SLOT_W: u16 = CARD_W + 1; // + 1 gap
+pub const SLOT_H: u16 = CARD_H + 1; // + 1 shift row
 
 // Dark red (#8B0000) - distinct from the bright Color::Red used for Hearts/
 // seals/enhancements, so a debuffed card reads as "muted" not "alert".
@@ -161,7 +161,18 @@ fn card_inner_text(card: Card, debuffed: bool) -> Text<'static> {
         Line::from("")
     };
 
-    Text::from(vec![row0, row1, Line::from(""), row3, row4])
+    let content = vec![row0, row1, Line::from(""), row3, row4];
+    // Center the fixed 5-row content within however tall the interior actually
+    // is, rather than hardcoding a row count that goes stale if CARD_H changes.
+    let pad = (CARD_H as usize).saturating_sub(2).saturating_sub(content.len());
+    let pad_top = pad / 2;
+    let pad_bottom = pad - pad_top;
+    let mut lines = Vec::with_capacity(content.len() + pad);
+    lines.extend(std::iter::repeat_with(|| Line::from("")).take(pad_top));
+    lines.extend(content);
+    lines.extend(std::iter::repeat_with(|| Line::from("")).take(pad_bottom));
+
+    Text::from(lines)
 }
 
 fn card_block(card: Card, is_cursor: bool, debuffed: bool) -> Block<'static> {
@@ -187,6 +198,68 @@ pub fn render_card(f: &mut Frame, card: Card, rect: Rect, is_cursor: bool, debuf
     let block = card_block(card, is_cursor, debuffed);
     let text = card_inner_text(card, debuffed);
     f.render_widget(Paragraph::new(text).block(block), rect);
+}
+
+/// Wraps `name` into at most two lines of `max_w` chars, truncating the
+/// second line with an ellipsis if it still doesn't fit.
+pub fn wrap_two_lines(name: &str, max_w: usize) -> (String, String) {
+    if name.len() <= max_w {
+        return (name.to_string(), String::new());
+    }
+    let split = name[..max_w].rfind(' ').unwrap_or(max_w);
+    let line1 = name[..split].to_string();
+    let rest = name[split..].trim_start();
+    let line2 = if rest.len() > max_w {
+        format!("{}…", &rest[..max_w.saturating_sub(1)])
+    } else {
+        rest.to_string()
+    };
+    (line1, line2)
+}
+
+/// Generic bordered item box shared by every joker/consumable/pack "card" —
+/// jokers, shop items, and pack-open choices all render through this so
+/// sizing/padding only needs to be correct in one place. Padding is derived
+/// from the real inner height rather than a hardcoded row count, so content
+/// that's too long to fit is truncated instead of silently overflowing/
+/// pushing the footer off (the class of bug that clipped shop price tags).
+pub fn render_item_box(
+    f: &mut Frame,
+    rect: Rect,
+    is_cursor: bool,
+    color: Color,
+    border_title: Option<Span<'static>>,
+    mut lines: Vec<Line<'static>>,
+    footer: Option<Line<'static>>,
+) {
+    let border_type = if is_cursor {
+        BorderType::Double
+    } else {
+        BorderType::Plain
+    };
+    let border_color = if is_cursor { Color::Yellow } else { color };
+
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(border_type)
+        .border_style(Style::default().fg(border_color));
+    if let Some(title) = border_title {
+        block = block.title(title);
+    }
+
+    let inner_h = (rect.height as usize).saturating_sub(2);
+    let footer_rows = if footer.is_some() { 1 } else { 0 };
+    let target = inner_h.saturating_sub(footer_rows);
+    lines.truncate(target);
+    while lines.len() < target {
+        lines.push(Line::from(""));
+    }
+    if let Some(footer_line) = footer {
+        lines.push(footer_line);
+    }
+
+    let para = Paragraph::new(Text::from(lines)).block(block);
+    f.render_widget(para, rect);
 }
 
 pub fn render_hand(

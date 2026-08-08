@@ -1,3 +1,4 @@
+use crate::app::{AppState, WidgetId};
 use crate::ui::overlay::centered_rect;
 use ratatui::{
     layout::Rect,
@@ -7,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-pub fn render(f: &mut Frame, _app: &mut crate::app::AppState, area: Rect) {
+pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     let w: u16 = 58;
     let h: u16 = 22;
     let rect = centered_rect(w, h, area);
@@ -25,10 +26,11 @@ pub fn render(f: &mut Frame, _app: &mut crate::app::AppState, area: Rect) {
     let inner = block.inner(rect);
     f.render_widget(block, rect);
 
+    let close_label = "  [ Close ]";
     let lines = vec![
         Line::from(""),
         bind("?", "Show controls"),
-        bind("r", "Run info (Deck, Poker Hands)"),
+        bind("r", "Run info (Poker Hands, Blinds, Vouchers)"),
         bind("e", "Export game"),
         bind("q", "Quit"),
         bind("i", "Inspect item"),
@@ -41,10 +43,28 @@ pub fn render(f: &mut Frame, _app: &mut crate::app::AppState, area: Rect) {
         bind("s", "Sort hand rank/suit  (blind)"),
         bind("d", "Discard    (blind)"),
         bind("n", "Next round (shop)"),
+        Line::from(""),
+        Line::from(Span::styled(
+            close_label,
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
     ];
+    let close_row = lines.len() as u16 - 1;
 
     let para = Paragraph::new(lines);
     f.render_widget(para, inner);
+
+    app.widget_rects.insert(
+        WidgetId::OverlayButton(0),
+        Rect {
+            x: inner.x,
+            y: inner.y + close_row,
+            width: close_label.chars().count() as u16,
+            height: 1,
+        },
+    );
 }
 
 fn bind(key: &'static str, action: &'static str) -> Line<'static> {
