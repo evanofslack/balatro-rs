@@ -500,7 +500,7 @@ impl JokerEffects for Jokers {
             }
             Self::Acrobat(_) => {
                 fn apply(g: &mut Game, _hand: MadeHand) {
-                    if g.plays == 0 {
+                    if g.plays() == 0 {
                         g.mult *= 3;
                     }
                 }
@@ -658,7 +658,7 @@ impl JokerEffects for Jokers {
             }
             Self::Dusk(_) => {
                 fn extra(g: &mut Game, _card: Card, _is_first: bool) -> usize {
-                    if g.plays == 0 {
+                    if g.plays() == 0 {
                         1
                     } else {
                         0
@@ -4086,6 +4086,52 @@ mod tests {
         let ace = Card::new(Value::Ace, Suit::Heart);
         let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
         g.calc_score(hand);
+        assert_eq!(g.money, money_before);
+    }
+
+    #[test]
+    fn test_matador_pays_out_when_eye_boss_wastes_a_repeated_hand() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Eye),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::Matador(Matador::default())],
+            ..Default::default()
+        };
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        g.calc_score(pair);
+        let money_before = g.money;
+
+        let pair_again = SelectHand::new(vec![
+            Card::new(Value::Queen, Suit::Club),
+            Card::new(Value::Queen, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        g.calc_score(pair_again);
+        assert_eq!(g.money, money_before + 8);
+    }
+
+    #[test]
+    fn test_matador_does_not_pay_out_for_needle_boss() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Needle),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::Matador(Matador::default())],
+            ..Default::default()
+        };
+        let money_before = g.money;
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        g.calc_score(pair);
         assert_eq!(g.money, money_before);
     }
 }

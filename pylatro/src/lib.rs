@@ -91,7 +91,7 @@ impl GameState {
     }
     #[getter]
     fn plays(&self) -> usize {
-        self.game.plays
+        self.game.plays()
     }
     #[getter]
     fn discards(&self) -> usize {

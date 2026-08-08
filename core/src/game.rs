@@ -79,7 +79,7 @@ pub struct Game {
     pub score: usize,
     pub prob_mult: u32,
 
-    // shared game-level history some jokers key off (RideTheBus, Obelisk, etc)
+    // shared game-level history some concepts key off
     #[cfg_attr(feature = "serde", serde(default))]
     pub(crate) hand_ranks_played_this_round: HashSet<HandRank>,
     #[cfg_attr(feature = "serde", serde(default))]
@@ -98,6 +98,9 @@ pub struct Game {
     // set when a boss's ability actually triggered (Matador's trigger condition).
     #[cfg_attr(feature = "serde", serde(default))]
     pub(crate) boss_triggered_this_hand: bool,
+    // rank of the first hand played this round
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub(crate) first_played_rank_this_round: Option<HandRank>,
 
     pub last_consumable_used: Option<Consumable>,
     #[cfg_attr(feature = "serde", serde(default))]
@@ -186,6 +189,7 @@ impl Game {
             total_cards_discarded: 0,
             boss_disabled_by_luchador: false,
             boss_triggered_this_hand: false,
+            first_played_rank_this_round: None,
             last_consumable_used: None,
             last_score: 0,
             reroll_cost: default_reroll_cost(),
@@ -243,6 +247,7 @@ impl Game {
         self.plays = self.config.plays;
         self.discards_remaining = self.config.discards;
         self.hand_ranks_played_this_round.clear();
+        self.first_played_rank_this_round = None;
         self.discarded_this_round.clear();
         self.boss_disabled_by_luchador = false;
         self.deck.append(&mut self.discarded);
@@ -266,6 +271,19 @@ impl Game {
             return None;
         }
         self.current_boss
+    }
+
+    /// Plays actually usable right now
+    pub fn plays(&self) -> usize {
+        if self.active_boss() == Some(BossBlind::Needle) {
+            if self.hand_ranks_played_this_round.is_empty() {
+                1
+            } else {
+                0
+            }
+        } else {
+            self.plays
+        }
     }
 
     /// Discards actually usable right now
@@ -333,7 +351,7 @@ impl Game {
     }
 
     pub(crate) fn play_selected(&mut self) -> Result<(), GameError> {
-        if self.plays == 0 {
+        if self.plays() == 0 {
             return Err(GameError::NoRemainingPlays);
         }
         self.plays -= 1;
@@ -560,6 +578,21 @@ impl Game {
     ) -> usize {
         self.boss_triggered_this_hand = false;
 
+        // Eye/Mouth/Psychic don't restrict which hands are legal to play, it just scores 0.
+        // INFO: Must check before hand_ranks_played_this_round records this hand,
+        // so "played earlier this round" doesn't include itself.
+        let wasted = match self.active_boss() {
+            Some(BossBlind::Eye) => self.hand_ranks_played_this_round.contains(&hand.rank),
+            Some(BossBlind::Mouth) => {
+                matches!(self.first_played_rank_this_round, Some(r) if r != hand.rank)
+            }
+            Some(BossBlind::Psychic) => hand.all.len() != 5,
+            _ => false,
+        };
+        if wasted {
+            self.boss_triggered_this_hand = true;
+        }
+
         // compute chips and mult from hand level
         let chips_before = self.chips;
         let mult_before = self.mult;
@@ -756,9 +789,12 @@ impl Game {
 
         // record after joker loop, not before (for CardSharp)
         self.hand_ranks_played_this_round.insert(hand.rank);
+        if self.first_played_rank_this_round.is_none() {
+            self.first_played_rank_this_round = Some(hand.rank);
+        }
 
         // compute score
-        let score = self.chips * self.mult;
+        let score = if wasted { 0 } else { self.chips * self.mult };
 
         // reset chips and mult
         self.mult = self.config.base_mult;
@@ -798,7 +834,7 @@ impl Game {
             interest = self.config.interest_max
         }
         let base = blind.reward();
-        let hand_bonus = self.plays * self.config.money_per_hand;
+        let hand_bonus = self.plays() * self.config.money_per_hand;
         let reward = base + interest + hand_bonus;
         Ok(reward)
     }
@@ -1289,7 +1325,7 @@ impl Game {
         // blind not passed
         if self.score < required {
             // no more hands to play -> lose
-            if self.plays == 0 {
+            if self.plays() == 0 {
                 self.stage = Stage::End(End::Lose);
                 return Ok(false);
             } else {
@@ -1490,7 +1526,7 @@ impl fmt::Display for Game {
         writeln!(f, "ante: {:?}", self.ante_current)?;
         writeln!(f, "blind: {:?}", self.blind)?;
         writeln!(f, "round: {}", self.round)?;
-        writeln!(f, "hands remaining: {}", self.plays)?;
+        writeln!(f, "hands remaining: {}", self.plays())?;
         writeln!(f, "discards remaining: {}", self.discards())?;
         writeln!(f, "money: {}", self.money)?;
         if matches!(self.stage, Stage::Blind(_)) {
@@ -2695,6 +2731,229 @@ mod tests {
         }
         g.discard_selected().expect("can discard");
         assert_eq!(g.available.cards().len(), 8);
+    }
+
+    #[test]
+    fn test_eye_boss_wastes_any_previously_played_hand_type_not_just_last() {
+        // Pair, then Flush, then Straight, then Pair again - the 4th play
+        // wastes the hand even though Pair wasn't the *immediately* previous
+        // type played (Straight was).
+        let mut g = Game {
+            current_boss: Some(BossBlind::Eye),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        assert_eq!(pair.rank, HandRank::OnePair);
+        assert!(g.calc_score(pair) > 0);
+
+        let flush = SelectHand::new(vec![
+            Card::new(Value::Two, Suit::Spade),
+            Card::new(Value::Four, Suit::Spade),
+            Card::new(Value::Six, Suit::Spade),
+            Card::new(Value::Eight, Suit::Spade),
+            Card::new(Value::Ten, Suit::Spade),
+        ])
+        .best_hand()
+        .unwrap();
+        assert_eq!(flush.rank, HandRank::Flush);
+        assert!(g.calc_score(flush) > 0);
+
+        let straight = SelectHand::new(vec![
+            Card::new(Value::Two, Suit::Spade),
+            Card::new(Value::Three, Suit::Heart),
+            Card::new(Value::Four, Suit::Club),
+            Card::new(Value::Five, Suit::Diamond),
+            Card::new(Value::Six, Suit::Spade),
+        ])
+        .best_hand()
+        .unwrap();
+        assert_eq!(straight.rank, HandRank::Straight);
+        assert!(g.calc_score(straight) > 0);
+
+        let pair_again = SelectHand::new(vec![
+            Card::new(Value::Queen, Suit::Club),
+            Card::new(Value::Queen, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        assert_eq!(pair_again.rank, HandRank::OnePair);
+        assert_eq!(g.calc_score(pair_again), 0);
+        assert!(g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_eye_boss_first_hand_of_each_type_scores_normally() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Eye),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        assert!(g.calc_score(pair) > 0);
+        assert!(!g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_mouth_boss_only_first_hand_type_scores() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Mouth),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let flush = SelectHand::new(vec![
+            Card::new(Value::Two, Suit::Spade),
+            Card::new(Value::Four, Suit::Spade),
+            Card::new(Value::Six, Suit::Spade),
+            Card::new(Value::Eight, Suit::Spade),
+            Card::new(Value::Ten, Suit::Spade),
+        ])
+        .best_hand()
+        .unwrap();
+        assert_eq!(flush.rank, HandRank::Flush);
+        assert!(g.calc_score(flush) > 0);
+        assert!(!g.boss_triggered_this_hand);
+        assert_eq!(g.first_played_rank_this_round, Some(HandRank::Flush));
+
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        assert_eq!(g.calc_score(pair), 0);
+        assert!(g.boss_triggered_this_hand);
+
+        // Another Flush later in the round still scores normally.
+        let flush2 = SelectHand::new(vec![
+            Card::new(Value::Three, Suit::Diamond),
+            Card::new(Value::Five, Suit::Diamond),
+            Card::new(Value::Seven, Suit::Diamond),
+            Card::new(Value::Nine, Suit::Diamond),
+            Card::new(Value::Jack, Suit::Diamond),
+        ])
+        .best_hand()
+        .unwrap();
+        assert!(g.calc_score(flush2) > 0);
+        assert!(!g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_psychic_boss_requires_exactly_five_cards() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Psychic),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let three_cards = SelectHand::new(vec![
+            Card::new(Value::Two, Suit::Spade),
+            Card::new(Value::Four, Suit::Heart),
+            Card::new(Value::Six, Suit::Club),
+        ])
+        .best_hand()
+        .unwrap();
+        assert_eq!(g.calc_score(three_cards), 0);
+        assert!(g.boss_triggered_this_hand);
+
+        let five_cards = SelectHand::new(vec![
+            Card::new(Value::Two, Suit::Spade),
+            Card::new(Value::Four, Suit::Heart),
+            Card::new(Value::Six, Suit::Club),
+            Card::new(Value::Eight, Suit::Diamond),
+            Card::new(Value::King, Suit::Spade),
+        ])
+        .best_hand()
+        .unwrap();
+        assert!(g.calc_score(five_cards) > 0);
+        assert!(!g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_needle_boss_matador_never_triggers() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Needle),
+            blind: Some(Blind::Boss),
+            ..Default::default()
+        };
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        g.calc_score(pair);
+        assert!(!g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_needle_boss_plays_is_one_before_hand_zero_after() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Needle),
+            blind: Some(Blind::Boss),
+            plays: 4,
+            ..Default::default()
+        };
+        assert_eq!(g.plays(), 1);
+        assert_eq!(g.plays, 4);
+
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        g.calc_score(pair);
+        assert_eq!(g.plays(), 0);
+        // Real counter is untouched by the cap - calc_score doesn't decrement it.
+        assert_eq!(g.plays, 4);
+    }
+
+    #[test]
+    fn test_needle_boss_plays_restored_when_disabled_mid_round() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Needle),
+            blind: Some(Blind::Boss),
+            plays: 4,
+            ..Default::default()
+        };
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        g.calc_score(pair);
+        assert_eq!(g.plays(), 0);
+
+        g.boss_disabled_by_luchador = true;
+        assert_eq!(g.plays(), 4);
+    }
+
+    #[test]
+    fn test_needle_boss_no_play_action_after_one_hand() {
+        let mut g = Game::default();
+        g.start();
+        g.current_boss = Some(BossBlind::Needle);
+        g.stage = Stage::Blind(Blind::Boss);
+        g.blind = Some(Blind::Boss);
+        g.deal();
+        let card = g.available.cards()[0];
+        g.select_card(card).expect("can select card");
+        assert!(g.gen_actions().any(|a| a == Action::Play()));
+
+        let pair = SelectHand::new(vec![card]).best_hand().unwrap();
+        g.calc_score(pair);
+        assert!(!g.gen_actions().any(|a| a == Action::Play()));
     }
 
     #[test]

@@ -45,7 +45,7 @@ impl Game {
             return None;
         }
         // If no plays remaining, return None
-        if self.plays == 0 {
+        if self.plays() == 0 {
             return None;
         }
         // If no cards selected, return None
@@ -510,7 +510,7 @@ impl Game {
             return;
         }
         // Can only play/discard is have remaining
-        if self.plays != 0 {
+        if self.plays() != 0 {
             space.unmask_play();
         }
         if self.discards() != 0 {

@@ -218,7 +218,7 @@ fn render_stats(f: &mut Frame, app: &AppState, inner: Rect) {
     // Stats
     lines.push(Line::from(vec![
         label("Hands    "),
-        value(game.plays.to_string(), Color::Blue),
+        value(game.plays().to_string(), Color::Blue),
     ]));
     lines.push(Line::from(vec![
         label("Discards "),

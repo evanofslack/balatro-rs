@@ -57,7 +57,7 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     // game.reward = blind_base + interest + hand_bonus (computed by engine on blind clear)
     let total = app.game.reward;
     let blind_base = app.game.blind.map(|b| b.reward()).unwrap_or(0);
-    let hands_bonus = app.game.plays * app.game.config.money_per_hand;
+    let hands_bonus = app.game.plays() * app.game.config.money_per_hand;
     let interest = ((app.game.money as f32 * app.game.config.interest_rate) as usize)
         .min(app.game.config.interest_max);
 
@@ -77,7 +77,8 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     let blind_label = "  Beat the blind".to_string();
     let hands_label = format!(
         "  {} hand(s) remaining x ${}",
-        app.game.plays, app.game.config.money_per_hand
+        app.game.plays(),
+        app.game.config.money_per_hand
     );
     let interest_per = (1.0 / app.game.config.interest_rate).round() as usize;
     let interest_label = format!(
