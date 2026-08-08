@@ -160,7 +160,49 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
             KeyCode::Esc => app.close_overlay(),
             _ => {}
         },
+        Overlay::PackPick(idx) => match key.code {
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::BackTab => {
+                if app.overlay_cursor > 0 {
+                    app.overlay_cursor -= 1;
+                }
+            }
+            KeyCode::Right | KeyCode::Char('l') | KeyCode::Tab => {
+                if app.overlay_cursor < 1 {
+                    app.overlay_cursor += 1;
+                }
+            }
+            KeyCode::Enter => match app.overlay_cursor {
+                0 => {
+                    let prev = app.game.stage;
+                    if execute_pack_pick(app, idx) {
+                        app.close_overlay();
+                        if app.game.stage != prev {
+                            app.sync_focus_to_stage();
+                        }
+                    }
+                }
+                _ => app.close_overlay(),
+            },
+            KeyCode::Esc => app.close_overlay(),
+            _ => {}
+        },
     }
+}
+
+/// Attempts to pick pack content `idx`, returning whether it succeeded —
+/// shared by the mouse and keyboard paths through the pack Select/Cancel
+/// overlay, same pattern as `execute_shop_buy`.
+fn execute_pack_pick(app: &mut AppState, idx: usize) -> bool {
+    let Some(content) = app
+        .game
+        .open_pack
+        .as_ref()
+        .and_then(|s| s.contents.get(idx))
+        .cloned()
+    else {
+        return false;
+    };
+    app.game.handle_action(Action::PickPackCard(content)).is_ok()
 }
 
 /// Attempts the shop purchase for `slot`, returning whether it succeeded
@@ -523,14 +565,9 @@ fn handle_key_pack_contents(app: &mut AppState, key: KeyEvent) {
             }
         }
         KeyCode::Enter | KeyCode::Char(' ') => {
-            if let Some(content) = app
-                .game
-                .open_pack
-                .as_ref()
-                .and_then(|s| s.contents.get(app.cursor))
-                .cloned()
-            {
-                let _ = app.game.handle_action(Action::PickPackCard(content));
+            if app.cursor < count {
+                app.overlay = Some(Overlay::PackPick(app.cursor));
+                app.overlay_cursor = 0;
             }
         }
         _ => {}
@@ -796,14 +833,15 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
         PackContent(idx) => {
             app.focus = FocusZone::PackContents;
             app.cursor = idx;
-            if let Some(content) = app
+            let count = app
                 .game
                 .open_pack
                 .as_ref()
-                .and_then(|s| s.contents.get(idx))
-                .cloned()
-            {
-                let _ = app.game.handle_action(Action::PickPackCard(content));
+                .map(|s| s.contents.len())
+                .unwrap_or(0);
+            if idx < count {
+                app.overlay = Some(Overlay::PackPick(idx));
+                app.overlay_cursor = 0;
             }
         }
         SkipPackButton => {
@@ -875,6 +913,15 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
                 }
             }
             Some(crate::app::Overlay::Options) => app.open_save(),
+            Some(crate::app::Overlay::PackPick(idx)) => {
+                let prev = app.game.stage;
+                if execute_pack_pick(app, idx) {
+                    app.close_overlay();
+                    if app.game.stage != prev {
+                        app.sync_focus_to_stage();
+                    }
+                }
+            }
             _ => app.close_overlay(),
         },
         OverlayButton(1) => match app.overlay.clone() {

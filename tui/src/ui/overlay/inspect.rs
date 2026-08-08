@@ -29,11 +29,7 @@ pub(crate) fn joker_lines(joker: &Jokers, w: u16) -> Vec<Line<'static>> {
     if stickers.rental {
         sticker_flags.push("Rental");
     }
-    let sticker_str = if sticker_flags.is_empty() {
-        "none".to_string()
-    } else {
-        sticker_flags.join(", ")
-    };
+
     let mut lines = vec![
         Line::from(""),
         Line::from(vec![
@@ -50,16 +46,20 @@ pub(crate) fn joker_lines(joker: &Jokers, w: u16) -> Vec<Line<'static>> {
                 Style::default().fg(Color::Yellow),
             ),
         ]),
-        Line::from(vec![
+    ];
+    if edition != balatro_rs::card::Edition::Base {
+        lines.push(Line::from(vec![
             Span::raw("  Edition:  "),
             Span::styled(format!("{:?}", edition), Style::default().fg(edition_color(edition))),
-        ]),
-        Line::from(vec![
+        ]));
+    }
+    if !sticker_flags.is_empty() {
+        lines.push(Line::from(vec![
             Span::raw("  Stickers: "),
-            Span::styled(sticker_str, Style::default().fg(Color::Cyan)),
-        ]),
-        Line::from(""),
-    ];
+            Span::styled(sticker_flags.join(", "), Style::default().fg(Color::Cyan)),
+        ]));
+    }
+    lines.push(Line::from(""));
     for word_line in wrap(desc, w as usize - 4) {
         lines.push(Line::from(Span::styled(
             format!("  {}", word_line),
@@ -91,6 +91,52 @@ pub(crate) fn consumable_lines(c: &Consumable, w: u16) -> Vec<Line<'static>> {
         )));
     }
     lines
+}
+
+pub(crate) fn card_lines(card: &balatro_rs::card::Card) -> Vec<Line<'static>> {
+    let suit_style = Style::default()
+        .fg(suit_color(card.suit))
+        .add_modifier(Modifier::BOLD);
+    vec![
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  Rank:        "),
+            Span::styled(
+                rank_str(card.value),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("  Suit:        "),
+            Span::styled(suit_char(card.suit).to_string(), suit_style),
+        ]),
+        Line::from(vec![
+            Span::raw("  Enhancement: "),
+            Span::styled(
+                card.enhancement
+                    .map_or_else(|| "none".to_string(), |e| format!("{:?}", e)),
+                Style::default().fg(Color::Cyan),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("  Edition:     "),
+            Span::styled(
+                format!("{:?}", card.edition),
+                Style::default().fg(Color::Cyan),
+            ),
+        ]),
+        Line::from(vec![
+            Span::raw("  Seal:        "),
+            Span::styled(
+                card.seal
+                    .map_or_else(|| "none".to_string(), |e| format!("{:?}", e)),
+                Style::default().fg(Color::Cyan),
+            ),
+        ]),
+        Line::from(""),
+    ]
 }
 
 pub(crate) fn pack_lines(pack: &Pack, w: u16) -> Vec<Line<'static>> {
@@ -135,51 +181,8 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, target: InspectTarg
 
     let (title, mut lines) = match target {
         InspectTarget::Card(card) => {
-            let suit_style = Style::default()
-                .fg(suit_color(card.suit))
-                .add_modifier(Modifier::BOLD);
             let title = format!(" {} of {}s ", rank_str(card.value), suit_char(card.suit));
-            let lines = vec![
-                Line::from(""),
-                Line::from(vec![
-                    Span::raw("  Rank:        "),
-                    Span::styled(
-                        rank_str(card.value),
-                        Style::default()
-                            .fg(Color::White)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Suit:        "),
-                    Span::styled(suit_char(card.suit).to_string(), suit_style),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Enhancement: "),
-                    Span::styled(
-                        card.enhancement
-                            .map_or_else(|| "none".to_string(), |e| format!("{:?}", e)),
-                        Style::default().fg(Color::Cyan),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Edition:     "),
-                    Span::styled(
-                        format!("{:?}", card.edition),
-                        Style::default().fg(Color::Cyan),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::raw("  Seal:        "),
-                    Span::styled(
-                        card.seal
-                            .map_or_else(|| "none".to_string(), |e| format!("{:?}", e)),
-                        Style::default().fg(Color::Cyan),
-                    ),
-                ]),
-                Line::from(""),
-            ];
-            (title, lines)
+            (title, card_lines(&card))
         }
         InspectTarget::Joker(joker) => {
             let title = format!(" {} ", joker.name());

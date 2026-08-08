@@ -90,6 +90,7 @@ pub enum Overlay {
     ShopBuy(ShopSlot),
     Deck,
     Options,
+    PackPick(usize),
 }
 
 pub struct AppState {

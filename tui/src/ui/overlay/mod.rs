@@ -5,6 +5,7 @@ pub mod deck;
 pub mod inspect;
 pub mod joker;
 pub mod options;
+pub mod pack_pick;
 pub mod poker_hands;
 pub mod run_info;
 pub mod save;
@@ -24,6 +25,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, overlay: &Overlay) 
         Overlay::ShopBuy(slot) => shop_buy::render(f, app, area, *slot),
         Overlay::Deck => deck::render(f, app, area),
         Overlay::Options => options::render(f, app, area),
+        Overlay::PackPick(idx) => pack_pick::render(f, app, area, *idx),
     }
 }
 
