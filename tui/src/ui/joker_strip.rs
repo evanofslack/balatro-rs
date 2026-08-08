@@ -42,7 +42,11 @@ fn render_jokers(f: &mut Frame, app: &mut AppState, area: Rect) {
 
     let mut x = area.x + 1;
 
-    for i in 0..slots {
+    // Negative-edition jokers each add +1 slot, but can also just push the
+    // owned count past the base cap outright — either way, keep drawing
+    // real joker boxes past the 5th rather than stopping at `slots` and
+    // hiding them. The "x/x" label (below) can then read e.g. "7/5".
+    for i in 0..jokers.len().max(slots) {
         if x + CARD_W > area.x + area.width {
             break;
         }
