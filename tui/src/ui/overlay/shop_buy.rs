@@ -22,12 +22,18 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, slot: ShopSlot) {
 
     let can_afford = app.game.money >= cost;
     let buy_selected = app.overlay_cursor == 0;
-    let buy_style = if !can_afford {
-        Style::default().fg(Color::DarkGray)
-    } else if buy_selected {
-        Style::default()
+    // A dim, un-highlighted "Buy" that's still technically clickable but
+    // silently does nothing reads as broken — spell out *why* instead, so
+    // it's obvious before clicking rather than after.
+    let buy_style = if can_afford {
+        let base = Style::default()
             .fg(Color::Yellow)
-            .add_modifier(Modifier::BOLD)
+            .add_modifier(Modifier::BOLD);
+        if buy_selected {
+            base.add_modifier(Modifier::UNDERLINED)
+        } else {
+            base
+        }
     } else {
         Style::default().fg(Color::DarkGray)
     };
@@ -39,7 +45,11 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, slot: ShopSlot) {
         Style::default().fg(Color::DarkGray)
     };
 
-    let buy_text = format!("  [ Buy (${}) ]", cost);
+    let buy_text = if can_afford {
+        format!("  [ Buy (${}) ]", cost)
+    } else {
+        format!("  [ Need ${} more ]", cost.saturating_sub(app.game.money))
+    };
     let gap = "   ";
     let cancel_text = "[ Cancel ]";
 
