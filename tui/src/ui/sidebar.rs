@@ -29,7 +29,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(3)])
+        .constraints([Constraint::Min(0), Constraint::Length(11)])
         .split(inner);
 
     render_stats(f, app, chunks[0]);
@@ -252,30 +252,26 @@ fn render_stats(f: &mut Frame, app: &AppState, inner: Rect) {
 }
 
 fn render_buttons(f: &mut Frame, app: &mut AppState, area: Rect) {
+    let btn_h: u16 = 3;
     let gap: u16 = 1;
-    let deck_w = area.width.saturating_sub(gap) / 2;
-    let run_info_w = area.width.saturating_sub(deck_w + gap);
 
-    let deck_rect = Rect {
-        x: area.x,
-        y: area.y,
-        width: deck_w,
-        height: area.height,
-    };
-    let run_info_rect = Rect {
-        x: area.x + deck_w + gap,
-        y: area.y,
-        width: run_info_w,
-        height: area.height,
-    };
+    let deck_count = app.game.deck.cards().len();
+    let deck_total =
+        deck_count + app.game.available.cards().len() + app.game.discarded.len();
+    let deck_label = format!("Deck {}/{}", deck_count, deck_total);
 
-    render_sidebar_button(f, deck_rect, "Deck");
-    app.widget_rects
-        .insert(WidgetId::SidebarButton(0), deck_rect);
-
-    render_sidebar_button(f, run_info_rect, "Run Info");
-    app.widget_rects
-        .insert(WidgetId::SidebarButton(1), run_info_rect);
+    let labels = ["Run Info", "Options", &deck_label];
+    for (i, text) in labels.iter().enumerate() {
+        let rect = Rect {
+            x: area.x,
+            y: area.y + i as u16 * (btn_h + gap),
+            width: area.width,
+            height: btn_h,
+        };
+        render_sidebar_button(f, rect, text);
+        app.widget_rects
+            .insert(WidgetId::SidebarButton(i), rect);
+    }
 }
 
 fn render_sidebar_button(f: &mut Frame, rect: Rect, label_text: &str) {

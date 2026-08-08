@@ -1,5 +1,5 @@
 use crate::app::{AppState, RunInfoTab, WidgetId};
-use crate::ui::overlay::{centered_rect, deck, poker_hands};
+use crate::ui::overlay::{blinds, centered_rect, poker_hands};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -27,8 +27,8 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     f.render_widget(block, rect);
 
     let tabs = [
-        (RunInfoTab::Deck, "Deck"),
         (RunInfoTab::PokerHands, "Poker Hands"),
+        (RunInfoTab::Blinds, "Blinds"),
         (RunInfoTab::Vouchers, "Vouchers"),
     ];
 
@@ -89,7 +89,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     );
 
     match app.run_info_tab {
-        RunInfoTab::Deck => deck::render_body(f, app, chunks[2]),
+        RunInfoTab::Blinds => blinds::render_body(f, app, chunks[2]),
         RunInfoTab::PokerHands => poker_hands::render_body(f, app, chunks[2]),
         RunInfoTab::Vouchers => {
             f.render_widget(
@@ -114,7 +114,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
         .direction(Direction::Horizontal)
         .constraints([Constraint::Min(0), Constraint::Length(seed_w)])
         .split(chunks[3]);
-    let prefix = "  Tab next  ←/→ deck view  ";
+    let prefix = "  Tab next  ";
     let close_label = "[ Close ]";
     f.render_widget(
         Paragraph::new(Line::from(vec![

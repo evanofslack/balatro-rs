@@ -1,11 +1,12 @@
 use crate::app::{AppState, DeckTab, WidgetId};
 use crate::ui::cards::{rank_str, suit_color};
+use crate::ui::overlay::centered_rect;
 use balatro_rs::card::{Card, Edition, Suit, Value};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -34,6 +35,58 @@ fn edition_color(edition: Edition) -> Option<Color> {
         Edition::Polychrome => Some(Color::LightGreen),
         Edition::Negative => Some(Color::White),
     }
+}
+
+/// Standalone Deck overlay — used to be a Run Info tab, now its own thing
+/// (opened via the sidebar's Deck button), matching the real game.
+pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
+    let w: u16 = 72;
+    let h: u16 = 20;
+    let rect = centered_rect(w, h, area);
+    f.render_widget(Clear, rect);
+
+    let block = Block::default()
+        .title(Span::styled(
+            " Deck ",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::White));
+    let inner = block.inner(rect);
+    f.render_widget(block, rect);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .split(inner);
+
+    render_body(f, app, chunks[0]);
+
+    let prefix = "  Esc to close  ";
+    let close_label = "[ Close ]";
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled(prefix, Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                close_label,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])),
+        chunks[1],
+    );
+    app.widget_rects.insert(
+        WidgetId::OverlayButton(0),
+        Rect {
+            x: chunks[1].x + prefix.chars().count() as u16,
+            y: chunks[1].y,
+            width: close_label.chars().count() as u16,
+            height: 1,
+        },
+    );
 }
 
 pub fn render_body(f: &mut Frame, app: &mut AppState, area: Rect) {

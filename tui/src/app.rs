@@ -74,8 +74,8 @@ pub enum DeckTab {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunInfoTab {
-    Deck,
     PokerHands,
+    Blinds,
     Vouchers,
 }
 
@@ -88,6 +88,8 @@ pub enum Overlay {
     Consumable(usize),
     Joker(usize),
     ShopBuy(ShopSlot),
+    Deck,
+    Options,
 }
 
 pub struct AppState {
@@ -113,7 +115,7 @@ impl AppState {
             overlay: None,
             overlay_cursor: 0,
             deck_tab: DeckTab::Remaining,
-            run_info_tab: RunInfoTab::Deck,
+            run_info_tab: RunInfoTab::PokerHands,
             save_input: String::new(),
             should_quit: false,
             widget_rects: HashMap::new(),

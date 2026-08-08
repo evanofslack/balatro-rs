@@ -145,6 +145,21 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
             KeyCode::Esc => app.close_overlay(),
             _ => {}
         },
+        Overlay::Deck => match key.code {
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::Right | KeyCode::Char('l') => {
+                app.deck_tab = match app.deck_tab {
+                    DeckTab::Remaining => DeckTab::Full,
+                    DeckTab::Full => DeckTab::Remaining,
+                };
+            }
+            KeyCode::Esc | KeyCode::Enter => app.close_overlay(),
+            _ => {}
+        },
+        Overlay::Options => match key.code {
+            KeyCode::Enter => app.open_save(),
+            KeyCode::Esc => app.close_overlay(),
+            _ => {}
+        },
     }
 }
 
@@ -187,28 +202,16 @@ fn handle_key_run_info(app: &mut AppState, key: KeyEvent) {
         KeyCode::Esc | KeyCode::Char('r') => app.close_overlay(),
         KeyCode::Tab | KeyCode::Char('j') | KeyCode::Down => {
             app.run_info_tab = match app.run_info_tab {
-                RunInfoTab::Deck => RunInfoTab::PokerHands,
-                RunInfoTab::PokerHands => RunInfoTab::Vouchers,
-                RunInfoTab::Vouchers => RunInfoTab::Deck,
+                RunInfoTab::PokerHands => RunInfoTab::Blinds,
+                RunInfoTab::Blinds => RunInfoTab::Vouchers,
+                RunInfoTab::Vouchers => RunInfoTab::PokerHands,
             };
         }
         KeyCode::BackTab | KeyCode::Char('k') | KeyCode::Up => {
             app.run_info_tab = match app.run_info_tab {
-                RunInfoTab::Deck => RunInfoTab::Vouchers,
-                RunInfoTab::PokerHands => RunInfoTab::Deck,
-                RunInfoTab::Vouchers => RunInfoTab::PokerHands,
-            };
-        }
-        KeyCode::Left | KeyCode::Char('h') if matches!(app.run_info_tab, RunInfoTab::Deck) => {
-            app.deck_tab = match app.deck_tab {
-                DeckTab::Remaining => DeckTab::Full,
-                DeckTab::Full => DeckTab::Remaining,
-            };
-        }
-        KeyCode::Right | KeyCode::Char('l') if matches!(app.run_info_tab, RunInfoTab::Deck) => {
-            app.deck_tab = match app.deck_tab {
-                DeckTab::Remaining => DeckTab::Full,
-                DeckTab::Full => DeckTab::Remaining,
+                RunInfoTab::PokerHands => RunInfoTab::Vouchers,
+                RunInfoTab::Blinds => RunInfoTab::PokerHands,
+                RunInfoTab::Vouchers => RunInfoTab::Blinds,
             };
         }
         _ => {}
@@ -871,6 +874,7 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
                     app.close_overlay();
                 }
             }
+            Some(crate::app::Overlay::Options) => app.open_save(),
             _ => app.close_overlay(),
         },
         OverlayButton(1) => match app.overlay.clone() {
@@ -892,16 +896,16 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
         RunInfoTab(idx) => {
             use crate::app::RunInfoTab as RIT;
             app.run_info_tab = match idx {
-                0 => RIT::Deck,
-                1 => RIT::PokerHands,
+                0 => RIT::PokerHands,
+                1 => RIT::Blinds,
                 _ => RIT::Vouchers,
             };
         }
-        SidebarButton(idx) => {
-            use crate::app::RunInfoTab as RIT;
-            app.run_info_tab = if idx == 0 { RIT::Deck } else { RIT::PokerHands };
-            app.overlay = Some(Overlay::RunInfo);
-        }
+        SidebarButton(idx) => match idx {
+            0 => app.overlay = Some(Overlay::RunInfo),
+            1 => app.overlay = Some(Overlay::Options),
+            _ => app.overlay = Some(Overlay::Deck),
+        },
     }
 
     if app.game.stage != prev_stage || app.game.blind != prev_blind {

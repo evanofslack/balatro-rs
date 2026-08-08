@@ -1,4 +1,5 @@
 pub mod blind;
+pub mod blind_info;
 pub mod cards;
 pub mod end;
 pub mod joker_strip;

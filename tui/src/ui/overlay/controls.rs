@@ -30,7 +30,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
     let lines = vec![
         Line::from(""),
         bind("?", "Show controls"),
-        bind("r", "Run info (Deck, Poker Hands)"),
+        bind("r", "Run info (Poker Hands, Blinds, Vouchers)"),
         bind("e", "Export game"),
         bind("q", "Quit"),
         bind("i", "Inspect item"),
