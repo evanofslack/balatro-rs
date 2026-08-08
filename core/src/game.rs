@@ -889,6 +889,11 @@ impl Game {
         }
         self.money += self.jokers[idx].sell_value();
         let sold = self.jokers.remove(idx);
+        for e in sold.effects(self) {
+            if let Effects::OnSell(f) = e {
+                f.lock().unwrap()(self);
+            }
+        }
         if sold.edition() == Edition::Negative {
             self.config.joker_slots = self.config.joker_slots.saturating_sub(1);
         }
@@ -3469,6 +3474,43 @@ mod tests {
         g.sell_joker(0).expect("sell joker during blind");
         assert_eq!(g.jokers.len(), 0);
         assert_eq!(g.money, sell_value);
+    }
+
+    #[test]
+    fn test_sell_luchador_disables_boss_only_for_itself() {
+        use crate::joker::Jokers;
+        use balatro_types::joker::{Luchador, TheJoker};
+        let mut g = Game::default();
+        g.start();
+        g.stage = Stage::Shop();
+        g.jokers.push(Jokers::TheJoker(TheJoker::default()));
+        g.jokers.push(Jokers::Luchador(Luchador::default()));
+
+        // Selling an unrelated joker must not trigger Luchador's OnSell effect.
+        g.sell_joker(0).expect("sell plain joker");
+        assert!(!g.boss_disabled_by_luchador);
+
+        g.sell_joker(0).expect("sell luchador");
+        assert!(g.boss_disabled_by_luchador);
+    }
+
+    #[test]
+    fn test_sell_luchador_restores_water_boss_discards_via_handle_action() {
+        use crate::joker::Jokers;
+        use balatro_types::joker::Luchador;
+        let mut g = Game {
+            current_boss: Some(BossBlind::Water),
+            blind: Some(Blind::Boss),
+            stage: Stage::Blind(Blind::Boss),
+            discards_remaining: 4,
+            jokers: vec![Jokers::Luchador(Luchador::default())],
+            ..Default::default()
+        };
+        assert_eq!(g.discards(), 0);
+
+        g.handle_action(Action::SellJoker(0))
+            .expect("sell luchador via handle_action");
+        assert_eq!(g.discards(), 4);
     }
 
     #[test]

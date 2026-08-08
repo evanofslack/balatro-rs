@@ -785,6 +785,20 @@ impl JokerEffects for Jokers {
                 };
                 vec![Effects::OnDiscard(Arc::new(Mutex::new(apply)))]
             }
+            Self::Luchador(_) => {
+                fn apply(g: &mut Game) {
+                    g.boss_disabled_by_luchador = true;
+                }
+                vec![Effects::OnSell(Arc::new(Mutex::new(apply)))]
+            }
+            Self::Matador(_) => {
+                fn apply(g: &mut Game, _hand: MadeHand) {
+                    if g.boss_triggered_this_hand {
+                        g.money += 8;
+                    }
+                }
+                vec![Effects::OnScore(Arc::new(Mutex::new(apply)))]
+            }
             _ => vec![],
         }
     }
@@ -863,6 +877,9 @@ impl JokerEffects for Jokers {
                 | Self::Yorick(_)
                 | Self::Castle(_)
                 | Self::MailInRebate(_)
+                | Self::Luchador(_)
+                | Self::Chicot(_)
+                | Self::Matador(_)
         )
     }
 }
@@ -926,9 +943,9 @@ mod tests {
     // `effects()` behavior implemented. Shop/pack generation
     // must never offer joker that silently does nothing.
     #[test]
-    fn test_exactly_71_jokers_implemented() {
+    fn test_exactly_74_jokers_implemented() {
         let count = Jokers::iter().filter(|j| j.is_implemented()).count();
-        assert_eq!(count, 71);
+        assert_eq!(count, 74);
     }
 
     #[test]
@@ -4038,5 +4055,37 @@ mod tests {
         // Baron never sees the held King (debuffed) -> mult stays 1.
         // (5 + 11) * 1 = 16, not * 1.5 = 24.
         assert_eq!(g.calc_score(hand), 16);
+    }
+
+    #[test]
+    fn test_matador_pays_out_when_boss_ability_triggers() {
+        // Club is Matador-Yes (docs/boss-blinds.md §2): a played Club card
+        // gets debuffed, which sets boss_triggered_this_hand.
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::Matador(Matador::default())],
+            ..Default::default()
+        };
+        let money_before = g.money;
+        let king = Card::new(Value::King, Suit::Club);
+        let hand = SelectHand::new(vec![king]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.money, money_before + 8);
+    }
+
+    #[test]
+    fn test_matador_no_payout_without_boss_trigger() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Club),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::Matador(Matador::default())],
+            ..Default::default()
+        };
+        let money_before = g.money;
+        let ace = Card::new(Value::Ace, Suit::Heart);
+        let hand = SelectHand::new(vec![ace]).best_hand().unwrap();
+        g.calc_score(hand);
+        assert_eq!(g.money, money_before);
     }
 }

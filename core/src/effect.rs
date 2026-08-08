@@ -66,6 +66,7 @@ impl EffectRegistry {
                     Effects::OnPlay(_) => self.on_play.push(e),
                     Effects::OnDiscard(_) => self.on_discard.push(e),
                     Effects::OnScore(_) => {} // not cached, recomputed in score loop on purpose
+                    Effects::OnSell(_) => {} // not cached, computed on the sold joker directly in sell_joker
                     Effects::OnHandRank(_) => self.on_handrank.push(e),
                     Effects::OnModifyHand(_) => self.on_modify_hand.push(e),
                     Effects::OnRoundEnd(_) => self.on_round_end.push(e),
@@ -87,6 +88,7 @@ pub enum Effects {
     OnPlay(GameHandFn),
     OnDiscard(GameHandFn),
     OnScore(GameHandFn),
+    OnSell(GameFn),
     OnHandRank(GameFn),
     OnModifyHand(GameModifyFn),
     OnRoundEnd(GameFn),
@@ -101,6 +103,7 @@ impl std::fmt::Debug for Effects {
             Self::OnPlay(_) => write!(f, "OnPlay"),
             Self::OnDiscard(_) => write!(f, "OnDiscard"),
             Self::OnScore(_) => write!(f, "OnScore"),
+            Self::OnSell(_) => write!(f, "OnSell"),
             Self::OnHandRank(_) => write!(f, "OnHandRank"),
             Self::OnModifyHand(_) => write!(f, "OnModifyHand"),
             Self::OnRoundEnd(_) => write!(f, "OnRoundEnd"),
