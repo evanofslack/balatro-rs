@@ -39,6 +39,7 @@ The `make_jokers!` macro at the top of `joker.rs` generates the `Jokers` enum an
 - `on_play` — when a hand is played
 - `on_discard` — when cards are discarded
 - `on_score` — per scored card
+- `on_sell` — when a joker is sold
 - `on_handrank` — after hand rank determined
 - `on_modify_hand` — to modify the select hand before scoring
 
