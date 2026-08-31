@@ -1,5 +1,8 @@
 /target
+spectator/target
 balatro-jkr/tests/fixtures/real/*.jkr
 balatro-profile/tests/fixtures/real/*.jkr
 *.json
+!spectator/tests/fixtures/*.json
+/replays
 /docs

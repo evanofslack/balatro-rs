@@ -1,0 +1,297 @@
+use crate::app::{AppState, WidgetId};
+use balatro_rs::card::{Card, Edition, Enhancement, Seal, Suit, Value};
+use ratatui::{
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
+    widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
+};
+
+pub fn suit_color(suit: Suit) -> Color {
+    match suit {
+        Suit::Heart => Color::Red,
+        Suit::Diamond => Color::Blue,
+        Suit::Club => Color::Green,
+        Suit::Spade => Color::White,
+    }
+}
+
+pub fn rank_str(value: Value) -> &'static str {
+    match value {
+        Value::Ace => "A",
+        Value::King => "K",
+        Value::Queen => "Q",
+        Value::Jack => "J",
+        Value::Ten => "T",
+        Value::Nine => "9",
+        Value::Eight => "8",
+        Value::Seven => "7",
+        Value::Six => "6",
+        Value::Five => "5",
+        Value::Four => "4",
+        Value::Three => "3",
+        Value::Two => "2",
+    }
+}
+
+pub fn suit_char(suit: Suit) -> char {
+    match suit {
+        Suit::Heart => '♥',
+        Suit::Diamond => '♦',
+        Suit::Club => '♣',
+        Suit::Spade => '♠',
+    }
+}
+
+pub(crate) fn edition_color(edition: Edition) -> Color {
+    match edition {
+        Edition::Base => Color::Gray,
+        Edition::Foil => Color::Cyan,
+        Edition::Holographic => Color::Magenta,
+        Edition::Polychrome => Color::LightGreen,
+        Edition::Negative => Color::White,
+    }
+}
+
+fn enhancement_indicator(enh: Enhancement) -> (&'static str, Color) {
+    match enh {
+        Enhancement::Bonus => ("Bn", Color::Blue),
+        Enhancement::Mult => ("Mx", Color::Red),
+        Enhancement::Wild => ("? ", Color::Magenta),
+        Enhancement::Glass => ("Gl", Color::LightBlue),
+        Enhancement::Steel => ("St", Color::Cyan),
+        Enhancement::Stone => ("●●", Color::DarkGray),
+        Enhancement::Gold => ("Au", Color::Yellow),
+        Enhancement::Lucky => ("Lk", Color::Green),
+    }
+}
+
+// Card dimensions: 13 wide × 9 tall (including borders)
+// Each card slot: 14 wide (13 + 1 gap), 10 tall (9 card + 1 shift buffer)
+pub const CARD_W: u16 = 13;
+pub const CARD_H: u16 = 9;
+pub const SLOT_W: u16 = CARD_W + 1; // + 1 gap
+pub const SLOT_H: u16 = CARD_H + 1; // + 1 shift row
+
+// Dark red (#8B0000) - distinct from the bright Color::Red used for Hearts/
+// seals/enhancements, so a debuffed card reads as "muted" not "alert".
+const DEBUFF_COLOR: Color = Color::Rgb(139, 0, 0);
+
+fn card_inner_text(card: Card, debuffed: bool) -> Text<'static> {
+    let is_wild = card.enhancement == Some(Enhancement::Wild);
+    let is_stone = card.enhancement == Some(Enhancement::Stone);
+
+    let (rank_color, suit_display_color, suit_display_char) = if is_wild {
+        (Color::Magenta, Color::Magenta, '?')
+    } else {
+        (
+            suit_color(card.suit),
+            suit_color(card.suit),
+            suit_char(card.suit),
+        )
+    };
+
+    let rank_style = Style::default().fg(rank_color).add_modifier(Modifier::BOLD);
+    let suit_style = Style::default()
+        .fg(suit_display_color)
+        .add_modifier(Modifier::BOLD);
+
+    // Interior: 8 wide, 5 tall.
+    // Row 0: seal indicator (top-right) or blank
+    // Row 1: rank + suit centered
+    // Row 2: blank
+    // Row 3: enhancement indicator (bottom-left) or blank
+    // Row 4: blank
+
+    let seal_span: Option<Span<'static>> = card.seal.map(|s| match s {
+        Seal::Gold => Span::styled("◆ ", Style::default().fg(Color::Yellow)),
+        Seal::Red => Span::styled("◆ ", Style::default().fg(Color::Red)),
+        Seal::Blue => Span::styled("◆ ", Style::default().fg(Color::Blue)),
+        Seal::Purple => Span::styled("◆ ", Style::default().fg(Color::Magenta)),
+    });
+
+    let row0 = match seal_span {
+        Some(s) => Line::from(vec![Span::raw("      "), s]),
+        None => Line::from(""),
+    };
+
+    let row1 = if is_stone {
+        Line::from(vec![
+            Span::raw("   "),
+            Span::styled(
+                "●●●",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ])
+    } else {
+        Line::from(vec![
+            Span::raw("   "),
+            Span::styled(rank_str(card.value), rank_style),
+            Span::styled(suit_display_char.to_string(), suit_style),
+        ])
+    };
+
+    let row3 = match card.enhancement {
+        Some(enh) if !is_stone => {
+            let (label, color) = enhancement_indicator(enh);
+            Line::from(vec![
+                Span::raw(" "),
+                Span::styled(
+                    label,
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
+                ),
+            ])
+        }
+        _ => Line::from(""),
+    };
+
+    // Row 4 is otherwise always blank - claimed here for the debuff label,
+    // coexisting with the seal (row 0) and enhancement (row 3) indicators,
+    // which stay visible: a debuffed card keeps its real identity, it just
+    // no longer scores.
+    let row4 = if debuffed {
+        Line::from(Span::styled(
+            "Debuffed",
+            Style::default().fg(DEBUFF_COLOR).add_modifier(Modifier::BOLD),
+        ))
+    } else {
+        Line::from("")
+    };
+
+    let content = vec![row0, row1, Line::from(""), row3, row4];
+    // Center the fixed 5-row content within however tall the interior actually
+    // is, rather than hardcoding a row count that goes stale if CARD_H changes.
+    let pad = (CARD_H as usize).saturating_sub(2).saturating_sub(content.len());
+    let pad_top = pad / 2;
+    let pad_bottom = pad - pad_top;
+    let mut lines = Vec::with_capacity(content.len() + pad);
+    lines.extend(std::iter::repeat_with(|| Line::from("")).take(pad_top));
+    lines.extend(content);
+    lines.extend(std::iter::repeat_with(|| Line::from("")).take(pad_bottom));
+
+    Text::from(lines)
+}
+
+fn card_block(card: Card, is_cursor: bool, debuffed: bool) -> Block<'static> {
+    let border_type = if is_cursor {
+        BorderType::Double
+    } else {
+        BorderType::Plain
+    };
+    let border_color = if is_cursor {
+        Color::Yellow
+    } else if debuffed {
+        DEBUFF_COLOR
+    } else {
+        edition_color(card.edition)
+    };
+    Block::default()
+        .borders(Borders::ALL)
+        .border_type(border_type)
+        .border_style(Style::default().fg(border_color))
+}
+
+pub fn render_card(f: &mut Frame, card: Card, rect: Rect, is_cursor: bool, debuffed: bool) {
+    let block = card_block(card, is_cursor, debuffed);
+    let text = card_inner_text(card, debuffed);
+    f.render_widget(Paragraph::new(text).block(block), rect);
+}
+
+/// Wraps `name` into at most two lines of `max_w` chars, truncating the
+/// second line with an ellipsis if it still doesn't fit.
+pub fn wrap_two_lines(name: &str, max_w: usize) -> (String, String) {
+    if name.len() <= max_w {
+        return (name.to_string(), String::new());
+    }
+    let split = name[..max_w].rfind(' ').unwrap_or(max_w);
+    let line1 = name[..split].to_string();
+    let rest = name[split..].trim_start();
+    let line2 = if rest.len() > max_w {
+        format!("{}…", &rest[..max_w.saturating_sub(1)])
+    } else {
+        rest.to_string()
+    };
+    (line1, line2)
+}
+
+/// Generic bordered item box shared by every joker/consumable/pack "card" —
+/// jokers, shop items, and pack-open choices all render through this so
+/// sizing/padding only needs to be correct in one place. Padding is derived
+/// from the real inner height rather than a hardcoded row count, so content
+/// that's too long to fit is truncated instead of silently overflowing/
+/// pushing the footer off (the class of bug that clipped shop price tags).
+pub fn render_item_box(
+    f: &mut Frame,
+    rect: Rect,
+    is_cursor: bool,
+    color: Color,
+    border_title: Option<Span<'static>>,
+    mut lines: Vec<Line<'static>>,
+    footer: Option<Line<'static>>,
+) {
+    let border_type = if is_cursor {
+        BorderType::Double
+    } else {
+        BorderType::Plain
+    };
+    let border_color = if is_cursor { Color::Yellow } else { color };
+
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(border_type)
+        .border_style(Style::default().fg(border_color));
+    if let Some(title) = border_title {
+        block = block.title(title);
+    }
+
+    let inner_h = (rect.height as usize).saturating_sub(2);
+    let footer_rows = if footer.is_some() { 1 } else { 0 };
+    let target = inner_h.saturating_sub(footer_rows);
+    lines.truncate(target);
+    while lines.len() < target {
+        lines.push(Line::from(""));
+    }
+    if let Some(footer_line) = footer {
+        lines.push(footer_line);
+    }
+
+    let para = Paragraph::new(Text::from(lines)).block(block);
+    f.render_widget(para, rect);
+}
+
+pub fn render_hand(
+    f: &mut Frame,
+    app: &mut AppState,
+    area: Rect,
+    cards_and_selected: &[(Card, bool)],
+    cursor_idx: usize,
+    widget_id_fn: impl Fn(usize) -> WidgetId,
+) {
+    for (i, (card, selected)) in cards_and_selected.iter().enumerate() {
+        let x = area.x + i as u16 * SLOT_W;
+        if x + CARD_W > area.x + area.width {
+            break;
+        }
+
+        // Shift selected cards up by 1 row
+        let y_offset: u16 = if *selected { 0 } else { 1 };
+        let card_rect = Rect {
+            x,
+            y: area.y + y_offset,
+            width: CARD_W,
+            height: CARD_H,
+        };
+
+        let is_cursor = i == cursor_idx;
+        let debuffed = app.game.is_card_debuffed(card);
+        let block = card_block(*card, is_cursor, debuffed);
+        let text = card_inner_text(*card, debuffed);
+        let para = Paragraph::new(text).block(block);
+        f.render_widget(para, card_rect);
+
+        app.widget_rects.insert(widget_id_fn(i), card_rect);
+    }
+}

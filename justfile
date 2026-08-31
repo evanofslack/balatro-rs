@@ -38,6 +38,12 @@ tui-load FILE:
 tui-seed SEED:
     cargo run -p balatro-tui -- --seed {{SEED}}
 
+spectator:
+    cargo run -p balatro-spectator -- --library
+
+spectator-replay FILE:
+    cargo run -p balatro-spectator -- --replay {{FILE}}
+
 jkr *FILES:
     cargo run -p balatro-jkr --bin jkr -- {{FILES}}
 

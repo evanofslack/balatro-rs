@@ -1,0 +1,17 @@
+[package]
+name = "balatro-spectator"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "balatro-spectator"
+path = "src/main.rs"
+
+[dependencies]
+balatro-rs = { path = "../core", default-features = false, features = ["serde"] }
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

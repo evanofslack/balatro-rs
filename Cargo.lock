@@ -156,6 +156,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "balatro-spectator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "balatro-rs",
+ "clap 4.5.60",
+ "crossterm",
+ "ratatui",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "balatro-tui"
 version = "0.0.1"
 dependencies = [

@@ -7,7 +7,7 @@ A toolbox of Rust crates for [Balatro](https://www.playbalatro.com/)
 - rules engine and move generator for simulation/RL (with python bindings)
 - real save-file (`.jkr`) parsing
 - byte-accurate port of the game's actual seed/RNG algorithm
-- TUI for playing core game, CLIs for various other functionlity
+- TUI for playing core game, spectator for watching AI replays, CLIs for various other functionlity
 
 ## Crates
 
@@ -20,6 +20,7 @@ A toolbox of Rust crates for [Balatro](https://www.playbalatro.com/)
 | [`balatro-seed`](balatro-seed)        | A byte-accurate port of Balatro's actual seed/RNG algorithm.                                                                                                                         |
 | [`cli`](cli) (`balatro-cli`)          | Interactive terminal game over `core`.                                                                                                                                               |
 | [`tui`](tui) (`balatro-tui`)          | Full ratatui-based terminal UI over `core::Game`.                                                                                                                                    |
+| [`spectator`](spectator) (`balatro-spectator`) | Ratatui spectator for AI runs: replay library, JSON episode playback, live agent sidecar.                                                                                     |
 | [`pylatro`](pylatro)                  | PyO3 Python bindings over `core`, for scripting and RL experimentation.                                                                                                              |
 
 ## Example
@@ -87,6 +88,9 @@ cargo run -p balatro-cli
 # interactive terminal UI
 cargo run -p balatro-tui
 
+# AI replay library / live agent spectator
+cargo run -p balatro-spectator -- --library
+
 # explore a seed's full expected contents, byte-accurate vs. real Balatro
 cargo run -p balatro-seed --bin explore -- SEED --ante 1
 
@@ -103,5 +107,5 @@ cargo run -p balatro-rs --bin calc -- score state.json
 cd pylatro && maturin develop
 ```
 
-Each interface (`cli`, `tui`, `pylatro`, and the various CLI binaries) has
+Each interface (`cli`, `tui`, `spectator`, `pylatro`, and the various CLI binaries) has
 its own usage docs in its directory.

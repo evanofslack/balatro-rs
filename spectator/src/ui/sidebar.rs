@@ -1,0 +1,339 @@
+use super::{hand_rank_name, level_color, wrap};
+use crate::app::{AppState, WidgetId};
+use balatro_rs::stage::{blind_display, BlindExt, Stage};
+use ratatui::{
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span, Text},
+    widgets::{Block, Borders, Paragraph},
+    Frame,
+};
+
+pub const SIDEBAR_W: u16 = 24;
+
+fn label(s: &str) -> Span<'static> {
+    Span::styled(s.to_string(), Style::default().fg(Color::DarkGray))
+}
+
+fn value(s: String, color: Color) -> Span<'static> {
+    Span::styled(s, Style::default().fg(color).add_modifier(Modifier::BOLD))
+}
+
+pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(11)])
+        .split(inner);
+
+    render_stats(f, app, chunks[0]);
+    render_buttons(f, app, chunks[1]);
+}
+
+fn render_stats(f: &mut Frame, app: &AppState, inner: Rect) {
+    let game = &app.game;
+
+    let mut lines: Vec<Line> = Vec::new();
+
+    // Stage header
+    let stage_line = match &game.stage {
+        Stage::PreBlind() => Line::from(Span::styled(
+            "Select Blind",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Stage::Blind(b) => {
+            let title = match b {
+                balatro_rs::stage::Blind::Boss => game
+                    .current_boss
+                    .map(|boss| boss.name().to_string())
+                    .unwrap_or_else(|| blind_display(b).to_string()),
+                _ => blind_display(b).to_string(),
+            };
+            Line::from(Span::styled(
+                title,
+                Style::default()
+                    .fg(match b {
+                        balatro_rs::stage::Blind::Small => Color::Cyan,
+                        balatro_rs::stage::Blind::Big => Color::Yellow,
+                        balatro_rs::stage::Blind::Boss => Color::Red,
+                    })
+                    .add_modifier(Modifier::BOLD),
+            ))
+        }
+        Stage::PostBlind() => Line::from(Span::styled(
+            "Cash Out",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Stage::Shop() => Line::from(Span::styled(
+            "SHOP",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Stage::TarotHand(t) => Line::from(Span::styled(
+            t.name(),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Stage::SpectralHand(s) => Line::from(Span::styled(
+            s.name(),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Stage::PackOpen() => Line::from(Span::styled(
+            "Pack Open",
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Stage::End(_) => Line::from(Span::styled(
+            "Game Over",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        )),
+    };
+    lines.push(stage_line);
+
+    // Boss ability description
+    if let Stage::Blind(balatro_rs::stage::Blind::Boss) = &game.stage {
+        if let Some(boss) = game.current_boss {
+            for word_line in wrap(boss.description(), (inner.width as usize).saturating_sub(1)) {
+                lines.push(Line::from(Span::styled(
+                    word_line,
+                    Style::default().fg(Color::Gray),
+                )));
+            }
+        }
+    }
+    lines.push(Line::from(""));
+
+    // Target score (during blind)
+    if let Stage::Blind(_) = &game.stage {
+        lines.push(Line::from(vec![
+            label("Target "),
+            value(format!("◆ {}", game.required_score()), Color::LightBlue),
+        ]));
+        lines.push(Line::from(vec![
+            label("Reward "),
+            value(
+                format!("${}", game.blind.map(|b| b.reward()).unwrap_or(0)),
+                Color::Yellow,
+            ),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    // TarotHand description
+    if let Stage::TarotHand(t) = &game.stage {
+        let desc = t.description();
+        for word_line in wrap(desc, (inner.width as usize).saturating_sub(1)) {
+            lines.push(Line::from(Span::raw(word_line)));
+        }
+        lines.push(Line::from(""));
+    }
+
+    // SpectralHand description
+    if let Stage::SpectralHand(s) = &game.stage {
+        let desc = s.description();
+        for word_line in wrap(desc, (inner.width as usize).saturating_sub(1)) {
+            lines.push(Line::from(Span::raw(word_line)));
+        }
+        lines.push(Line::from(""));
+    }
+
+    // Round score
+    lines.push(Line::from(label("Round Score")));
+    lines.push(Line::from(vec![
+        Span::raw("  "),
+        value(format!("◆ {}", game.score), Color::LightBlue),
+    ]));
+    lines.push(Line::from(""));
+
+    // Live hand evaluation — always reserves space so layout doesn't shift.
+    // In blind with selection: shows detected hand name + level + live chips/mult.
+    // Otherwise: blank name line + 0×0 boxes.
+    let eval = if let Stage::Blind(_) = &game.stage {
+        let selected = game.available.selected();
+        if !selected.is_empty() {
+            balatro_rs::hand::SelectHand::new(selected.clone())
+                .best_hand()
+                .ok()
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let (hand_name_line, disp_chips, disp_mult) = match &eval {
+        Some(made) => {
+            let lvl = game.planetarium.level(made.rank);
+            let line = Line::from(vec![
+                Span::styled(
+                    hand_rank_name(made.rank),
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!(" lvl.{}", lvl.level),
+                    Style::default().fg(level_color(lvl.level)),
+                ),
+            ]);
+            (line, lvl.chips, lvl.mult)
+        }
+        None => (Line::from(""), 0, 0),
+    };
+    lines.push(hand_name_line);
+    lines.push(Line::from(vec![
+        Span::styled(
+            format!(" {} ", disp_chips),
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" × "),
+        Span::styled(
+            format!(" {} ", disp_mult),
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]));
+    lines.push(Line::from(""));
+
+    // Stats
+    lines.push(Line::from(vec![
+        label("Hands    "),
+        value(game.plays.to_string(), Color::Blue),
+    ]));
+    lines.push(Line::from(vec![
+        label("Discards "),
+        value(game.discards().to_string(), Color::Red),
+    ]));
+    lines.push(Line::from(vec![
+        label("Money    "),
+        value(format!("${}", game.money), Color::Yellow),
+    ]));
+    lines.push(Line::from(""));
+
+    // Ante / Round
+    lines.push(Line::from(vec![
+        label("Ante  "),
+        value(
+            format!(
+                "{}/{}",
+                ante_num(game.ante_current),
+                ante_num(game.ante_end)
+            ),
+            Color::White,
+        ),
+    ]));
+    lines.push(Line::from(vec![
+        label("Round "),
+        value(game.round.to_string(), Color::White),
+    ]));
+
+    if app.agent_mode {
+        lines.push(Line::from(""));
+        let (status, color) = if game.is_over() {
+            ("done", Color::DarkGray)
+        } else if app.autoplay_paused {
+            ("paused", Color::Yellow)
+        } else {
+            ("autoplay", Color::Green)
+        };
+        lines.push(Line::from(vec![
+            label("AI    "),
+            value(status.to_string(), color),
+        ]));
+        if let Some(action) = app.ai_action {
+            lines.push(Line::from(vec![
+                label("Act   "),
+                value(action.to_string(), Color::Cyan),
+            ]));
+        }
+        if let Some(driver) = app.replay_driver.as_ref() {
+            let (cur, total) = driver.progress();
+            lines.push(Line::from(vec![
+                label("Step  "),
+                value(format!("{cur}/{total}"), Color::DarkGray),
+            ]));
+        }
+    }
+
+    let para = Paragraph::new(Text::from(lines));
+    f.render_widget(para, inner);
+}
+
+fn render_buttons(f: &mut Frame, app: &mut AppState, area: Rect) {
+    let btn_h: u16 = 3;
+    let gap: u16 = 1;
+
+    let deck_count = app.game.deck.cards().len();
+    let deck_total =
+        deck_count + app.game.available.cards().len() + app.game.discarded.len();
+    let deck_label = format!("Deck {}/{}", deck_count, deck_total);
+
+    let labels = ["Run Info", "Options", &deck_label];
+    for (i, text) in labels.iter().enumerate() {
+        let rect = Rect {
+            x: area.x,
+            y: area.y + i as u16 * (btn_h + gap),
+            width: area.width,
+            height: btn_h,
+        };
+        render_sidebar_button(f, rect, text);
+        app.widget_rects
+            .insert(WidgetId::SidebarButton(i), rect);
+    }
+}
+
+fn render_sidebar_button(f: &mut Frame, rect: Rect, label_text: &str) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let para = Paragraph::new(Line::from(Span::styled(
+        label_text,
+        Style::default().fg(Color::White),
+    )))
+    .block(block)
+    .alignment(Alignment::Center);
+    f.render_widget(para, rect);
+}
+
+fn ante_num(ante: balatro_rs::ante::Ante) -> usize {
+    use balatro_rs::ante::Ante;
+    match ante {
+        Ante::Zero => 0,
+        Ante::One => 1,
+        Ante::Two => 2,
+        Ante::Three => 3,
+        Ante::Four => 4,
+        Ante::Five => 5,
+        Ante::Six => 6,
+        Ante::Seven => 7,
+        Ante::Eight => 8,
+    }
+}
+
+pub fn split_sidebar_main(area: Rect) -> (Rect, Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(SIDEBAR_W), Constraint::Min(0)])
+        .split(area);
+    (chunks[0], chunks[1])
+}
