@@ -602,6 +602,11 @@ impl Game {
             self.boss_triggered_this_hand = true;
         }
         let level = self.planetarium.play(hand.rank);
+        // must check after planetarium.play() above, so "most played" includes this hand.
+        if self.active_boss() == Some(BossBlind::Ox) && hand.rank == self.most_played_hand_rank() {
+            self.money = 0;
+            self.boss_triggered_this_hand = true;
+        }
         let (level_chips, level_mult) = if self.active_boss() == Some(BossBlind::Flint) {
             self.boss_triggered_this_hand = true;
             (level.chips / 2, level.mult / 2)
@@ -4233,5 +4238,75 @@ mod tests {
             .iter()
             .any(|j| std::mem::discriminant(j) == std::mem::discriminant(&old_joker));
         assert!(!still_present);
+    }
+
+    #[test]
+    fn test_ox_boss_zeroes_money_when_most_played_hand_played() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Ox),
+            blind: Some(Blind::Boss),
+            money: 50,
+            ..Default::default()
+        };
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        g.calc_score(pair);
+        // Pair is now the only rank with any recorded plays, so it's most-played.
+        assert_eq!(g.most_played_hand_rank(), HandRank::OnePair);
+        assert_eq!(g.money, 0);
+        assert!(g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_ox_boss_no_effect_when_played_hand_is_not_most_played() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Ox),
+            blind: Some(Blind::Boss),
+            money: 50,
+            ..Default::default()
+        };
+        // Establish Pair as the most-played rank first.
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        g.calc_score(pair.clone());
+        g.calc_score(pair);
+        assert_eq!(g.most_played_hand_rank(), HandRank::OnePair);
+        g.money = 50;
+
+        let ace_high = SelectHand::new(vec![Card::new(Value::Ace, Suit::Spade)])
+            .best_hand()
+            .unwrap();
+        assert_eq!(ace_high.rank, HandRank::HighCard);
+        g.calc_score(ace_high);
+        assert_eq!(g.money, 50);
+        assert!(!g.boss_triggered_this_hand);
+    }
+
+    #[test]
+    fn test_ox_boss_disabled_by_luchador() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Ox),
+            blind: Some(Blind::Boss),
+            money: 50,
+            boss_disabled_by_luchador: true,
+            ..Default::default()
+        };
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        g.calc_score(pair);
+        assert_eq!(g.money, 50);
+        assert!(!g.boss_triggered_this_hand);
     }
 }

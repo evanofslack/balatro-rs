@@ -4134,4 +4134,50 @@ mod tests {
         g.calc_score(pair);
         assert_eq!(g.money, money_before);
     }
+
+    #[test]
+    fn test_matador_pays_out_when_ox_boss_zeroes_money() {
+        // Ox is Matador-Yes (docs/boss-blinds.md §2): conditional on the played
+        // hand matching most_played_hand_rank().
+        let mut g = Game {
+            current_boss: Some(BossBlind::Ox),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::Matador(Matador::default())],
+            ..Default::default()
+        };
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        // Pair becomes the (only, thus most-played) rank the moment it's played.
+        g.calc_score(pair);
+        assert_eq!(g.money, 8);
+    }
+
+    #[test]
+    fn test_matador_no_payout_when_ox_boss_does_not_trigger() {
+        let mut g = Game {
+            current_boss: Some(BossBlind::Ox),
+            blind: Some(Blind::Boss),
+            jokers: vec![Jokers::Matador(Matador::default())],
+            ..Default::default()
+        };
+        let pair = SelectHand::new(vec![
+            Card::new(Value::King, Suit::Club),
+            Card::new(Value::King, Suit::Heart),
+        ])
+        .best_hand()
+        .unwrap();
+        g.calc_score(pair.clone());
+        g.calc_score(pair);
+        g.money = 0;
+
+        let ace_high = SelectHand::new(vec![Card::new(Value::Ace, Suit::Spade)])
+            .best_hand()
+            .unwrap();
+        g.calc_score(ace_high);
+        assert_eq!(g.money, 0);
+    }
 }
