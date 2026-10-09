@@ -4,7 +4,7 @@ Game engine and move generator for a simplified version of Balatro, written in R
 
 ## Workspace
 
-Cargo workspace with eight members — see `ARCHITECTURE.md` for the full crate graph and design rationale:
+Cargo workspace with nine members — see `docs/architecture.md` for the full crate graph and design rationale:
 
 - `core/` — main game engine library (`balatro-rs` crate), where almost all logic lives
 - `cli/` — interactive terminal game (`balatro-cli`), depends on core
@@ -14,6 +14,7 @@ Cargo workspace with eight members — see `ARCHITECTURE.md` for the full crate 
 - `balatro-jkr/` — codec for Balatro's `.jkr` save-file format (Lua table literals)
 - `balatro-profile/` — reads real save/profile files into typed data via `balatro-jkr` + `balatro-types`; read-only, ships a `profile` CLI binary
 - `balatro-seed/` — byte-accurate port of Balatro's actual seed/RNG algorithm (pseudohash + per-node LuaRandom reseeding, not the simplified `rand_chacha` stream `core` uses); depends on `balatro-types` only, ships an `explore` CLI binary
+- `balatro-storage/` — locates the game's real save files per platform (macOS Apple Arcade plist + disk today) and copies raw `.jkr` bytes in/out; no internal deps, ships a `balatro-storage` CLI binary
 
 ## Build & Test
 
@@ -51,7 +52,7 @@ This section is about `core`'s gameplay engine. It generates shops/packs with it
 simplified, non-Balatro-accurate RNG — reproducing exactly what a real seed generates
 (shop contents, packs, vouchers, etc., matching the real game byte-for-byte) is
 `balatro-seed`'s job, not `core`'s; the two aren't wired together yet (see
-`ARCHITECTURE.md`'s "Open / deferred decisions").
+`docs/architecture.md`'s "Open / deferred decisions").
 
 ## Two public APIs
 

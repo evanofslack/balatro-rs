@@ -5,7 +5,7 @@ A toolbox of Rust crates for [Balatro](https://www.playbalatro.com/)
 ## Features
 
 - rules engine and move generator for simulation/RL (with python bindings)
-- real save-file (`.jkr`) parsing
+- real save-file (`.jkr`) parsing, plus export/import of the game's actual save files
 - byte-accurate port of the game's actual seed/RNG algorithm
 - TUI for playing core game, CLIs for various other functionlity
 
@@ -18,6 +18,7 @@ A toolbox of Rust crates for [Balatro](https://www.playbalatro.com/)
 | [`balatro-jkr`](balatro-jkr)          | Codec for Balatro's `.jkr` save-file container format.                                                                                                                               |
 | [`balatro-profile`](balatro-profile)  | Reads real save/profile files into typed structs (using `balatro-jkr` + `balatro-types`).                                                                                            |
 | [`balatro-seed`](balatro-seed)        | A byte-accurate port of Balatro's actual seed/RNG algorithm.                                                                                                                         |
+| [`balatro-storage`](balatro-storage)  | Finds and copies the game's real save files in and out (macOS Apple Arcade today). Raw bytes only.                                                                                   |
 | [`cli`](cli) (`balatro-cli`)          | Interactive terminal game over `core`.                                                                                                                                               |
 | [`tui`](tui) (`balatro-tui`)          | Full ratatui-based terminal UI over `core::Game`.                                                                                                                                    |
 | [`pylatro`](pylatro)                  | PyO3 Python bindings over `core`, for scripting and RL experimentation.                                                                                                              |
@@ -92,6 +93,9 @@ cargo run -p balatro-seed --bin explore -- SEED --ante 1
 
 # inspect a real save/profile file
 cargo run -p balatro-profile --bin profile -- save.jkr
+
+# list/export/import the game's real save files (macOS Apple Arcade)
+cargo run -p balatro-storage -- export --profile 1 --out ./backup
 
 # dump a raw .jkr file's decoded contents
 cargo run -p balatro-jkr --bin jkr -- meta.jkr
