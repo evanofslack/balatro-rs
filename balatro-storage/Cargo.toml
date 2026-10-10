@@ -1,0 +1,17 @@
+[package]
+name = "balatro-storage"
+version = "0.1.0"
+edition = "2024"
+description = "Locate and copy Balatro's on-disk save data (meta/profile/save/settings .jkr bytes) per platform; currently macOS Apple Arcade"
+license = "MIT"
+
+[[bin]]
+name = "balatro-storage"
+path = "src/bin/balatro-storage.rs"
+
+[dependencies]
+plist = "1"
+dirs = "5"
+thiserror = "2"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"

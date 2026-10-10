@@ -44,6 +44,9 @@ jkr *FILES:
 profile *ARGS:
     cargo run -p balatro-profile --bin profile -- {{ARGS}}
 
+storage *ARGS:
+    cargo run -p balatro-storage --bin balatro-storage -- {{ARGS}}
+
 seed *ARGS:
     cargo run -p balatro-seed --bin explore -- {{ARGS}}
 
