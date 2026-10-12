@@ -104,6 +104,7 @@ dependencies = [
  "balatro-rs",
  "clap 4.5.60",
  "colored",
+ "serde_json",
  "text_io",
 ]
 

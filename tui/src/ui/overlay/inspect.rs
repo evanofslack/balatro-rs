@@ -50,7 +50,10 @@ pub(crate) fn joker_lines(joker: &Jokers, w: u16) -> Vec<Line<'static>> {
     if edition != balatro_rs::card::Edition::Base {
         lines.push(Line::from(vec![
             Span::raw("  Edition:  "),
-            Span::styled(format!("{:?}", edition), Style::default().fg(edition_color(edition))),
+            Span::styled(
+                format!("{:?}", edition),
+                Style::default().fg(edition_color(edition)),
+            ),
         ]));
     }
     if !sticker_flags.is_empty() {

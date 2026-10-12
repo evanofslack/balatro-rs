@@ -256,8 +256,7 @@ fn render_buttons(f: &mut Frame, app: &mut AppState, area: Rect) {
     let gap: u16 = 1;
 
     let deck_count = app.game.deck.cards().len();
-    let deck_total =
-        deck_count + app.game.available.cards().len() + app.game.discarded.len();
+    let deck_total = deck_count + app.game.available.cards().len() + app.game.discarded.len();
     let deck_label = format!("Deck {}/{}", deck_count, deck_total);
 
     let labels = ["Run Info", "Options", &deck_label];
@@ -269,8 +268,7 @@ fn render_buttons(f: &mut Frame, app: &mut AppState, area: Rect) {
             height: btn_h,
         };
         render_sidebar_button(f, rect, text);
-        app.widget_rects
-            .insert(WidgetId::SidebarButton(i), rect);
+        app.widget_rects.insert(WidgetId::SidebarButton(i), rect);
     }
 }
 

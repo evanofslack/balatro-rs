@@ -1,7 +1,9 @@
 use crate::app::{AppState, ShopSlot, WidgetId};
 use crate::ui::cards::{rank_str, suit_char};
 use crate::ui::overlay::centered_rect;
-use crate::ui::overlay::inspect::{card_lines, consumable_lines, joker_lines, pack_lines, voucher_lines};
+use crate::ui::overlay::inspect::{
+    card_lines, consumable_lines, joker_lines, pack_lines, voucher_lines,
+};
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -101,7 +103,11 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, slot: ShopSlot) {
     );
 }
 
-fn item_info(app: &AppState, slot: ShopSlot, w: u16) -> Option<(String, usize, Vec<Line<'static>>)> {
+fn item_info(
+    app: &AppState,
+    slot: ShopSlot,
+    w: u16,
+) -> Option<(String, usize, Vec<Line<'static>>)> {
     match slot {
         ShopSlot::Joker(idx) => {
             let joker = app.game.shop.jokers.get(idx)?;
