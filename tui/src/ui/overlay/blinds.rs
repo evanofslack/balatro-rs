@@ -55,7 +55,12 @@ pub fn render_body(f: &mut Frame, app: &AppState, area: Rect) {
         };
         let (title_color, border_color, status_text, status_color) = match state {
             Status::Current => (base_color, Color::Yellow, "In Progress", Color::Yellow),
-            Status::Cleared => (Color::DarkGray, Color::DarkGray, "Defeated", Color::DarkGray),
+            Status::Cleared => (
+                Color::DarkGray,
+                Color::DarkGray,
+                "Defeated",
+                Color::DarkGray,
+            ),
             Status::Upcoming => (base_color, base_color, "Upcoming", Color::DarkGray),
         };
 

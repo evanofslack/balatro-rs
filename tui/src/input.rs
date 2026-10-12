@@ -1,4 +1,9 @@
-use crate::app::{AppState, DeckTab, FocusZone, Overlay, RunInfoTab, ShopSlot};
+use crate::app::{
+    AppState, DeckTab, FocusZone, Overlay, ReturnTarget, RunInfoTab, Screen, ShopSlot,
+};
+use crate::library_input::{
+    handle_library_key, handle_library_mouse, handle_title_key, handle_title_mouse,
+};
 use balatro_rs::action::{Action, SortBy};
 use balatro_rs::stage::Stage;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
@@ -13,20 +18,43 @@ pub fn handle_key(app: &mut AppState, key: KeyEvent) {
         return;
     }
 
+    match app.screen {
+        Screen::Title => {
+            handle_title_key(app, key);
+            return;
+        }
+        Screen::Library => {
+            handle_library_key(app, key);
+            return;
+        }
+        Screen::Playing => {}
+    }
+
+    if app.replay.is_some() {
+        handle_replay_key(app, key);
+        return;
+    }
+
     if let Some(overlay) = app.overlay.clone() {
         handle_key_overlay(app, key, overlay);
         return;
     }
 
     match key.code {
-        KeyCode::Char('q') => app.should_quit = true,
+        KeyCode::Char('q') | KeyCode::Esc => {
+            if app.return_target == ReturnTarget::Title {
+                app.open_title();
+            } else {
+                app.should_quit = true;
+            }
+        }
         KeyCode::Char('e') => app.open_save(),
         KeyCode::Char('r') => app.overlay = Some(Overlay::RunInfo),
         KeyCode::Char('?') => app.overlay = Some(Overlay::Controls),
         KeyCode::Char('i') => open_inspect(app),
         KeyCode::Char('s') => {
             if matches!(app.game.stage, Stage::Blind(_)) {
-                let _ = app.game.handle_action(Action::SortHand(app.sort_mode));
+                let _ = app.apply_action(Action::SortHand(app.sort_mode));
                 app.sort_mode = if app.sort_mode == SortBy::Rank {
                     SortBy::Suit
                 } else {
@@ -68,7 +96,7 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
             KeyCode::Char('u') => {
                 if let Some(c) = app.game.consumables.get(idx).cloned() {
                     let prev = app.game.stage;
-                    if app.game.handle_action(Action::UseConsumable(c)).is_ok() {
+                    if app.apply_action(Action::UseConsumable(c)) {
                         app.close_overlay();
                         if app.game.stage != prev {
                             app.sync_focus_to_stage();
@@ -80,7 +108,7 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
                 0 => {
                     if let Some(c) = app.game.consumables.get(idx).cloned() {
                         let prev = app.game.stage;
-                        if app.game.handle_action(Action::UseConsumable(c)).is_ok() {
+                        if app.apply_action(Action::UseConsumable(c)) {
                             app.close_overlay();
                             if app.game.stage != prev {
                                 app.sync_focus_to_stage();
@@ -89,7 +117,7 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
                     }
                 }
                 1 => {
-                    if app.game.handle_action(Action::SellConsumable(idx)).is_ok() {
+                    if app.apply_action(Action::SellConsumable(idx)) {
                         app.close_overlay();
                     }
                 }
@@ -111,7 +139,7 @@ fn handle_key_overlay(app: &mut AppState, key: KeyEvent, overlay: Overlay) {
             }
             KeyCode::Enter => match app.overlay_cursor {
                 0 => {
-                    if app.game.handle_action(Action::SellJoker(idx)).is_ok() {
+                    if app.apply_action(Action::SellJoker(idx)) {
                         app.close_overlay();
                         if app.cursor >= app.game.jokers.len() && app.cursor > 0 {
                             app.cursor -= 1;
@@ -202,7 +230,7 @@ fn execute_pack_pick(app: &mut AppState, idx: usize) -> bool {
     else {
         return false;
     };
-    app.game.handle_action(Action::PickPackCard(content)).is_ok()
+    app.apply_action(Action::PickPackCard(content))
 }
 
 /// Attempts the shop purchase for `slot`, returning whether it succeeded
@@ -211,26 +239,23 @@ fn execute_pack_pick(app: &mut AppState, idx: usize) -> bool {
 fn execute_shop_buy(app: &mut AppState, slot: ShopSlot) -> bool {
     match slot {
         ShopSlot::Joker(idx) => match app.game.shop.jokers.get(idx).cloned() {
-            Some(joker) => app.game.handle_action(Action::BuyJoker(joker)).is_ok(),
+            Some(joker) => app.apply_action(Action::BuyJoker(joker)),
             None => false,
         },
         ShopSlot::Consumable(idx) => match app.game.shop.consumables.get(idx).copied() {
-            Some(c) => app.game.handle_action(Action::BuyConsumable(c)).is_ok(),
+            Some(c) => app.apply_action(Action::BuyConsumable(c)),
             None => false,
         },
         ShopSlot::Pack(idx) => match app.game.shop.packs.get(idx).cloned() {
-            Some(pack) => app.game.handle_action(Action::BuyPack(pack)).is_ok(),
+            Some(pack) => app.apply_action(Action::BuyPack(pack)),
             None => false,
         },
         ShopSlot::Voucher => match app.game.shop.voucher {
-            Some(voucher) => app.game.handle_action(Action::BuyVoucher(voucher)).is_ok(),
+            Some(voucher) => app.apply_action(Action::BuyVoucher(voucher)),
             None => false,
         },
         ShopSlot::PlayingCard(idx) => match app.game.shop.cards.get(idx).copied() {
-            Some(card) => app
-                .game
-                .handle_action(Action::BuyPlayingCard(card))
-                .is_ok(),
+            Some(card) => app.apply_action(Action::BuyPlayingCard(card)),
             None => false,
         },
     }
@@ -354,7 +379,7 @@ fn handle_key_preblind(app: &mut AppState, key: KeyEvent) {
             } else {
                 Action::SelectBlind(blind)
             };
-            let _ = app.game.handle_action(action);
+            let _ = app.apply_action(action);
         }
         _ => {}
     }
@@ -363,11 +388,11 @@ fn handle_key_preblind(app: &mut AppState, key: KeyEvent) {
 fn handle_key_blind(app: &mut AppState, key: KeyEvent) {
     match key.code {
         KeyCode::Char('p') => {
-            let _ = app.game.handle_action(Action::Play());
+            let _ = app.apply_action(Action::Play());
             return;
         }
         KeyCode::Char('d') => {
-            let _ = app.game.handle_action(Action::Discard());
+            let _ = app.apply_action(Action::Discard());
             return;
         }
         _ => {}
@@ -414,16 +439,16 @@ fn handle_key_blind_buttons(app: &mut AppState, key: KeyEvent) {
         }
         KeyCode::Enter => match app.cursor {
             0 => {
-                let _ = app.game.handle_action(Action::Play());
+                let _ = app.apply_action(Action::Play());
             }
             1 => {
-                let _ = app.game.handle_action(Action::SortHand(SortBy::Rank));
+                let _ = app.apply_action(Action::SortHand(SortBy::Rank));
             }
             2 => {
-                let _ = app.game.handle_action(Action::SortHand(SortBy::Suit));
+                let _ = app.apply_action(Action::SortHand(SortBy::Suit));
             }
             3 => {
-                let _ = app.game.handle_action(Action::Discard());
+                let _ = app.apply_action(Action::Discard());
             }
             _ => {}
         },
@@ -482,7 +507,7 @@ fn handle_key_postblind(app: &mut AppState, key: KeyEvent) {
         FocusZone::CashOutButton => {
             if key.code == KeyCode::Enter {
                 let reward = compute_cashout(app);
-                let _ = app.game.handle_action(Action::CashOut(reward));
+                let _ = app.apply_action(Action::CashOut(reward));
             }
         }
         FocusZone::JokerStrip => handle_key_joker_strip(app, key),
@@ -501,12 +526,12 @@ fn handle_key_shop(app: &mut AppState, key: KeyEvent) {
         FocusZone::ShopPacks => handle_key_shop_packs(app, key),
         FocusZone::ShopReroll => {
             if key.code == KeyCode::Enter || key.code == KeyCode::Char(' ') {
-                let _ = app.game.handle_action(Action::Reroll());
+                let _ = app.apply_action(Action::Reroll());
             }
         }
         FocusZone::ShopNextRound => {
             if key.code == KeyCode::Enter {
-                let _ = app.game.handle_action(Action::NextRound());
+                let _ = app.apply_action(Action::NextRound());
             }
         }
         FocusZone::JokerStrip => handle_key_joker_strip(app, key),
@@ -515,7 +540,7 @@ fn handle_key_shop(app: &mut AppState, key: KeyEvent) {
     }
 
     if key.code == KeyCode::Char('n') {
-        let _ = app.game.handle_action(Action::NextRound());
+        let _ = app.apply_action(Action::NextRound());
     }
 }
 
@@ -552,7 +577,7 @@ fn handle_key_pack(app: &mut AppState, key: KeyEvent) {
         FocusZone::PackContents => handle_key_pack_contents(app, key),
         FocusZone::PackSkip => {
             if key.code == KeyCode::Enter {
-                let _ = app.game.handle_action(Action::SkipPack());
+                let _ = app.apply_action(Action::SkipPack());
             }
         }
         _ => {
@@ -659,7 +684,7 @@ fn handle_key_tarot_cards(app: &mut AppState, key: KeyEvent) {
 
 fn handle_key_tarot_buttons(app: &mut AppState, key: KeyEvent) {
     if key.code == KeyCode::Enter {
-        let _ = app.game.handle_action(Action::ApplyTarot());
+        let _ = app.apply_action(Action::ApplyTarot());
     }
 }
 
@@ -678,7 +703,7 @@ fn handle_key_spectral(app: &mut AppState, key: KeyEvent) {
 
 fn handle_key_spectral_buttons(app: &mut AppState, key: KeyEvent) {
     if key.code == KeyCode::Enter {
-        let _ = app.game.handle_action(Action::ApplySpectral());
+        let _ = app.apply_action(Action::ApplySpectral());
     }
 }
 
@@ -688,9 +713,9 @@ fn toggle_card(app: &mut AppState) {
         app.game.available.selected().iter().map(|c| c.id).collect();
     if let Some(&card) = cards.get(app.cursor) {
         if selected_ids.contains(&card.id) {
-            let _ = app.game.handle_action(Action::DeselectCard(card));
+            let _ = app.apply_action(Action::DeselectCard(card));
         } else {
-            let _ = app.game.handle_action(Action::SelectCard(card));
+            let _ = app.apply_action(Action::SelectCard(card));
         }
     }
 }
@@ -768,7 +793,31 @@ fn do_save(app: &mut AppState) {
     }
 }
 
+fn handle_replay_key(app: &mut AppState, key: KeyEvent) {
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Esc => app.return_from_replay(),
+        KeyCode::Char(' ') => app.toggle_replay_pause(),
+        KeyCode::Right | KeyCode::Char('l') | KeyCode::Char('.') => app.replay_forward(),
+        KeyCode::Left | KeyCode::Char('h') => app.replay_back(),
+        _ => {}
+    }
+}
+
 pub fn handle_mouse(app: &mut AppState, event: MouseEvent) {
+    match app.screen {
+        Screen::Title => {
+            handle_title_mouse(app, event);
+            return;
+        }
+        Screen::Library => {
+            handle_library_mouse(app, event);
+            return;
+        }
+        Screen::Playing => {}
+    }
+    if app.replay.is_some() {
+        return;
+    }
     if event.kind != MouseEventKind::Down(crossterm::event::MouseButton::Left) {
         return;
     }
@@ -806,16 +855,16 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             toggle_card(app);
         }
         ActionButton(0) => {
-            let _ = app.game.handle_action(Action::Play());
+            let _ = app.apply_action(Action::Play());
         }
         ActionButton(1) => {
-            let _ = app.game.handle_action(Action::SortHand(SortBy::Rank));
+            let _ = app.apply_action(Action::SortHand(SortBy::Rank));
         }
         ActionButton(2) => {
-            let _ = app.game.handle_action(Action::SortHand(SortBy::Suit));
+            let _ = app.apply_action(Action::SortHand(SortBy::Suit));
         }
         ActionButton(3) => {
-            let _ = app.game.handle_action(Action::Discard());
+            let _ = app.apply_action(Action::Discard());
         }
         ActionButton(_) => {}
         JokerSlot(idx) => {
@@ -866,7 +915,7 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
         }
         RerollButton => {
             app.focus = FocusZone::ShopReroll;
-            let _ = app.game.handle_action(Action::Reroll());
+            let _ = app.apply_action(Action::Reroll());
         }
         ShopPack(idx) => {
             app.focus = FocusZone::ShopPacks;
@@ -891,7 +940,7 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             }
         }
         SkipPackButton => {
-            let _ = app.game.handle_action(Action::SkipPack());
+            let _ = app.apply_action(Action::SkipPack());
         }
         BlindOption(idx) => {
             use balatro_rs::stage::Blind;
@@ -901,7 +950,7 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
                 1 => Blind::Big,
                 _ => Blind::Boss,
             };
-            let _ = app.game.handle_action(Action::SelectBlind(blind));
+            let _ = app.apply_action(Action::SelectBlind(blind));
         }
         BlindSkipOption(idx) => {
             use balatro_rs::stage::Blind;
@@ -911,32 +960,32 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
                 0 => Blind::Small,
                 _ => Blind::Big,
             };
-            let _ = app.game.handle_action(Action::SkipBlind(blind));
+            let _ = app.apply_action(Action::SkipBlind(blind));
         }
         CashOutButton => {
             if matches!(app.game.stage, Stage::End(_)) {
                 app.should_quit = true;
             } else {
                 let reward = compute_cashout(app);
-                let _ = app.game.handle_action(Action::CashOut(reward));
+                let _ = app.apply_action(Action::CashOut(reward));
             }
         }
         NextRoundButton => {
-            let _ = app.game.handle_action(Action::NextRound());
+            let _ = app.apply_action(Action::NextRound());
         }
         TarotButton(0) => {
-            let _ = app.game.handle_action(Action::ApplyTarot());
+            let _ = app.apply_action(Action::ApplyTarot());
         }
         TarotButton(_) => {}
         SpectralButton(0) => {
-            let _ = app.game.handle_action(Action::ApplySpectral());
+            let _ = app.apply_action(Action::ApplySpectral());
         }
         SpectralButton(_) => {}
         OverlayButton(0) => match app.overlay.clone() {
             Some(crate::app::Overlay::Consumable(idx)) => {
                 if let Some(c) = app.game.consumables.get(idx).cloned() {
                     let prev = app.game.stage;
-                    if app.game.handle_action(Action::UseConsumable(c)).is_ok() {
+                    if app.apply_action(Action::UseConsumable(c)) {
                         app.close_overlay();
                         if app.game.stage != prev {
                             app.sync_focus_to_stage();
@@ -945,7 +994,7 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
                 }
             }
             Some(crate::app::Overlay::Joker(idx)) => {
-                if app.game.handle_action(Action::SellJoker(idx)).is_ok() {
+                if app.apply_action(Action::SellJoker(idx)) {
                     app.close_overlay();
                     if app.cursor >= app.game.jokers.len() && app.cursor > 0 {
                         app.cursor -= 1;
@@ -972,7 +1021,7 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
         },
         OverlayButton(1) => match app.overlay.clone() {
             Some(crate::app::Overlay::Consumable(idx)) => {
-                if app.game.handle_action(Action::SellConsumable(idx)).is_ok() {
+                if app.apply_action(Action::SellConsumable(idx)) {
                     app.close_overlay();
                 }
             }
@@ -999,6 +1048,7 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             1 => app.overlay = Some(Overlay::Options),
             _ => app.overlay = Some(Overlay::Deck),
         },
+        TitleButton(_) | LibraryRow(_) => {}
     }
 
     if app.game.stage != prev_stage || app.game.blind != prev_blind {
@@ -1044,7 +1094,10 @@ mod tests {
         assert_eq!(app.cursor, app.game.shop.packs.len());
 
         handle_key(&mut app, key(KeyCode::Enter));
-        assert!(matches!(app.overlay, Some(Overlay::ShopBuy(ShopSlot::Voucher))));
+        assert!(matches!(
+            app.overlay,
+            Some(Overlay::ShopBuy(ShopSlot::Voucher))
+        ));
         handle_key(&mut app, key(KeyCode::Enter));
         assert!(app.game.vouchers.has(Voucher::Overstock));
         assert_eq!(app.game.shop.voucher, None);
@@ -1054,7 +1107,10 @@ mod tests {
     fn test_clicking_the_voucher_buys_it() {
         let mut app = shop_app(Voucher::Grabber);
         dispatch_mouse_click(&mut app, WidgetId::ShopVoucher);
-        assert!(matches!(app.overlay, Some(Overlay::ShopBuy(ShopSlot::Voucher))));
+        assert!(matches!(
+            app.overlay,
+            Some(Overlay::ShopBuy(ShopSlot::Voucher))
+        ));
         handle_key(&mut app, key(KeyCode::Enter));
         assert!(app.game.vouchers.has(Voucher::Grabber));
     }
@@ -1113,7 +1169,7 @@ mod tests {
                 break;
             }
             app.game.money = 100;
-            let _ = app.game.handle_action(Action::Reroll());
+            let _ = app.apply_action(Action::Reroll());
         }
         let card = card.expect("Magic Trick never produced a shop playing card");
 

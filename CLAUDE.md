@@ -4,12 +4,11 @@ Game engine and move generator for a simplified version of Balatro, written in R
 
 ## Workspace
 
-Cargo workspace with nine members — see `ARCHITECTURE.md` for the full crate graph and design rationale:
+Cargo workspace with eight members — see `ARCHITECTURE.md` for the full crate graph and design rationale:
 
 - `core/` — main game engine library (`balatro-rs` crate), where almost all logic lives
 - `cli/` — interactive terminal game (`balatro-cli`), depends on core
 - `tui/` — interactive terminal UI (ratatui-based), depends on core
-- `spectator/` — AI replay spectator (`balatro-spectator`), ratatui UI with replay library and live agent sidecar; depends on core
 - `pylatro/` — PyO3 Python bindings, depends on core
 - `balatro-types/` — neutral vocabulary (`Card`, `Jokers`, `Tarot`, etc.), no behavior, no file-format knowledge
 - `balatro-jkr/` — codec for Balatro's `.jkr` save-file format (Lua table literals)
@@ -34,9 +33,6 @@ cd pylatro && maturin develop
 # explore a seed's full expected contents (byte-accurate vs. real Balatro),
 # same text format as the TheSoul/Immolate reference site for direct diffing
 cargo run -p balatro-seed --bin explore -- SEED [--ante N]
-
-# AI replay library / live agent spectator
-cargo run -p balatro-spectator -- --library
 ```
 
 Core has optional features; default is `["serde", "python"]`. To build without Python bindings:

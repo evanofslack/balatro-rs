@@ -1,9 +1,30 @@
 # balatro-cli
 
-Command-line tools for the balatro-rs game engine. This package ships two binaries:
+Command-line tools for the balatro-rs game engine. This package ships three binaries:
 
 - [`balatro-cli`](#balatro-cli-1) — interactive terminal play
 - [`balatro-edit`](#balatro-edit) — non-interactive save-state editor, for quickly setting up test scenarios
+- [`balatro-agent-run`](#balatro-agent-run) — run an external policy and write a replay log
+
+## balatro-agent-run
+
+The agent runner owns the game and writes the same line-delimited log as human `--record` runs. Its header marks `source: "model"`; human runs use `source: "player"`. Open the log in a second terminal with `balatro-tui --replay <FILE>` or find it in Library. The TUI only reads the file.
+
+```bash
+# Working example without a checkpoint; stops after ante 1.
+cargo run -p balatro-cli --bin balatro-agent-run -- \
+  --agent python3 --agent-arg cli/examples/first_legal_policy.py \
+  --seed 10037 --ante-end 1 --record replays/example-agent.log
+
+# In another terminal, while the agent is running or after it finishes:
+cargo run -p balatro-tui -- --replay replays/example-agent.log
+```
+
+For a trained or third-party policy, replace the script with your executable and pass its arguments with repeated `--agent-arg` flags. `--checkpoint PATH` checks that the file exists and passes `--checkpoint PATH` to the policy. `--agent-label NAME` puts a name in the log header. With no `--record`, the runner creates a unique file under `replays/`, `--replays-dir`, or `BALATRO_REPLAYS_DIR`.
+
+The policy reads **one JSON object per line** on stdin. It is the game JSON plus `action_mask`, a 109-element array with `1` for legal action indexes. It writes exactly one `{"action": N}` JSON line on stdout for each request and flushes it. Errors can be reported as `{"error": "message"}`; diagnostics belong on stderr. The runner rejects illegal or malformed replies, flushes each successful action to the log, and writes an outcome line when the game ends or an error line if the policy fails.
+
+`cli/examples/first_legal_policy.py` shows the protocol. It is a simple policy example, not a trained model. Training is external to the TUI.
 
 ## balatro-cli
 

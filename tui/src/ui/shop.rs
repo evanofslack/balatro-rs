@@ -69,7 +69,11 @@ fn render_price_tag(f: &mut Frame, x: u16, y: u16, cost: usize, can_afford: bool
         width: CARD_W,
         height: 1,
     };
-    let color = if can_afford { Color::Yellow } else { Color::DarkGray };
+    let color = if can_afford {
+        Color::Yellow
+    } else {
+        Color::DarkGray
+    };
     let para = Paragraph::new(Span::styled(
         format!("${cost}"),
         Style::default().fg(color).add_modifier(Modifier::BOLD),
@@ -102,7 +106,11 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
             height: CARD_H,
         };
 
-        let border_color = if can_afford { Color::Magenta } else { Color::DarkGray };
+        let border_color = if can_afford {
+            Color::Magenta
+        } else {
+            Color::DarkGray
+        };
         let name = joker.name().to_string();
         let (line1, line2) = cards::wrap_two_lines(&name, inner_w);
         let text_style = Style::default()
@@ -117,7 +125,15 @@ fn render_jokers_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
             Style::default().fg(Color::DarkGray),
         ));
 
-        cards::render_item_box(f, item_rect, is_cursor, border_color, None, lines, Some(footer));
+        cards::render_item_box(
+            f,
+            item_rect,
+            is_cursor,
+            border_color,
+            None,
+            lines,
+            Some(footer),
+        );
         app.widget_rects.insert(WidgetId::ShopJoker(i), item_rect);
     }
 
@@ -245,7 +261,11 @@ fn render_packs_for_sale(f: &mut Frame, app: &mut AppState, area: Rect) {
             height: CARD_H,
         };
 
-        let border_color = if can_afford { category_color } else { Color::DarkGray };
+        let border_color = if can_afford {
+            category_color
+        } else {
+            Color::DarkGray
+        };
         let name = pack.name();
         let (line1, line2) = cards::wrap_two_lines(&name, inner_w);
         let text_style = Style::default()

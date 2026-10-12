@@ -96,9 +96,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect, idx: usize) {
     let block = Block::default()
         .title(Span::styled(
             format!(" {} ", c.name()),
-            Style::default()
-                .fg(type_color)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(type_color).add_modifier(Modifier::BOLD),
         ))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(type_color));

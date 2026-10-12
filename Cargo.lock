@@ -104,6 +104,7 @@ dependencies = [
  "balatro-rs",
  "clap 4.5.60",
  "colored",
+ "serde_json",
  "text_io",
 ]
 
@@ -153,19 +154,6 @@ dependencies = [
  "balatro-types",
  "serde",
  "strum",
-]
-
-[[package]]
-name = "balatro-spectator"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "balatro-rs",
- "clap 4.5.60",
- "crossterm",
- "ratatui",
- "serde",
- "serde_json",
 ]
 
 [[package]]

@@ -3,6 +3,7 @@ pub mod blind_info;
 pub mod cards;
 pub mod end;
 pub mod joker_strip;
+pub mod library;
 pub mod overlay;
 pub mod pack;
 pub mod postblind;
@@ -12,12 +13,15 @@ pub mod sidebar;
 pub mod size_check;
 pub mod spectral;
 pub mod tarot;
+pub mod title;
 
-use crate::app::AppState;
+use crate::app::{AppState, Screen};
 use balatro_rs::consumable::Consumable;
 use balatro_rs::rank::HandRank;
 use balatro_rs::stage::Stage;
-use ratatui::style::Color;
+use ratatui::layout::Rect;
+use ratatui::style::{Color, Style};
+use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 const MIN_WIDTH: u16 = 100;
@@ -26,7 +30,33 @@ const MIN_HEIGHT: u16 = 34;
 pub fn render(f: &mut Frame, app: &mut AppState) {
     app.widget_rects.clear();
 
-    let area = f.area();
+    match app.screen {
+        Screen::Title => {
+            title::render(f, app, f.area());
+            return;
+        }
+        Screen::Library => {
+            library::render(f, app, f.area());
+            return;
+        }
+        Screen::Playing => {}
+    }
+
+    let mut area = f.area();
+    if let Some(text) = app.replay_status_text() {
+        let bar = Rect {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: 1,
+        };
+        f.render_widget(
+            Paragraph::new(text).style(Style::default().fg(Color::Yellow)),
+            bar,
+        );
+        area.y = area.y.saturating_add(1);
+        area.height = area.height.saturating_sub(1);
+    }
 
     if area.width < MIN_WIDTH || area.height < MIN_HEIGHT {
         size_check::render(f, area, area.width, area.height, MIN_WIDTH, MIN_HEIGHT);

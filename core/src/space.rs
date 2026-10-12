@@ -573,6 +573,17 @@ impl ActionSpace {
         }
     }
 
+    /// Gym index for `action` in this space, before the action is applied.
+    /// Masked slots are skipped. `None` means `action` is not in the 0–N space
+    /// (for example `Action::DeselectCard`, which `gen_actions` can still emit).
+    pub fn index_of(&self, action: &Action, game: &Game) -> Option<usize> {
+        let mask = self.to_vec();
+        (0..self.size()).find(|&index| {
+            mask.get(index).copied() == Some(1)
+                && self.to_action(index, game).ok().as_ref() == Some(action)
+        })
+    }
+
     pub fn to_vec(&self) -> Vec<usize> {
         [
             self.select_card.clone(),
@@ -735,7 +746,7 @@ mod tests {
         assert_eq!(a.to_vec().len(), a.size());
         // to_action on the apply_tarot index must still resolve and not panic
         assert!(a.to_action(a.apply_tarot_min(), &Game::default()).is_err()); // masked, not a panic
-        // Same for the apply_spectral index, appended at the end of the vector.
+                                                                              // Same for the apply_spectral index, appended at the end of the vector.
         assert!(a
             .to_action(a.apply_spectral_min(), &Game::default())
             .is_err()); // masked, not a panic
