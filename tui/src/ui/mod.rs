@@ -13,7 +13,6 @@ pub mod sidebar;
 pub mod size_check;
 pub mod spectral;
 pub mod tarot;
-pub mod title;
 
 use crate::app::{AppState, Screen};
 use balatro_rs::consumable::Consumable;
@@ -31,10 +30,6 @@ pub fn render(f: &mut Frame, app: &mut AppState) {
     app.widget_rects.clear();
 
     match app.screen {
-        Screen::Title => {
-            title::render(f, app, f.area());
-            return;
-        }
         Screen::Library => {
             library::render(f, app, f.area());
             return;
@@ -43,7 +38,10 @@ pub fn render(f: &mut Frame, app: &mut AppState) {
     }
 
     let mut area = f.area();
-    if let Some(text) = app.replay_status_text() {
+    if let Some(text) = (!app.status.is_empty())
+        .then(|| app.status.clone())
+        .or_else(|| app.replay_status_text())
+    {
         let bar = Rect {
             x: area.x,
             y: area.y,

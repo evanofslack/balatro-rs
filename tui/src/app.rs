@@ -1,12 +1,8 @@
 use crate::library::LibraryState;
-use crate::paths::{
-    default_record_path, ensure_replays_dir, recording_enabled, set_recording_enabled,
-};
-use crate::record::ReplayWriter;
+use crate::record::FileReplayWriter;
 use crate::replay::{ReplayReader, ReplaySession, ReplayStep};
 use balatro_rs::action::Action;
-use balatro_rs::config::Config;
-use balatro_rs::replay_log::{loggable_move, ReplayResult, ReplaySource};
+use balatro_rs::replay_log::{loggable_move, result_for_game, ReplayResult, ReplaySource};
 use balatro_rs::{
     action::SortBy, card::Card, consumable::Consumable, game::Game, joker::Jokers, pack::Pack,
     tag::Tag, voucher::Voucher,
@@ -40,49 +36,13 @@ pub enum WidgetId {
     DeckTab(usize),
     RunInfoTab(usize),
     SidebarButton(usize),
-    TitleButton(usize),
     LibraryRow(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TitleButton {
-    Play = 0,
-    Library = 1,
-}
-
-impl TitleButton {
-    pub fn from_index(i: usize) -> Self {
-        match i {
-            1 => Self::Library,
-            _ => Self::Play,
-        }
-    }
-
-    pub fn index(self) -> usize {
-        self as usize
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Play => "PLAY",
-            Self::Library => "LIBRARY",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
-    Title,
     Library,
     Playing,
-}
-
-/// Where Esc/q returns when leaving the current screen.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReturnTarget {
-    Quit,
-    Title,
-    Library,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,18 +124,14 @@ pub struct AppState {
     pub should_quit: bool,
     pub widget_rects: HashMap<WidgetId, Rect>,
     pub sort_mode: SortBy,
-    pub recorder: Option<ReplayWriter>,
+    pub recorder: Option<FileReplayWriter>,
     pub replay: Option<ReplaySession>,
     pub screen: Screen,
-    pub title_focus: TitleButton,
-    pub record_runs: bool,
-    pub title_status: String,
-    pub return_target: ReturnTarget,
+    pub status: String,
     pub library: Option<LibraryState>,
     pub replays_dir: PathBuf,
+    pub data_dir: PathBuf,
     pub clear_screen: bool,
-    /// True when the library was entered via `--library` (Esc/q on the list exits).
-    pub library_is_root: bool,
 }
 
 impl AppState {
@@ -195,96 +151,23 @@ impl AppState {
             recorder: None,
             replay: None,
             screen: Screen::Playing,
-            title_focus: TitleButton::Play,
-            record_runs: true,
-            title_status: String::new(),
-            return_target: ReturnTarget::Quit,
+            status: String::new(),
             library: None,
-            replays_dir: PathBuf::from("replays"),
+            replays_dir: PathBuf::from("data/replays"),
+            data_dir: PathBuf::from("data"),
             clear_screen: false,
-            library_is_root: false,
-        }
-    }
-
-    pub fn new_title(replays_dir: PathBuf) -> Self {
-        let mut app = Self::new(Game::new(Config::default()));
-        app.screen = Screen::Title;
-        app.return_target = ReturnTarget::Quit;
-        match recording_enabled(&replays_dir) {
-            Ok(enabled) => app.record_runs = enabled,
-            Err(err) => app.title_status = format!("read recording setting: {err}"),
-        }
-        app.replays_dir = replays_dir;
-        app
-    }
-
-    pub fn open_title(&mut self) {
-        if let Err(err) = self.finish_recording() {
-            self.title_status = format!("finish recording: {err:#}");
-        }
-        self.screen = Screen::Title;
-        self.title_focus = TitleButton::Play;
-        self.return_target = ReturnTarget::Quit;
-        self.overlay = None;
-        self.replay = None;
-        self.library = None;
-        self.library_is_root = false;
-        self.clear_screen = true;
-    }
-
-    pub fn start_play_from_title(&mut self) -> anyhow::Result<()> {
-        let mut game = Game::new(Config::default());
-        game.start();
-        let recorder = if self.record_runs {
-            ensure_replays_dir(&self.replays_dir)?;
-            let path = default_record_path(&self.replays_dir, game.seed);
-            Some(ReplayWriter::create(&path, &game)?)
-        } else {
-            None
-        };
-        self.game = game;
-        self.screen = Screen::Playing;
-        self.return_target = ReturnTarget::Title;
-        self.overlay = None;
-        self.recorder = recorder;
-        self.replay = None;
-        self.library = None;
-        self.clear_screen = true;
-        self.sync_focus_to_stage();
-        Ok(())
-    }
-
-    pub fn toggle_recording(&mut self) {
-        let enabled = !self.record_runs;
-        match set_recording_enabled(&self.replays_dir, enabled) {
-            Ok(()) => {
-                self.record_runs = enabled;
-                self.title_status.clear();
-            }
-            Err(err) => self.title_status = format!("save recording setting: {err}"),
         }
     }
 
     pub fn finish_recording(&mut self) -> anyhow::Result<()> {
-        if self.game.is_over() {
-            if let Some(recorder) = self.recorder.as_mut() {
-                recorder.record_outcome(&self.game)?;
-            }
-            self.recorder = None;
-        } else if let Some(recorder) = self.recorder.take() {
-            recorder.discard()?;
+        if let Some(mut recorder) = self.recorder.take() {
+            recorder.record_outcome(&self.game, result_for_game(&self.game))?;
         }
         Ok(())
     }
 
-    pub fn open_library(&mut self, as_root: bool) {
+    pub fn open_library(&mut self) {
         self.screen = Screen::Library;
-        self.library_is_root = as_root;
-        self.return_target = if as_root {
-            ReturnTarget::Quit
-        } else {
-            ReturnTarget::Title
-        };
         self.overlay = None;
         self.replay = None;
         self.library = Some(LibraryState::open(self.replays_dir.clone()));
@@ -298,10 +181,8 @@ impl AppState {
         self.overlay = None;
         self.recorder = None;
         if from_library {
-            self.return_target = ReturnTarget::Library;
             self.replay = Some(ReplaySession::from_library(reader));
         } else {
-            self.return_target = ReturnTarget::Quit;
             self.replay = Some(ReplaySession::new(reader));
         }
         self.clear_screen = true;
@@ -313,21 +194,9 @@ impl AppState {
         let from_library = self.replay.as_ref().is_some_and(|s| s.from_library);
         self.replay = None;
         if from_library {
-            let as_root = self.library_is_root;
-            self.open_library(as_root);
+            self.open_library();
         } else {
             self.should_quit = true;
-        }
-    }
-
-    pub fn activate_title_button(&mut self) {
-        match self.title_focus {
-            TitleButton::Play => {
-                if let Err(err) = self.start_play_from_title() {
-                    self.title_status = format!("start run: {err:#}");
-                }
-            }
-            TitleButton::Library => self.open_library(false),
         }
     }
 
@@ -347,15 +216,17 @@ impl AppState {
         if let Some(step) = logged {
             if let Some(recorder) = self.recorder.as_mut() {
                 if let Err(err) = recorder.record_move(step) {
-                    eprintln!("replay log: {err:#}");
+                    self.status = format!("replay log: {err:#}");
                 } else if self.game.is_over() {
-                    if let Err(err) = recorder.record_outcome(&self.game) {
-                        eprintln!("replay log: {err:#}");
+                    if let Err(err) =
+                        recorder.record_outcome(&self.game, result_for_game(&self.game))
+                    {
+                        self.status = format!("replay log: {err:#}");
                     }
                 }
             }
         } else if self.recorder.is_some() {
-            eprintln!("replay log: action succeeded but has no log encoding");
+            self.status = "replay log: action has no encoding".into();
         }
         true
     }
@@ -393,7 +264,7 @@ impl AppState {
                 self.sync_focus_to_stage();
             }
             Err(err) => {
-                eprintln!("replay: {err:#}");
+                self.status = format!("replay: {err:#}");
                 session.paused = true;
             }
         }
@@ -422,7 +293,7 @@ impl AppState {
                 self.sync_focus_to_stage();
             }
             Err(err) => {
-                eprintln!("replay: {err:#}");
+                self.status = format!("replay: {err:#}");
                 session.paused = true;
             }
         }
@@ -747,53 +618,43 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::scan_replays;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
-    fn title_play_discards_early_exit_and_remembers_toggle() {
-        let dir = std::env::temp_dir().join(format!(
-            "balatro-title-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        let mut app = AppState::new_title(dir.clone());
-        assert_eq!(app.screen, Screen::Title);
-
-        app.title_focus = TitleButton::Play;
-        app.activate_title_button();
-        assert_eq!(app.screen, Screen::Playing);
-        assert_eq!(app.return_target, ReturnTarget::Title);
-        assert!(app.recorder.is_some());
-        let recorded_path = std::fs::read_dir(&dir)
+    fn abandoned_run_has_terminal_line() {
+        let mut game = Game::new(balatro_rs::config::Config::default());
+        game.start();
+        let mut app = AppState::new(game);
+        let path =
+            std::env::temp_dir().join(format!("balatro-abandoned-{}.log", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        app.recorder = Some(crate::record::create(&path, &app.game).unwrap());
+        let index = app
+            .game
+            .gen_action_space()
+            .to_vec()
+            .iter()
+            .position(|&bit| bit == 1)
+            .unwrap();
+        app.recorder
+            .as_mut()
             .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .find(|path| path.extension().is_some_and(|extension| extension == "log"))
-            .expect("Play created a replay log");
-        app.open_title();
-        assert_eq!(app.screen, Screen::Title);
-        assert!(!recorded_path.exists());
-        let entries = scan_replays(&dir).unwrap();
-        assert!(entries.is_empty());
-
-        app.toggle_recording();
-        assert!(!app.record_runs);
-        let mut app = AppState::new_title(dir.clone());
-        assert!(!app.record_runs);
-        app.title_focus = TitleButton::Play;
-        app.activate_title_button();
-        assert!(app.recorder.is_none());
-        app.open_title();
-        assert!(scan_replays(&dir).unwrap().is_empty());
-
-        app.title_focus = TitleButton::Library;
-        app.activate_title_button();
-        assert_eq!(app.screen, Screen::Library);
-        assert!(!app.library_is_root);
-        assert!(app.library.is_some());
-        std::fs::remove_dir_all(dir).unwrap();
+            .record_move(balatro_rs::replay_log::ReplayMove::Action(index))
+            .unwrap();
+        app.game.handle_action_index(index).unwrap();
+        app.finish_recording().unwrap();
+        assert!(std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("abandoned"));
+        let (mut reader, mut replay_game) = crate::replay::ReplayReader::open(&path).unwrap();
+        assert_eq!(
+            reader.forward(&mut replay_game).unwrap(),
+            crate::replay::ReplayStep::Applied
+        );
+        assert_eq!(
+            reader.forward(&mut replay_game).unwrap(),
+            crate::replay::ReplayStep::Finished
+        );
+        assert_eq!(reader.result(), Some(ReplayResult::Abandoned));
+        std::fs::remove_file(path).unwrap();
     }
 }

@@ -1,30 +1,6 @@
 # balatro-cli
 
-Command-line tools for the balatro-rs game engine. This package ships three binaries:
-
-- [`balatro-cli`](#balatro-cli-1) — interactive terminal play
-- [`balatro-edit`](#balatro-edit) — non-interactive save-state editor, for quickly setting up test scenarios
-- [`balatro-agent-run`](#balatro-agent-run) — run an external policy and write a replay log
-
-## balatro-agent-run
-
-The agent runner owns the game and writes the same line-delimited log as human `--record` runs. Its header marks `source: "model"`; human runs use `source: "player"`. Open the log in a second terminal with `balatro-tui --replay <FILE>` or find it in Library. The TUI only reads the file.
-
-```bash
-# Working example without a checkpoint; stops after ante 1.
-cargo run -p balatro-cli --bin balatro-agent-run -- \
-  --agent python3 --agent-arg cli/examples/first_legal_policy.py \
-  --seed 10037 --ante-end 1 --record replays/example-agent.log
-
-# In another terminal, while the agent is running or after it finishes:
-cargo run -p balatro-tui -- --replay replays/example-agent.log
-```
-
-For a trained or third-party policy, replace the script with your executable and pass its arguments with repeated `--agent-arg` flags. `--checkpoint PATH` checks that the file exists and passes `--checkpoint PATH` to the policy. `--agent-label NAME` puts a name in the log header. With no `--record`, the runner creates a unique file under `replays/`, `--replays-dir`, or `BALATRO_REPLAYS_DIR`.
-
-The policy reads **one JSON object per line** on stdin. It is the game JSON plus `action_mask`, a 109-element array with `1` for legal action indexes. It writes exactly one `{"action": N}` JSON line on stdout for each request and flushes it. Errors can be reported as `{"error": "message"}`; diagnostics belong on stderr. The runner rejects illegal or malformed replies, flushes each successful action to the log, and writes an outcome line when the game ends or an error line if the policy fails.
-
-`cli/examples/first_legal_policy.py` shows the protocol. It is a simple policy example, not a trained model. Training is external to the TUI.
+Command-line tools for interactive play and save-state editing.
 
 ## balatro-cli
 
@@ -42,12 +18,14 @@ cargo run
 
 ### Options
 
-| Flag            | Description                              |
-| --------------- | ---------------------------------------- |
+| Flag | Description |
+| --- | --- |
 | `--load <FILE>` | Load a saved game state from a JSON file |
+| `--record [PATH]` | Record to a new replay log; the default is `<data-dir>/replays/` |
+| `--data-dir <DIR>` | Directory containing `saves/` and `replays/` (default: `data`) |
 
 ```bash
-cargo run -p balatro-cli -- --load game_1781391549.json
+cargo run -p balatro-cli -- --load data/saves/game_1781391549.json
 ```
 
 ### Controls
@@ -58,20 +36,21 @@ At each prompt, enter the number of the action you want to take.
 | ------- | -------------------------------------------- |
 | `0`     | Print full game state                        |
 | `1`–`N` | Execute that action                          |
-| `s`     | Save current game to `game_<timestamp>.json` |
+| `s`     | Save current game to `data/saves/game_<timestamp>.json` |
+| `q`     | Quit and mark a recorded run abandoned |
 
 ### Saving and loading
 
-Press `s` at any action prompt to save. The file is written to the current working directory:
+Press `s` at any action prompt to save. The file is written under `data/saves/` by default (or `<DIR>/saves/` with `--data-dir DIR`):
 
 ```
-Saved to game_1781391549.json
+Saved to data/saves/game_1781391549.json
 ```
 
 Reload it later with `--load`:
 
 ```bash
-cargo run -p balatro-cli -- --load game_1781391549.json
+cargo run -p balatro-cli -- --load data/saves/game_1781391549.json
 ```
 
 This is useful for setting up and replaying specific scenarios.
@@ -194,32 +173,32 @@ There is currently no way to remove a specific joker or card — only add, set, 
 Bump money and force the ante up on a save, in place:
 
 ```bash
-just edit --load game_1781391549.json add-money 100
-just edit --load game_1781391549.json set-ante 6
+just edit --load data/saves/game_1781391549.json add-money 100
+just edit --load data/saves/game_1781391549.json set-ante 6
 ```
 
 Add a specific joker to test its interaction, with an edition and a sticker:
 
 ```bash
-just edit --load game_1781391549.json add-joker Blueprint --edition negative --eternal
+just edit --load data/saves/game_1781391549.json add-joker Blueprint --edition negative --eternal
 ```
 
 Add a card to the deck with an enhancement:
 
 ```bash
-just edit --load game_1781391549.json add-card ace spade --enhancement glass
+just edit --load data/saves/game_1781391549.json add-card ace spade --enhancement glass
 ```
 
 Give yourself a tarot to test, then inspect the result:
 
 ```bash
-just edit --load game_1781391549.json add-tarot Fool
-just edit --load game_1781391549.json show
+just edit --load data/saves/game_1781391549.json add-tarot Fool
+just edit --load data/saves/game_1781391549.json show
 ```
 
 Give yourself a spectral to test:
 
 ```bash
-just edit --load game_1781391549.json add-spectral Familiar
-just edit --load game_1781391549.json show
+just edit --load data/saves/game_1781391549.json add-spectral Familiar
+just edit --load data/saves/game_1781391549.json show
 ```

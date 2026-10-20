@@ -1,7 +1,7 @@
 //! Scan / rename / delete line-delimited replay logs. I/O stays out of core.
 
 use anyhow::{bail, Context, Result};
-use balatro_rs::replay_log::{parse_line, ReplayRecord, ReplayResult, ReplaySource};
+use balatro_rs::replay_log::{parse_line, ReplayRecord, ReplayResult, ReplaySeed, ReplaySource};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -9,7 +9,7 @@ use std::time::SystemTime;
 #[derive(Debug, Clone)]
 pub struct LibraryEntry {
     pub path: PathBuf,
-    pub seed: u64,
+    pub seed: ReplaySeed,
     pub agent: Option<String>,
     pub source: ReplaySource,
     pub result: Option<ReplayResult>,
@@ -95,7 +95,7 @@ pub fn scan_replays(dir: &Path) -> Result<Vec<LibraryEntry>> {
         }
         match load_entry(&path) {
             Ok(e) => entries.push(e),
-            Err(err) => eprintln!("skip {}: {err:#}", path.display()),
+            Err(_) => {}
         }
     }
     entries.sort_by(|a, b| b.mtime.cmp(&a.mtime));
@@ -118,7 +118,7 @@ fn load_entry(path: &Path) -> Result<LibraryEntry> {
     // Prefer the last non-empty line if it is an outcome; otherwise scan.
     if let Some(last) = text.lines().rev().find(|l| !l.trim().is_empty()) {
         if let Ok(ReplayRecord::Outcome(outcome)) = parse_line(last) {
-            result = outcome.result();
+            result = Some(outcome.result);
             score = Some(outcome.score);
             steps = Some(outcome.steps);
         }
@@ -126,7 +126,7 @@ fn load_entry(path: &Path) -> Result<LibraryEntry> {
     if result.is_none() {
         for line in text.lines() {
             if let Ok(ReplayRecord::Outcome(outcome)) = parse_line(line) {
-                result = outcome.result();
+                result = Some(outcome.result);
                 score = Some(outcome.score);
                 steps = Some(outcome.steps);
             }
@@ -137,7 +137,7 @@ fn load_entry(path: &Path) -> Result<LibraryEntry> {
         path: path.to_path_buf(),
         seed: header.seed,
         agent: header.agent.clone(),
-        source: header.source(),
+        source: header.source,
         result,
         score,
         steps,
@@ -205,7 +205,14 @@ mod tests {
         writeln!(
             file,
             "{}",
-            header_line(&game.config, game.seed, game.seed_str.as_deref(), None).unwrap()
+            header_line(
+                &game.config,
+                game.seed,
+                game.seed_str.as_deref(),
+                ReplaySource::Player,
+                None
+            )
+            .unwrap()
         )
         .unwrap();
         writeln!(file, "{}", move_line(ReplayMove::Action(78))).unwrap();
@@ -235,7 +242,7 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].display_name(), "newer");
         assert_eq!(entries[1].display_name(), "older");
-        assert_eq!(entries[0].seed, 2);
+        assert_eq!(entries[0].seed, ReplaySeed::Number(2));
 
         let _ = fs::remove_dir_all(&dir);
     }

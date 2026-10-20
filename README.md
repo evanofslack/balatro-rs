@@ -84,11 +84,11 @@ cargo test -p balatro-rs
 # interactive terminal game
 cargo run -p balatro-cli
 
-# interactive terminal UI (title: Play / Library; Play records by default)
+# interactive terminal UI (starts a game)
 cargo run -p balatro-tui
 
 # record a run to the shared replay log (TUI or CLI)
-# bare --record writes under replays/; or pass an explicit path
+# bare --record writes under data/replays/; or pass an explicit path
 cargo run -p balatro-tui -- --record
 cargo run -p balatro-tui -- --record run.log
 cargo run -p balatro-cli -- --record
@@ -97,7 +97,6 @@ cargo run -p balatro-cli -- --record
 cargo run -p balatro-tui -- --library
 cargo run -p balatro-tui -- --replay run.log
 
-# toggle automatic TUI recording with r on the title screen
 
 # explore a seed's full expected contents, byte-accurate vs. real Balatro
 cargo run -p balatro-seed --bin explore -- SEED --ante 1

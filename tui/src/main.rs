@@ -16,9 +16,9 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use paths::{default_record_path, default_replays_dir, ensure_replays_dir, recording_enabled};
+use paths::{default_data_dir, default_record_path};
 use ratatui::{backend::CrosstermBackend, Terminal};
-use record::ReplayWriter;
+use record::create as create_record;
 use std::{fs, io, path::PathBuf, time::Duration};
 
 #[derive(Parser)]
@@ -34,7 +34,7 @@ struct Args {
     #[arg(long, value_name = "FILE", conflicts_with_all = ["load", "record", "seed", "library"])]
     replay: Option<PathBuf>,
 
-    /// Append this run to a replay log. With no PATH, writes under the replays directory.
+    /// Record this run to a new replay log. With no PATH, writes under the replays directory.
     #[arg(
         long,
         value_name = "PATH",
@@ -44,31 +44,32 @@ struct Args {
     )]
     record: Option<String>,
 
-    /// Open the replay library (skips the title screen).
+    /// Open the replay library.
     #[arg(long, conflicts_with_all = ["load", "seed", "replay", "record"])]
     library: bool,
 
-    /// Directory for `--library` and default `--record` paths.
+    /// Directory containing saves/ and replays/.
     #[arg(long, value_name = "DIR")]
-    replays_dir: Option<PathBuf>,
+    data_dir: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let replays_dir = args.replays_dir.clone().unwrap_or_else(default_replays_dir);
+    let data_dir = args.data_dir.clone().unwrap_or_else(default_data_dir);
+    let replays_dir = data_dir.join("replays");
 
     let mut app = if let Some(path) = args.replay {
         let mut app = AppState::new(Game::new(Config::default()));
         app.replays_dir = replays_dir;
+        app.data_dir = data_dir.clone();
         app.attach_replay(path, false)?;
         app
     } else if args.library {
         let mut app = AppState::new(Game::new(Config::default()));
         app.replays_dir = replays_dir;
-        app.open_library(true);
+        app.data_dir = data_dir.clone();
+        app.open_library();
         app
-    } else if args.load.is_none() && args.seed.is_none() && args.record.is_none() {
-        AppState::new_title(replays_dir)
     } else {
         let game = match &args.load {
             Some(path) => {
@@ -91,26 +92,20 @@ fn main() -> Result<()> {
         };
         let mut app = AppState::new(game);
         app.replays_dir = replays_dir.clone();
-        app.record_runs = recording_enabled(&replays_dir)?;
+        app.data_dir = data_dir.clone();
         if let Some(record) = args.record {
             let path = if record.is_empty() {
-                ensure_replays_dir(&replays_dir)?;
+                fs::create_dir_all(&replays_dir)?;
                 default_record_path(&replays_dir, app.game.seed)
             } else {
                 PathBuf::from(record)
             };
             if let Some(parent) = path.parent() {
                 if !parent.as_os_str().is_empty() {
-                    ensure_replays_dir(parent)?;
+                    fs::create_dir_all(parent)?;
                 }
             }
-            app.recorder = Some(ReplayWriter::create(&path, &app.game)?);
-            eprintln!("recording to {}", path.display());
-        } else if args.load.is_none() && app.record_runs {
-            ensure_replays_dir(&replays_dir)?;
-            let path = default_record_path(&replays_dir, app.game.seed);
-            app.recorder = Some(ReplayWriter::create(&path, &app.game)?);
-            eprintln!("recording to {}", path.display());
+            app.recorder = Some(create_record(&path, &app.game)?);
         }
         app
     };

@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use balatro_rs::game::Game;
 use balatro_rs::replay_log::{
     apply_move, game_from_header, parse_line, ReplayHeader, ReplayMove, ReplayRecord, ReplayResult,
-    ReplaySource,
+    ReplaySeed, ReplaySource,
 };
 use std::fs::File;
 use std::io::Read;
@@ -70,7 +70,7 @@ impl ReplayReader {
     }
 
     pub fn source(&self) -> ReplaySource {
-        self.header.source()
+        self.header.source
     }
 
     pub fn at_start(&self) -> bool {
@@ -104,7 +104,7 @@ impl ReplayReader {
             }
             Some(ReplayRecord::Outcome(outcome)) => {
                 self.outcome_seen = true;
-                self.result = outcome.result();
+                self.result = Some(outcome.result);
                 Ok(ReplayStep::Finished)
             }
             Some(ReplayRecord::Header(_)) => bail!("unexpected header in replay"),
@@ -155,11 +155,10 @@ fn apply_logged(game: &mut Game, step: ReplayMove) -> Result<()> {
 fn placeholder_header() -> ReplayHeader {
     ReplayHeader {
         format_version: 0,
-        seed: 0,
-        seed_str: None,
+        seed: ReplaySeed::Number(0),
         config: balatro_rs::config::Config::default(),
         agent: None,
-        source: None,
+        source: ReplaySource::Player,
     }
 }
 
@@ -250,6 +249,7 @@ mod tests {
                 &recorded.config,
                 recorded.seed,
                 recorded.seed_str.as_deref(),
+                ReplaySource::Player,
                 None
             )
             .unwrap()
@@ -324,6 +324,7 @@ mod tests {
                 &recorded.config,
                 recorded.seed,
                 recorded.seed_str.as_deref(),
+                ReplaySource::Player,
                 None
             )
             .unwrap()
@@ -365,7 +366,7 @@ mod tests {
             &path,
             format!(
                 "{}\n",
-                header_line(&game.config, game.seed, None, None).unwrap()
+                header_line(&game.config, game.seed, None, ReplaySource::Player, None).unwrap()
             ),
         )
         .unwrap();

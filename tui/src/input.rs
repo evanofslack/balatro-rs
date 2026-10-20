@@ -1,9 +1,5 @@
-use crate::app::{
-    AppState, DeckTab, FocusZone, Overlay, ReturnTarget, RunInfoTab, Screen, ShopSlot,
-};
-use crate::library_input::{
-    handle_library_key, handle_library_mouse, handle_title_key, handle_title_mouse,
-};
+use crate::app::{AppState, DeckTab, FocusZone, Overlay, RunInfoTab, Screen, ShopSlot};
+use crate::library_input::{handle_library_key, handle_library_mouse};
 use balatro_rs::action::{Action, SortBy};
 use balatro_rs::stage::Stage;
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
@@ -19,10 +15,6 @@ pub fn handle_key(app: &mut AppState, key: KeyEvent) {
     }
 
     match app.screen {
-        Screen::Title => {
-            handle_title_key(app, key);
-            return;
-        }
         Screen::Library => {
             handle_library_key(app, key);
             return;
@@ -42,11 +34,7 @@ pub fn handle_key(app: &mut AppState, key: KeyEvent) {
 
     match key.code {
         KeyCode::Char('q') | KeyCode::Esc => {
-            if app.return_target == ReturnTarget::Title {
-                app.open_title();
-            } else {
-                app.should_quit = true;
-            }
+            app.should_quit = true;
         }
         KeyCode::Char('e') => app.open_save(),
         KeyCode::Char('r') => app.overlay = Some(Overlay::RunInfo),
@@ -784,12 +772,24 @@ fn open_inspect(app: &mut AppState) {
 }
 
 fn do_save(app: &mut AppState) {
+    let mut components = std::path::Path::new(&app.save_input).components();
+    if !matches!(components.next(), Some(std::path::Component::Normal(_)))
+        || components.next().is_some()
+    {
+        app.status = "save: enter a filename within saves/".into();
+        return;
+    }
     match app.game.to_json() {
-        Ok(json) => match std::fs::write(&app.save_input, json) {
-            Ok(()) => app.close_overlay(),
-            Err(e) => app.save_input = format!("ERROR: {}", e),
+        Ok(json) => match std::fs::create_dir_all(app.data_dir.join("saves"))
+            .and_then(|_| std::fs::write(app.data_dir.join("saves").join(&app.save_input), json))
+        {
+            Ok(()) => {
+                app.status.clear();
+                app.close_overlay();
+            }
+            Err(e) => app.status = format!("save: {e}"),
         },
-        Err(e) => app.save_input = format!("ERROR: {}", e),
+        Err(e) => app.status = format!("save: {e}"),
     }
 }
 
@@ -805,10 +805,6 @@ fn handle_replay_key(app: &mut AppState, key: KeyEvent) {
 
 pub fn handle_mouse(app: &mut AppState, event: MouseEvent) {
     match app.screen {
-        Screen::Title => {
-            handle_title_mouse(app, event);
-            return;
-        }
         Screen::Library => {
             handle_library_mouse(app, event);
             return;
@@ -1048,7 +1044,7 @@ fn dispatch_mouse_click(app: &mut AppState, id: crate::app::WidgetId) {
             1 => app.overlay = Some(Overlay::Options),
             _ => app.overlay = Some(Overlay::Deck),
         },
-        TitleButton(_) | LibraryRow(_) => {}
+        LibraryRow(_) => {}
     }
 
     if app.game.stage != prev_stage || app.game.blind != prev_blind {
@@ -1079,6 +1075,30 @@ mod tests {
         let mut app = AppState::new(game);
         app.sync_focus_to_stage();
         app
+    }
+
+    #[test]
+    fn save_uses_data_dir() {
+        let dir = std::env::temp_dir().join(format!(
+            "balatro-save-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut app = AppState::new(Game::default());
+        app.data_dir = dir.clone();
+        app.save_input = "example.json".into();
+        do_save(&mut app);
+        let saved = dir.join("saves/example.json");
+        assert!(saved.is_file());
+        assert!(Game::from_json(&std::fs::read_to_string(&saved).unwrap()).is_ok());
+        app.save_input = "../outside.json".into();
+        do_save(&mut app);
+        assert!(!dir.join("outside.json").exists());
+        assert!(app.status.contains("filename"));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

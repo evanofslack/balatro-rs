@@ -40,7 +40,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
 
     let items: Vec<ListItem> = if library.entries.is_empty() {
         vec![ListItem::new(Span::styled(
-            "  (no runs yet — choose Play to record one)",
+            "  (no runs yet — use --record to create one)",
             Style::default().fg(Color::DarkGray),
         ))]
     } else {
@@ -120,12 +120,7 @@ pub fn render(f: &mut Frame, app: &mut AppState, area: Rect) {
         } else if library.confirm_delete {
             "Delete selected?  y confirm   n/Esc cancel".to_string()
         } else {
-            let back = if app.library_is_root {
-                "q quit"
-            } else {
-                "Esc/q title"
-            };
-            format!("j/k move   Enter watch   R rename   d delete   r refresh   {back}")
+            "j/k move   Enter watch   R rename   d delete   r refresh   Esc/q quit".to_string()
         }
     } else {
         String::new()

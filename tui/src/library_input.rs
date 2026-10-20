@@ -1,23 +1,6 @@
-use crate::app::{AppState, ReturnTarget, TitleButton, WidgetId};
+use crate::app::{AppState, WidgetId};
 use crate::library::{delete_replay, rename_replay};
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
-
-pub fn handle_title_key(app: &mut AppState, key: KeyEvent) {
-    match key.code {
-        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
-        KeyCode::Left | KeyCode::Char('h') => {
-            let i = app.title_focus.index();
-            app.title_focus = TitleButton::from_index(i.saturating_sub(1));
-        }
-        KeyCode::Right | KeyCode::Char('l') => {
-            let i = (app.title_focus.index() + 1).min(1);
-            app.title_focus = TitleButton::from_index(i);
-        }
-        KeyCode::Char('r') => app.toggle_recording(),
-        KeyCode::Enter | KeyCode::Char(' ') => app.activate_title_button(),
-        _ => {}
-    }
-}
 
 pub fn handle_library_key(app: &mut AppState, key: KeyEvent) {
     let Some(library) = app.library.as_mut() else {
@@ -82,13 +65,7 @@ pub fn handle_library_key(app: &mut AppState, key: KeyEvent) {
     }
 
     match key.code {
-        KeyCode::Char('q') | KeyCode::Esc => {
-            if app.library_is_root || app.return_target == ReturnTarget::Quit {
-                app.should_quit = true;
-            } else {
-                app.open_title();
-            }
-        }
+        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
         KeyCode::Down | KeyCode::Char('j') => {
             if !library.entries.is_empty() {
                 library.cursor = (library.cursor + 1).min(library.entries.len() - 1);
@@ -119,22 +96,6 @@ pub fn handle_library_key(app: &mut AppState, key: KeyEvent) {
             }
         }
         _ => {}
-    }
-}
-
-pub fn handle_title_mouse(app: &mut AppState, event: MouseEvent) {
-    if event.kind != MouseEventKind::Down(crossterm::event::MouseButton::Left) {
-        return;
-    }
-    let hit = app.widget_rects.iter().find(|(_, rect)| {
-        event.column >= rect.x
-            && event.column < rect.x + rect.width
-            && event.row >= rect.y
-            && event.row < rect.y + rect.height
-    });
-    if let Some((WidgetId::TitleButton(i), _)) = hit {
-        app.title_focus = TitleButton::from_index(*i);
-        app.activate_title_button();
     }
 }
 

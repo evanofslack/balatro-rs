@@ -1,10 +1,12 @@
 use balatro_rs::action::Action;
 use balatro_rs::game::Game;
-use balatro_rs::replay_log::{header_line, loggable_move, move_line, outcome_line, ReplayMove};
+use balatro_rs::replay_log::{
+    loggable_move, result_for_game, ReplayResult, ReplaySource, ReplayWriter,
+};
 use clap::Parser;
 use std::fmt::Write as FmtWrite;
 use std::fs::{self, File};
-use std::io::{self, BufRead, BufWriter, Write};
+use std::io::{self, BufRead, BufWriter};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -13,7 +15,7 @@ struct Args {
     #[arg(long, value_name = "FILE")]
     load: Option<String>,
 
-    /// Append this run to a replay log. With no PATH, writes under the replays directory.
+    /// Record this run to a new replay log. With no PATH, writes under the replays directory.
     /// The menu number is not the gym index stored in the file.
     #[arg(
         long,
@@ -26,107 +28,74 @@ struct Args {
 
     /// Directory for default `--record` paths.
     #[arg(long, value_name = "DIR")]
-    replays_dir: Option<PathBuf>,
-}
-
-fn default_replays_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("BALATRO_REPLAYS_DIR") {
-        return PathBuf::from(dir);
-    }
-    if let Ok(cwd) = std::env::current_dir() {
-        let mut dir = cwd.as_path();
-        loop {
-            let candidate = dir.join("replays");
-            if candidate.is_dir() {
-                return candidate;
-            }
-            dir = match dir.parent() {
-                Some(p) => p,
-                None => break,
-            };
-        }
-        return cwd.join("replays");
-    }
-    PathBuf::from("replays")
+    data_dir: Option<PathBuf>,
 }
 
 fn default_record_path(replays_dir: &PathBuf, seed: u64) -> PathBuf {
-    let secs = SystemTime::now()
+    let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_nanos())
         .unwrap_or(0);
-    replays_dir.join(format!("{seed}_{secs}.log"))
+    replays_dir.join(format!("{seed}_{nanos}.log"))
 }
 
-struct ReplayWriter {
-    file: BufWriter<File>,
-    steps: usize,
-    wrote_outcome: bool,
-}
-
-impl ReplayWriter {
-    fn create(path: &PathBuf, game: &Game) -> Self {
-        let file = File::create(path).unwrap_or_else(|err| {
-            panic!("create {}: {err}", path.display());
-        });
-        let mut file = BufWriter::new(file);
-        let line = header_line(&game.config, game.seed, game.seed_str.as_deref(), None)
-            .expect("encode replay header");
-        writeln!(file, "{line}").expect("write replay header");
-        file.flush().expect("flush replay header");
-        Self {
-            file,
-            steps: 0,
-            wrote_outcome: false,
-        }
-    }
-
-    fn record_move(&mut self, step: ReplayMove) {
-        writeln!(self.file, "{}", move_line(step)).expect("write replay move");
-        self.file.flush().expect("flush replay move");
-        self.steps += 1;
-    }
-
-    fn record_outcome(&mut self, game: &Game) {
-        if self.wrote_outcome {
-            return;
-        }
-        let line = outcome_line(game, self.steps).expect("encode replay outcome");
-        writeln!(self.file, "{line}").expect("write replay outcome");
-        self.file.flush().expect("flush replay outcome");
-        self.wrote_outcome = true;
-    }
-}
-
-fn save_game(game: &Game) {
+fn save_game(game: &Game, data_dir: &PathBuf) {
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let path = format!("game_{}.json", ts);
+    let path = data_dir.join("saves").join(format!("game_{}.json", ts));
+    if let Err(e) = fs::create_dir_all(data_dir.join("saves")) {
+        println!("Save failed: {e}");
+        return;
+    }
     match game.to_json() {
         Ok(json) => match fs::write(&path, json) {
-            Ok(_) => println!("Saved to {}", path),
+            Ok(_) => println!("Saved to {}", path.display()),
             Err(e) => println!("Save failed: {}", e),
         },
         Err(e) => println!("Serialize failed: {}", e),
     }
 }
 
-fn read_input(max: usize) -> Option<usize> {
-    let stdin = io::stdin();
-    let line = stdin.lock().lines().next()?.ok()?;
-    let trimmed = line.trim();
-    if trimmed == "s" {
-        return None;
-    }
-    trimmed.parse::<usize>().ok().filter(|&i| i <= max)
+enum Input {
+    Action(usize),
+    Save,
+    Quit,
+    Invalid,
 }
 
-fn game_loop(game: &mut Game, mut recorder: Option<ReplayWriter>) {
+fn read_input(max: usize) -> Input {
+    let stdin = io::stdin();
+    let Some(Ok(line)) = stdin.lock().lines().next() else {
+        return Input::Quit;
+    };
+    let trimmed = line.trim();
+    if trimmed == "s" {
+        return Input::Save;
+    }
+    if trimmed == "q" {
+        return Input::Quit;
+    }
+    match trimmed.parse::<usize>() {
+        Ok(i) if i <= max => Input::Action(i),
+        _ => Input::Invalid,
+    }
+}
+
+fn game_loop(
+    game: &mut Game,
+    mut recorder: Option<ReplayWriter<BufWriter<File>>>,
+    data_dir: &PathBuf,
+) -> bool {
     loop {
         if game.is_over() {
-            return;
+            if let Some(writer) = recorder.as_mut() {
+                writer
+                    .record_outcome(game, result_for_game(game))
+                    .expect("finish replay");
+            }
+            return true;
         }
         let actions: Vec<Action> = game.gen_actions().collect();
         println!("Select action:");
@@ -160,10 +129,19 @@ fn game_loop(game: &mut Game, mut recorder: Option<ReplayWriter>) {
 
         let index = loop {
             match read_input(actions.len()) {
-                Some(i) => break i,
-                None => {
-                    save_game(game);
+                Input::Action(i) => break i,
+                Input::Save => {
+                    save_game(game, data_dir);
                     println!("Select action:");
+                }
+                Input::Invalid => println!("Enter an action number, s to save, or q to quit."),
+                Input::Quit => {
+                    if let Some(writer) = recorder.as_mut() {
+                        writer
+                            .record_outcome(game, ReplayResult::Abandoned)
+                            .expect("finish replay");
+                    }
+                    return false;
                 }
             }
         };
@@ -177,9 +155,11 @@ fn game_loop(game: &mut Game, mut recorder: Option<ReplayWriter>) {
         game.handle_action(action).expect("handle action");
         if let Some(recorder) = recorder.as_mut() {
             if let Some(step) = logged {
-                recorder.record_move(step);
+                recorder.record_move(step).expect("write replay move");
                 if game.is_over() {
-                    recorder.record_outcome(game);
+                    recorder
+                        .record_outcome(game, result_for_game(game))
+                        .expect("finish replay");
                 }
             } else {
                 eprintln!("replay log: action succeeded but has no log encoding");
@@ -203,8 +183,9 @@ fn main() {
         }
     };
 
+    let data_dir = args.data_dir.unwrap_or_else(|| PathBuf::from("data"));
     let recorder = args.record.map(|record| {
-        let replays_dir = args.replays_dir.clone().unwrap_or_else(default_replays_dir);
+        let replays_dir = data_dir.join("replays");
         let path = if record.is_empty() {
             fs::create_dir_all(&replays_dir).expect("create replays dir");
             default_record_path(&replays_dir, game.seed)
@@ -218,10 +199,25 @@ fn main() {
             path
         };
         println!("recording to {}", path.display());
-        ReplayWriter::create(&path, &game)
+        ReplayWriter::new(
+            BufWriter::new(
+                File::options()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)
+                    .expect("create replay"),
+            ),
+            &game,
+            ReplaySource::Player,
+            None,
+        )
+        .expect("write replay header")
     });
 
     println!("Starting game...");
-    game_loop(&mut game, recorder);
-    println!("Game over!");
+    if game_loop(&mut game, recorder, &data_dir) {
+        println!("Game over!");
+    } else {
+        println!("Run abandoned.");
+    }
 }

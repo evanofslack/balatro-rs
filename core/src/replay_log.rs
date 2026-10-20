@@ -1,5 +1,4 @@
-//! Line-delimited replay log. This module formats and parses strings only.
-//! Call sites open files and write the lines.
+//! Line-delimited replay log and shared writer.
 //!
 //! Gym action indices cover the RL space. `DeselectCard` is legal in the TUI/CLI
 //! move generator but not in that space, so it is logged as `{"deselect": slot}`.
@@ -11,21 +10,35 @@ use crate::game::Game;
 use crate::stage::End;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::io::{self, Write};
 use thiserror::Error;
 
-pub const FORMAT_VERSION: u32 = 2;
+pub const FORMAT_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplayHeader {
     pub format_version: u32,
-    pub seed: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub seed_str: Option<String>,
+    pub seed: ReplaySeed,
     pub config: Config,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<ReplaySource>,
+    pub source: ReplaySource,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ReplaySeed {
+    Number(u64),
+    Text(String),
+}
+
+impl std::fmt::Display for ReplaySeed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Number(n) => write!(f, "{n}"),
+            Self::Text(s) => f.write_str(s),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,22 +48,9 @@ pub enum ReplaySource {
     Model,
 }
 
-impl ReplayHeader {
-    pub fn source(&self) -> ReplaySource {
-        self.source.unwrap_or(if self.agent.is_some() {
-            ReplaySource::Model
-        } else {
-            ReplaySource::Player
-        })
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReplayOutcome {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub won: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub result: Option<ReplayResult>,
+    pub result: ReplayResult,
     pub score: usize,
     pub steps: usize,
 }
@@ -64,17 +64,11 @@ pub enum ReplayResult {
     Error,
 }
 
-impl ReplayOutcome {
-    pub fn result(&self) -> Option<ReplayResult> {
-        self.result.or_else(|| {
-            self.won.map(|won| {
-                if won {
-                    ReplayResult::Won
-                } else {
-                    ReplayResult::Lost
-                }
-            })
-        })
+pub fn result_for_game(game: &Game) -> ReplayResult {
+    match game.result() {
+        Some(End::Win) => ReplayResult::Won,
+        Some(_) => ReplayResult::Lost,
+        None => ReplayResult::Abandoned,
     }
 }
 
@@ -107,19 +101,21 @@ pub fn header_line(
     config: &Config,
     seed: u64,
     seed_str: Option<&str>,
+    source: ReplaySource,
     agent: Option<&str>,
 ) -> Result<String, serde_json::Error> {
+    let mut config = config.clone();
+    // The actual seed lives in the header alone, including for random starts.
+    config.seed = None;
+    config.seed_str = None;
     let header = ReplayHeader {
         format_version: FORMAT_VERSION,
-        seed,
-        seed_str: seed_str.map(str::to_string),
-        config: config.clone(),
+        seed: seed_str
+            .map(|s| ReplaySeed::Text(s.to_owned()))
+            .unwrap_or(ReplaySeed::Number(seed)),
+        config,
         agent: agent.map(str::to_string),
-        source: Some(if agent.is_some() {
-            ReplaySource::Model
-        } else {
-            ReplaySource::Player
-        }),
+        source,
     };
     serde_json::to_string(&header)
 }
@@ -140,13 +136,7 @@ pub fn move_line(step: ReplayMove) -> String {
 }
 
 pub fn outcome_line(game: &Game, steps: usize) -> Result<String, serde_json::Error> {
-    let outcome = ReplayOutcome {
-        won: Some(matches!(game.result(), Some(End::Win))),
-        result: None,
-        score: game.score,
-        steps,
-    };
-    serde_json::to_string(&serde_json::json!({ "outcome": outcome }))
+    terminal_line(game, steps, result_for_game(game))
 }
 
 pub fn terminal_line(
@@ -155,8 +145,7 @@ pub fn terminal_line(
     result: ReplayResult,
 ) -> Result<String, serde_json::Error> {
     let outcome = ReplayOutcome {
-        won: None,
-        result: Some(result),
+        result,
         score: game.score,
         steps,
     };
@@ -215,9 +204,6 @@ pub fn parse_line(line: &str) -> Result<ReplayRecord, ReplayLogError> {
     }
     if let Some(outcome) = value.get("outcome") {
         let outcome: ReplayOutcome = serde_json::from_value(outcome.clone())?;
-        if outcome.result().is_none() {
-            return Err(ReplayLogError::UnknownLine);
-        }
         return Ok(ReplayRecord::Outcome(outcome));
     }
     Err(ReplayLogError::UnknownLine)
@@ -227,12 +213,74 @@ pub fn parse_line(line: &str) -> Result<ReplayRecord, ReplayLogError> {
 /// the seed `Game::new` actually used, and replay injects that seed.
 pub fn config_for_replay(header: &ReplayHeader) -> Config {
     let mut config = header.config.clone();
-    if let Some(seed_str) = &header.seed_str {
-        config.seed_str = Some(seed_str.clone());
-    } else if config.seed.is_none() && config.seed_str.is_none() {
-        config.seed = Some(header.seed);
+    match &header.seed {
+        ReplaySeed::Number(seed) => {
+            config.seed = Some(*seed);
+            config.seed_str = None;
+        }
+        ReplaySeed::Text(seed) => {
+            config.seed = None;
+            config.seed_str = Some(seed.clone());
+        }
     }
     config
+}
+
+/// Flushes each record so another process can tail a live run.
+pub struct ReplayWriter<W: Write> {
+    writer: W,
+    steps: usize,
+    finished: bool,
+}
+
+impl<W: Write> ReplayWriter<W> {
+    pub fn new(
+        mut writer: W,
+        game: &Game,
+        source: ReplaySource,
+        agent: Option<&str>,
+    ) -> io::Result<Self> {
+        writeln!(
+            writer,
+            "{}",
+            header_line(
+                &game.config,
+                game.seed,
+                game.seed_str.as_deref(),
+                source,
+                agent
+            )?
+        )?;
+        writer.flush()?;
+        Ok(Self {
+            writer,
+            steps: 0,
+            finished: false,
+        })
+    }
+
+    pub fn record_move(&mut self, step: ReplayMove) -> io::Result<()> {
+        if self.finished {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "replay already finished",
+            ));
+        }
+        writeln!(self.writer, "{}", move_line(step))?;
+        self.writer.flush()?;
+        self.steps += 1;
+        Ok(())
+    }
+
+    pub fn record_outcome(&mut self, game: &Game, result: ReplayResult) -> io::Result<()> {
+        if self.finished {
+            return Ok(());
+        }
+        writeln!(self.writer, "{}", terminal_line(game, self.steps, result)?)?;
+        self.writer.flush()?;
+        self.finished = true;
+        Ok(())
+    }
 }
 
 pub fn game_from_header(header: &ReplayHeader) -> Game {
@@ -260,7 +308,14 @@ mod tests {
         let seed_str = game.seed_str.clone();
         game.start();
 
-        let mut lines = vec![header_line(&config, seed, seed_str.as_deref(), None).unwrap()];
+        let mut lines = vec![header_line(
+            &config,
+            seed,
+            seed_str.as_deref(),
+            ReplaySource::Player,
+            None,
+        )
+        .unwrap()];
         let mut rng = StdRng::seed_from_u64(1);
         let mut steps = 0usize;
         while !game.is_over() && steps < 20_000 {
@@ -300,7 +355,14 @@ mod tests {
                     replay_steps += 1;
                 }
                 ReplayRecord::Outcome(outcome) => {
-                    assert_eq!(outcome.won, Some(matches!(game.result(), Some(End::Win))));
+                    assert_eq!(
+                        outcome.result,
+                        if matches!(game.result(), Some(End::Win)) {
+                            ReplayResult::Won
+                        } else {
+                            ReplayResult::Lost
+                        }
+                    );
                     assert_eq!(outcome.score, game.score);
                     assert_eq!(outcome.steps, steps);
                     saw_outcome = true;
@@ -369,44 +431,90 @@ mod tests {
     }
 
     #[test]
-    fn abandoned_line_and_legacy_outcome_are_both_readable() {
+    fn abandoned_line_is_readable() {
         let mut game = Game::new(Config::default());
         game.start();
         let line = terminal_line(&game, 0, ReplayResult::Abandoned).unwrap();
-        let ReplayRecord::Outcome(abandoned) = parse_line(&line).unwrap() else {
-            panic!("expected terminal record");
+        let ReplayRecord::Outcome(outcome) = parse_line(&line).unwrap() else {
+            panic!("expected outcome")
         };
-        assert_eq!(abandoned.result(), Some(ReplayResult::Abandoned));
-        assert_eq!(abandoned.won, None);
-
-        let ReplayRecord::Outcome(legacy) =
-            parse_line(r#"{"outcome":{"won":false,"score":50,"steps":9}}"#).unwrap()
-        else {
-            panic!("expected legacy outcome");
-        };
-        assert_eq!(legacy.result(), Some(ReplayResult::Lost));
+        assert_eq!(outcome.result, ReplayResult::Abandoned);
     }
 
     #[test]
-    fn headers_mark_player_and_model_and_infer_older_logs() {
+    fn headers_mark_source_explicitly() {
         let config = Config::default();
         for (agent, expected) in [
             (None, ReplaySource::Player),
-            (Some("example-policy"), ReplaySource::Model),
+            (Some("policy"), ReplaySource::Model),
+            (Some("human label"), ReplaySource::Player),
         ] {
-            let line = header_line(&config, 42, None, agent).unwrap();
+            let line = header_line(&config, 42, None, expected, agent).unwrap();
             let ReplayRecord::Header(header) = parse_line(&line).unwrap() else {
-                panic!("expected header");
+                panic!("expected header")
             };
-            assert_eq!(header.source, Some(expected));
-            assert_eq!(header.source(), expected);
-
-            let mut old: Value = serde_json::from_str(&line).unwrap();
-            old.as_object_mut().unwrap().remove("source");
-            let ReplayRecord::Header(old_header) = parse_line(&old.to_string()).unwrap() else {
-                panic!("expected older header");
-            };
-            assert_eq!(old_header.source(), expected);
+            assert_eq!(header.source, expected);
+            assert_eq!(header.config.seed, None);
         }
+    }
+
+    #[test]
+    fn text_seed_replays_from_single_header_field() {
+        let config = Config {
+            seed_str: Some("TEST".into()),
+            ..Config::default()
+        };
+        let mut original = Game::new(config);
+        original.start();
+        let line = header_line(
+            &original.config,
+            original.seed,
+            original.seed_str.as_deref(),
+            ReplaySource::Player,
+            None,
+        )
+        .unwrap();
+        let ReplayRecord::Header(header) = parse_line(&line).unwrap() else {
+            panic!("header")
+        };
+        assert_eq!(header.seed, ReplaySeed::Text("TEST".into()));
+        assert!(header.config.seed.is_none());
+        assert!(header.config.seed_str.is_none());
+        let replay = game_from_header(&header);
+        assert_eq!(original.seed, replay.seed);
+        assert_eq!(original.seed_str, replay.seed_str);
+    }
+
+    #[test]
+    fn writer_flushes_a_live_run_and_finishes_once() {
+        let mut game = Game::new(Config {
+            seed: Some(42),
+            ..Config::default()
+        });
+        game.start();
+        let mut writer =
+            ReplayWriter::new(Vec::new(), &game, ReplaySource::Model, Some("gym")).unwrap();
+        writer.record_move(ReplayMove::Action(78)).unwrap();
+        game.handle_action_index(78).unwrap();
+        writer
+            .record_outcome(&game, ReplayResult::Abandoned)
+            .unwrap();
+        writer
+            .record_outcome(&game, ReplayResult::Abandoned)
+            .unwrap();
+        assert!(writer.record_move(ReplayMove::Action(78)).is_err());
+        let text = String::from_utf8(writer.writer).unwrap();
+        let lines: Vec<_> = text.lines().collect();
+        assert_eq!(lines.len(), 3);
+        let ReplayRecord::Header(header) = parse_line(lines[0]).unwrap() else {
+            panic!("header")
+        };
+        assert_eq!(header.source, ReplaySource::Model);
+        assert_eq!(header.config.seed, None);
+        let ReplayRecord::Outcome(outcome) = parse_line(lines[2]).unwrap() else {
+            panic!("outcome")
+        };
+        assert_eq!(outcome.result, ReplayResult::Abandoned);
+        assert_eq!(outcome.steps, 1);
     }
 }

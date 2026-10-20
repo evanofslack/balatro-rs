@@ -15,10 +15,6 @@ path = "src/main.rs"
 name = "balatro-edit"
 path = "src/bin/edit.rs"
 
-[[bin]]
-name = "balatro-agent-run"
-path = "src/bin/agent_run.rs"
-
 [dependencies]
 text_io = "0.1.9"
 colored = "2.2.0"
