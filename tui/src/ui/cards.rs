@@ -155,7 +155,9 @@ fn card_inner_text(card: Card, debuffed: bool) -> Text<'static> {
     let row4 = if debuffed {
         Line::from(Span::styled(
             "Debuffed",
-            Style::default().fg(DEBUFF_COLOR).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(DEBUFF_COLOR)
+                .add_modifier(Modifier::BOLD),
         ))
     } else {
         Line::from("")
@@ -164,7 +166,9 @@ fn card_inner_text(card: Card, debuffed: bool) -> Text<'static> {
     let content = vec![row0, row1, Line::from(""), row3, row4];
     // Center the fixed 5-row content within however tall the interior actually
     // is, rather than hardcoding a row count that goes stale if CARD_H changes.
-    let pad = (CARD_H as usize).saturating_sub(2).saturating_sub(content.len());
+    let pad = (CARD_H as usize)
+        .saturating_sub(2)
+        .saturating_sub(content.len());
     let pad_top = pad / 2;
     let pad_bottom = pad - pad_top;
     let mut lines = Vec::with_capacity(content.len() + pad);

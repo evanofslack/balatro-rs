@@ -23,6 +23,8 @@ pub mod joker;
 pub mod pack;
 pub mod planet;
 pub mod rank;
+#[cfg(feature = "serde")]
+pub mod replay_log;
 mod rng;
 pub mod score;
 pub mod shop;

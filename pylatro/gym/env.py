@@ -3,10 +3,12 @@ from gymnasium import spaces
 import pylatro
 from typing import Optional
 import numpy as np
+from pathlib import Path
+import time
 
 
 class BalatroEnv(gym.Env):
-    def __init__(self):
+    def __init__(self, record_dir: Optional[str] = None):
         super(BalatroEnv, self).__init__()
 
         config = pylatro.Config()
@@ -14,6 +16,8 @@ class BalatroEnv(gym.Env):
 
         self._config = config
         self._game = pylatro.GameEngine(self._config)
+        self._record_dir = Path(record_dir) if record_dir is not None else None
+        self._record_count = 0
         self._score = 0
         self._last_score = 0
         self._target_score = 0
@@ -85,6 +89,7 @@ class BalatroEnv(gym.Env):
         if score_diff > 0:
             reward = score_diff / 100
         if terminated:
+            self._game.finish_recording()
             reward = 20 if self._game.is_win else 0
             # if self._game.is_win:
             # print(f"game win: {self._game.state}")
@@ -104,7 +109,16 @@ class BalatroEnv(gym.Env):
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None):
         super().reset(seed=seed)
+        self._game.finish_recording()
+        self._config.seed = seed
+        if seed is not None:
+            self._config.seed_str = None
         self._game = pylatro.GameEngine(self._config)
+        if self._record_dir is not None:
+            self._record_dir.mkdir(parents=True, exist_ok=True)
+            self._record_count += 1
+            path = self._record_dir / f"{self._game.state.seed}_{time.time_ns()}_{self._record_count}.log"
+            self._game.start_recording(str(path))
         self._score = 0
         self._last_score = 0
         self._target_score = 0
@@ -112,6 +126,10 @@ class BalatroEnv(gym.Env):
         info = self._get_info()
 
         return observation, info
+
+    def close(self):
+        self._game.finish_recording()
+        super().close()
 
     def render(self, mode="human"):
         return

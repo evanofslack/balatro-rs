@@ -171,7 +171,11 @@ fn render_main(f: &mut Frame, app: &mut AppState, area: Rect) {
     let btn_block = Block::default()
         .borders(Borders::ALL)
         .border_type(border_type)
-        .border_style(Style::default().fg(if focused { Color::Yellow } else { Color::DarkGray }));
+        .border_style(Style::default().fg(if focused {
+            Color::Yellow
+        } else {
+            Color::DarkGray
+        }));
     let btn_para = Paragraph::new(Line::from(Span::styled(
         "Cash Out",
         Style::default()

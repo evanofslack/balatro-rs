@@ -1,9 +1,16 @@
+use crate::library::LibraryState;
+use crate::record::FileReplayWriter;
+use crate::replay::{ReplayReader, ReplaySession, ReplayStep};
+use balatro_rs::action::Action;
+use balatro_rs::replay_log::{loggable_move, result_for_game, ReplayResult, ReplaySource};
 use balatro_rs::{
     action::SortBy, card::Card, consumable::Consumable, game::Game, joker::Jokers, pack::Pack,
     tag::Tag, voucher::Voucher,
 };
 use ratatui::layout::Rect;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::time::Instant;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum WidgetId {
@@ -29,6 +36,13 @@ pub enum WidgetId {
     DeckTab(usize),
     RunInfoTab(usize),
     SidebarButton(usize),
+    LibraryRow(usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Screen {
+    Library,
+    Playing,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +124,14 @@ pub struct AppState {
     pub should_quit: bool,
     pub widget_rects: HashMap<WidgetId, Rect>,
     pub sort_mode: SortBy,
+    pub recorder: Option<FileReplayWriter>,
+    pub replay: Option<ReplaySession>,
+    pub screen: Screen,
+    pub status: String,
+    pub library: Option<LibraryState>,
+    pub replays_dir: PathBuf,
+    pub data_dir: PathBuf,
+    pub clear_screen: bool,
 }
 
 impl AppState {
@@ -126,7 +148,195 @@ impl AppState {
             should_quit: false,
             widget_rects: HashMap::new(),
             sort_mode: SortBy::Rank,
+            recorder: None,
+            replay: None,
+            screen: Screen::Playing,
+            status: String::new(),
+            library: None,
+            replays_dir: PathBuf::from("data/replays"),
+            data_dir: PathBuf::from("data"),
+            clear_screen: false,
         }
+    }
+
+    pub fn finish_recording(&mut self) -> anyhow::Result<()> {
+        if let Some(mut recorder) = self.recorder.take() {
+            recorder.record_outcome(&self.game, result_for_game(&self.game))?;
+        }
+        Ok(())
+    }
+
+    pub fn open_library(&mut self) {
+        self.screen = Screen::Library;
+        self.overlay = None;
+        self.replay = None;
+        self.library = Some(LibraryState::open(self.replays_dir.clone()));
+        self.clear_screen = true;
+    }
+
+    pub fn attach_replay(&mut self, path: PathBuf, from_library: bool) -> anyhow::Result<()> {
+        let (reader, game) = ReplayReader::open(&path)?;
+        self.game = game;
+        self.screen = Screen::Playing;
+        self.overlay = None;
+        self.recorder = None;
+        if from_library {
+            self.replay = Some(ReplaySession::from_library(reader));
+        } else {
+            self.replay = Some(ReplaySession::new(reader));
+        }
+        self.clear_screen = true;
+        self.sync_focus_to_stage();
+        Ok(())
+    }
+
+    pub fn return_from_replay(&mut self) {
+        let from_library = self.replay.as_ref().is_some_and(|s| s.from_library);
+        self.replay = None;
+        if from_library {
+            self.open_library();
+        } else {
+            self.should_quit = true;
+        }
+    }
+
+    /// Apply `action`. When recording, the loggable move is captured first and
+    /// written only after the action succeeds. Deselects are logged as hand
+    /// slots because they are not in the gym action space. An outcome line
+    /// follows the action that ends the episode.
+    pub fn apply_action(&mut self, action: Action) -> bool {
+        let logged = if self.recorder.is_some() {
+            loggable_move(&self.game, &action)
+        } else {
+            None
+        };
+        if self.game.handle_action(action).is_err() {
+            return false;
+        }
+        if let Some(step) = logged {
+            if let Some(recorder) = self.recorder.as_mut() {
+                if let Err(err) = recorder.record_move(step) {
+                    self.status = format!("replay log: {err:#}");
+                } else if self.game.is_over() {
+                    if let Err(err) =
+                        recorder.record_outcome(&self.game, result_for_game(&self.game))
+                    {
+                        self.status = format!("replay log: {err:#}");
+                    }
+                }
+            }
+        } else if self.recorder.is_some() {
+            self.status = "replay log: action has no encoding".into();
+        }
+        true
+    }
+
+    pub fn replay_autoplay_due(&self) -> bool {
+        self.replay
+            .as_ref()
+            .is_some_and(|session| session.autoplay_due())
+    }
+
+    pub fn replay_forward(&mut self) {
+        let Some(mut session) = self.replay.take() else {
+            return;
+        };
+        if session.reader.is_finished() {
+            if session.finished_at.is_none() {
+                session.finished_at = Some(Instant::now());
+            }
+            self.replay = Some(session);
+            return;
+        }
+        match session.reader.forward(&mut self.game) {
+            Ok(ReplayStep::Waiting) => session.waiting = true,
+            Ok(ReplayStep::Applied) => {
+                session.waiting = false;
+                session.last_step = Instant::now();
+                self.sync_focus_to_stage();
+            }
+            Ok(ReplayStep::Finished) => {
+                session.waiting = false;
+                session.last_step = Instant::now();
+                if session.finished_at.is_none() {
+                    session.finished_at = Some(Instant::now());
+                }
+                self.sync_focus_to_stage();
+            }
+            Err(err) => {
+                self.status = format!("replay: {err:#}");
+                session.paused = true;
+            }
+        }
+        self.replay = Some(session);
+    }
+
+    pub fn tick_replay_library_return(&mut self) {
+        if self.replay.as_ref().is_some_and(|s| s.library_return_due()) {
+            self.return_from_replay();
+        }
+    }
+
+    pub fn replay_back(&mut self) {
+        let Some(mut session) = self.replay.take() else {
+            return;
+        };
+        if session.reader.at_start() {
+            self.replay = Some(session);
+            return;
+        }
+        match session.reader.back() {
+            Ok(game) => {
+                self.game = game;
+                session.waiting = false;
+                session.last_step = Instant::now();
+                self.sync_focus_to_stage();
+            }
+            Err(err) => {
+                self.status = format!("replay: {err:#}");
+                session.paused = true;
+            }
+        }
+        self.replay = Some(session);
+    }
+
+    pub fn toggle_replay_pause(&mut self) {
+        if let Some(session) = self.replay.as_mut() {
+            session.paused = !session.paused;
+            session.last_step = Instant::now();
+        }
+    }
+
+    pub fn replay_status_text(&self) -> Option<String> {
+        let session = self.replay.as_ref()?;
+        let step = session.reader.applied_len();
+        let source = match session.reader.source() {
+            ReplaySource::Player => "player",
+            ReplaySource::Model => "model",
+        };
+        let state = if session.reader.is_finished() {
+            match session.reader.result() {
+                Some(ReplayResult::Won) => "win",
+                Some(ReplayResult::Lost) => "loss",
+                Some(ReplayResult::Abandoned) => "abandoned",
+                Some(ReplayResult::Error) => "error",
+                None => "finished",
+            }
+        } else if session.paused {
+            "paused"
+        } else if session.waiting {
+            "waiting"
+        } else {
+            "playing"
+        };
+        let back = if session.from_library {
+            "q/esc library"
+        } else {
+            "q quit"
+        };
+        Some(format!(
+            "replay  {source}  step {step}  {state}    space pause    h/left back    l/right forward    {back}"
+        ))
     }
 
     pub fn close_overlay(&mut self) {
@@ -402,5 +612,49 @@ impl AppState {
         if !preserve_cursor {
             self.cursor = 0;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn abandoned_run_has_terminal_line() {
+        let mut game = Game::new(balatro_rs::config::Config::default());
+        game.start();
+        let mut app = AppState::new(game);
+        let path =
+            std::env::temp_dir().join(format!("balatro-abandoned-{}.log", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        app.recorder = Some(crate::record::create(&path, &app.game).unwrap());
+        let index = app
+            .game
+            .gen_action_space()
+            .to_vec()
+            .iter()
+            .position(|&bit| bit == 1)
+            .unwrap();
+        app.recorder
+            .as_mut()
+            .unwrap()
+            .record_move(balatro_rs::replay_log::ReplayMove::Action(index))
+            .unwrap();
+        app.game.handle_action_index(index).unwrap();
+        app.finish_recording().unwrap();
+        assert!(std::fs::read_to_string(&path)
+            .unwrap()
+            .contains("abandoned"));
+        let (mut reader, mut replay_game) = crate::replay::ReplayReader::open(&path).unwrap();
+        assert_eq!(
+            reader.forward(&mut replay_game).unwrap(),
+            crate::replay::ReplayStep::Applied
+        );
+        assert_eq!(
+            reader.forward(&mut replay_game).unwrap(),
+            crate::replay::ReplayStep::Finished
+        );
+        assert_eq!(reader.result(), Some(ReplayResult::Abandoned));
+        std::fs::remove_file(path).unwrap();
     }
 }
